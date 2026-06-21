@@ -1,20 +1,179 @@
 // =================================================================
-//  SOUQSITE — App Runtime  v1.2
-//  Reads globals: SHOP_SETTINGS, SHOP, PRODUCTS, TRANSLATIONS
-//  V2 upgrade path: replace config file loads with fetch() calls
+//  SOUQSITE — App Runtime  v2.0
+//
+//  V1 mode (static): reads SHOP, PRODUCTS, TRANSLATIONS globals set
+//    by config/shop.js, config/products.js, config/translations.js
+//
+//  V2 mode (Supabase): detects SUPABASE_URL + RESTAURANT_ID from
+//    config/supabase.js, fetches live data, then runs the same
+//    render path as V1.
+//
+//  The developer never touches this file per client.
 // =================================================================
 (function () {
   'use strict';
 
-  // Inline SVG placeholder shown when a product image fails to load.
-  // Keeps the card layout intact — no blank collapse, no broken icon.
-  const IMG_PLACEHOLDER = 'data:image/svg+xml,' + encodeURIComponent(
+  // ── IMAGE FALLBACKS ──────────────────────────────────────────────
+  // SVG shown inline when an img src fails to load.
+  const IMG_BROKEN = 'data:image/svg+xml,' + encodeURIComponent(
     '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 4 3">' +
     '<rect width="4" height="3" fill="#2b2820"/>' +
     '</svg>'
   );
+  // File-based placeholder used when a product has no image URL at all.
+  const IMG_DEFAULT = 'assets/images/product-placeholder.svg';
 
-  // ── LANGUAGE HELPERS ────────────────────────────────────────────
+  // ── SUPABASE DETECTION ───────────────────────────────────────────
+  function isSupabaseConfigured() {
+    return (
+      typeof SUPABASE_URL      !== 'undefined' &&
+      typeof SUPABASE_ANON_KEY !== 'undefined' &&
+      typeof RESTAURANT_ID    !== 'undefined' &&
+      SUPABASE_URL.startsWith('https://') &&
+      !SUPABASE_URL.includes('YOUR_') &&
+      RESTAURANT_ID.length === 36
+    );
+  }
+
+  // ── DB → SHOP SHAPE MAPPING ───────────────────────────────────────
+  function mapRestaurant(r) {
+    return {
+      name:          r.name_ar          || '',
+      nameEn:        r.name_en          || '',
+      tagline:       r.tagline_ar       || '',
+      taglineEn:     r.tagline_en       || '',
+      description:   r.description_ar  || '',
+      descriptionEn: r.description_en  || '',
+      phone:         r.phone            || '',
+      whatsapp:      r.whatsapp         || '',
+      instagram:     r.instagram        || '',
+      email:         r.email            || '',
+      address: {
+        ar: r.address_ar || '',
+        en: r.address_en || '',
+      },
+      mapEmbed:      r.map_embed        || '',
+      mapDirections: r.map_directions   || '',
+      hours: {
+        weekdays:   r.hours_weekdays_en || '',
+        weekdaysAr: r.hours_weekdays_ar || '',
+        weekends:   r.hours_weekends_en || '',
+        weekendsAr: r.hours_weekends_ar || '',
+      },
+      highlights:  Array.isArray(r.highlights) ? r.highlights : [],
+      hero:   { image: r.hero_image_url || '' },
+      social: { whatsappMessage: r.wa_message_ar || '' },
+      sounds: r.sounds_enabled !== false,
+      categories: [], // populated after categories fetch
+    };
+  }
+
+  function mapProduct(p) {
+    return {
+      id:            p.id,
+      name:          p.name_ar          || '',
+      nameEn:        p.name_en          || '',
+      description:   p.description_ar  || '',
+      descriptionEn: p.description_en  || '',
+      price:         p.price            || '',
+      category:      p.categories ? p.categories.slug : 'other',
+      image:         p.image_url        || '',
+      featured:      !!p.featured,
+      available:     p.available !== false,
+      sort_order:    p.sort_order       || 0,
+      _catNameAr:    p.categories ? p.categories.name_ar : '',
+      _catNameEn:    p.categories ? p.categories.name_en : '',
+    };
+  }
+
+  // ── FETCH FROM SUPABASE ───────────────────────────────────────────
+  // Uses the PostgREST REST API directly — no SDK needed on the public page.
+  // The anon key + RLS policies enforce read-only access to published data.
+  async function loadFromSupabase() {
+    const base = SUPABASE_URL + '/rest/v1';
+    const h = {
+      'apikey':        SUPABASE_ANON_KEY,
+      'Authorization': 'Bearer ' + SUPABASE_ANON_KEY,
+    };
+
+    const [rRes, cRes, pRes] = await Promise.all([
+      fetch(base + '/restaurants?id=eq.' + RESTAURANT_ID + '&select=*', { headers: h }),
+      fetch(base + '/categories?restaurant_id=eq.' + RESTAURANT_ID + '&order=sort_order', { headers: h }),
+      fetch(
+        base + '/products?restaurant_id=eq.' + RESTAURANT_ID +
+        '&available=eq.true&order=sort_order' +
+        '&select=*,categories(id,slug,name_ar,name_en)',
+        { headers: h }
+      ),
+    ]);
+
+    if (!rRes.ok) throw new Error('Restaurant fetch failed (' + rRes.status + ')');
+
+    const [restaurantRaw] = await rRes.json();
+    if (!restaurantRaw) throw new Error('No restaurant found for RESTAURANT_ID: ' + RESTAURANT_ID);
+
+    const catsRaw  = cRes.ok  ? await cRes.json()  : [];
+    const prodsRaw = pRes.ok  ? await pRes.json()  : [];
+
+    // Mutate globals so all existing render functions work unchanged.
+    window.SHOP     = mapRestaurant(restaurantRaw);
+    window.PRODUCTS = prodsRaw.map(mapProduct);
+
+    window.SHOP.categories = (catsRaw || []).map(c => ({
+      slug:   c.slug,
+      nameAr: c.name_ar,
+      nameEn: c.name_en,
+    }));
+
+    // Sync sounds flag to SHOP_SETTINGS so playUISound() respects DB value
+    if (typeof SHOP_SETTINGS !== 'undefined') {
+      SHOP_SETTINGS.sounds = restaurantRaw.sounds_enabled !== false;
+    }
+  }
+
+  // ── LOADING OVERLAY ───────────────────────────────────────────────
+  var _loadEl = null;
+  function showLoading() {
+    if (_loadEl || document.body.dataset.page === 'error') return;
+    _loadEl = document.createElement('div');
+    _loadEl.setAttribute('aria-live', 'polite');
+    _loadEl.setAttribute('role', 'status');
+    _loadEl.style.cssText =
+      'position:fixed;inset:0;display:flex;align-items:center;justify-content:center;' +
+      'background:var(--bg,#0e0d0b);z-index:9000;gap:6px';
+    for (var i = 0; i < 3; i++) {
+      var dot = document.createElement('div');
+      dot.style.cssText =
+        'width:8px;height:8px;border-radius:50%;background:var(--accent,#c9a84c);' +
+        'animation:dotPulse 1.2s ease-in-out ' + (i * 0.2) + 's infinite';
+      _loadEl.appendChild(dot);
+    }
+    // Keyframes (injected once)
+    if (!document.getElementById('_dotStyle')) {
+      var s = document.createElement('style');
+      s.id = '_dotStyle';
+      s.textContent = '@keyframes dotPulse{0%,100%{opacity:.3;transform:scaleY(1)}50%{opacity:.9;transform:scaleY(.6)}}';
+      document.head.appendChild(s);
+    }
+    document.body.appendChild(_loadEl);
+  }
+  function hideLoading() {
+    if (_loadEl) { _loadEl.remove(); _loadEl = null; }
+  }
+
+  function showAppError(msg) {
+    hideLoading();
+    var el = document.createElement('div');
+    el.style.cssText =
+      'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);' +
+      'background:var(--card-bg,#1e1c18);color:var(--text-muted,#9a9585);' +
+      'padding:28px 36px;border-radius:12px;text-align:center;font-size:14px;' +
+      'border:1px solid var(--border,#3a3529);z-index:9999;max-width:340px;line-height:1.7';
+    el.innerHTML = '<div style="font-size:28px;margin-bottom:12px">⚠</div>' + msg;
+    document.body.appendChild(el);
+  }
+
+  // ── LANGUAGE HELPERS ──────────────────────────────────────────────
   function getLang() {
     return (
       localStorage.getItem('souqsite_language') ||
@@ -24,7 +183,7 @@
 
   function t(key) {
     if (typeof TRANSLATIONS === 'undefined') return null;
-    const lang = getLang();
+    const lang  = getLang();
     const parts = key.split('.');
     let val = TRANSLATIONS[lang];
     for (const p of parts) val = val?.[p];
@@ -35,31 +194,34 @@
     if (typeof SHOP === 'undefined') return '';
     return lang === 'ar' ? SHOP.name : (SHOP.nameEn || SHOP.name);
   }
-
   function shopTagline(lang) {
     if (typeof SHOP === 'undefined') return '';
     return lang === 'ar' ? SHOP.tagline : (SHOP.taglineEn || SHOP.tagline);
   }
-
   function shopDesc(lang) {
     if (typeof SHOP === 'undefined') return '';
     return lang === 'ar' ? SHOP.description : (SHOP.descriptionEn || SHOP.description);
   }
-
   function shopAddr(lang) {
     if (typeof SHOP === 'undefined') return '';
     return lang === 'ar' ? SHOP.address.ar : SHOP.address.en;
   }
-
-  // Returns the bilingual hours string for `type` ('weekdays' | 'weekends').
-  // Falls back to the English value if the *Ar key is not set.
   function shopHours(lang, type) {
     if (typeof SHOP === 'undefined' || !SHOP.hours) return '';
     if (lang === 'ar') return SHOP.hours[type + 'Ar'] || SHOP.hours[type] || '';
     return SHOP.hours[type] || '';
   }
 
-  // ── SET LANGUAGE ────────────────────────────────────────────────
+  // Returns the display label for a category slug in the given language.
+  function getCatLabel(slug, lang) {
+    if (typeof SHOP !== 'undefined' && SHOP.categories) {
+      const found = SHOP.categories.find(c => c.slug === slug);
+      if (found) return lang === 'ar' ? (found.nameAr || found.nameEn) : (found.nameEn || found.nameAr);
+    }
+    return capitalize(slug);
+  }
+
+  // ── SET LANGUAGE ─────────────────────────────────────────────────
   function setLanguage(lang) {
     localStorage.setItem('souqsite_language', lang);
     document.documentElement.lang = lang;
@@ -68,10 +230,9 @@
     applyShopContent(lang);
     applyOgTags();
     updateWaLinks();
-    // Per-page refreshes
     const page = document.body.dataset.page;
     if (page === 'home')     refreshHighlights(lang);
-    if (page === 'products') refreshFilterAll();
+    if (page === 'products') refreshFilterLabels(lang);
     if (page === 'location') {
       setText('loc-address',  shopAddr(lang));
       setText('loc-weekdays', shopHours(lang, 'weekdays'));
@@ -99,14 +260,14 @@
   function applyShopContent(lang) {
     if (typeof SHOP === 'undefined') return;
     const name = shopName(lang);
-    setText('nav-logo',     name);
-    setText('footer-logo',  name);
-    setText('footer-name',  name);
-    setText('footer-tag',   shopTagline(lang));
-    setText('hero-name',    name);
+    setText('nav-logo',    name);
+    setText('footer-logo', name);
+    setText('footer-name', name);
+    setText('footer-tag',  shopTagline(lang));
+    setText('hero-name',   name);
     setText('hero-tagline', shopTagline(lang));
-    setText('about-desc',   shopDesc(lang));
-    // Inner pages include page name in title for better SEO
+    setText('about-desc',  shopDesc(lang));
+
     const pageLabel = {
       products: t('nav.products'),
       location: t('nav.location'),
@@ -118,8 +279,7 @@
     setMeta('description', shopDesc(lang).slice(0, 160));
   }
 
-  // ── OPEN GRAPH ───────────────────────────────────────────────────
-  // Fills og: tags so WhatsApp/social share shows a real preview card.
+  // ── OPEN GRAPH ────────────────────────────────────────────────────
   function applyOgTags() {
     if (typeof SHOP === 'undefined') return;
     const lang = getLang();
@@ -132,7 +292,6 @@
       setOg('og:image', imgUrl);
     }
   }
-
   function setOg(property, content) {
     let el = document.querySelector('meta[property="' + property + '"]');
     if (!el) {
@@ -143,41 +302,35 @@
     if (content) el.setAttribute('content', content);
   }
 
-  // ── THEME ────────────────────────────────────────────────────────
+  // ── THEME ─────────────────────────────────────────────────────────
   function getTheme() {
     return (
       localStorage.getItem('souqsite_theme') ||
       (typeof SHOP_SETTINGS !== 'undefined' ? SHOP_SETTINGS.defaultTheme : 'dark')
     );
   }
-
   function applyTheme(theme) {
-    if (theme === 'light') {
-      document.documentElement.setAttribute('data-theme', 'light');
-    } else {
-      document.documentElement.removeAttribute('data-theme');
-    }
+    if (theme === 'light') document.documentElement.setAttribute('data-theme', 'light');
+    else                   document.documentElement.removeAttribute('data-theme');
   }
-
   function toggleTheme() {
     const next = getTheme() === 'dark' ? 'light' : 'dark';
     localStorage.setItem('souqsite_theme', next);
     applyTheme(next);
   }
 
-  // ── WHATSAPP LINKS ───────────────────────────────────────────────
+  // ── WHATSAPP ──────────────────────────────────────────────────────
   function waLink() {
     if (typeof SHOP === 'undefined') return '#';
     const msg = t('wa.message') || (SHOP.social && SHOP.social.whatsappMessage) || '';
     return 'https://wa.me/' + SHOP.whatsapp + '?text=' + encodeURIComponent(msg);
   }
-
   function updateWaLinks() {
     const url = waLink();
     document.querySelectorAll('[data-wa-link]').forEach(el => { el.href = url; });
   }
 
-  // ── NAVIGATION ───────────────────────────────────────────────────
+  // ── NAVIGATION ────────────────────────────────────────────────────
   function initNav() {
     const header = document.getElementById('site-header');
     const toggle = document.getElementById('nav-toggle');
@@ -212,24 +365,20 @@
       });
     }
 
-    // Active link
     const pageMap = { home: 'index.html', products: 'products.html', location: 'location.html', contact: 'contact.html' };
-    const file = pageMap[document.body.dataset.page];
+    const file    = pageMap[document.body.dataset.page];
     document.querySelectorAll('.nav-link').forEach(l => {
       l.classList.toggle('active', l.getAttribute('href') === file);
     });
 
-    // Theme toggle
     const themeBtn = document.getElementById('theme-btn');
     if (themeBtn) themeBtn.addEventListener('click', toggleTheme);
 
-    // Language toggle (event delegation — catches both desktop and mobile buttons)
     document.addEventListener('click', e => {
       const btn = e.target.closest('.lang-btn');
       if (btn && btn.dataset.lang) setLanguage(btn.dataset.lang);
     });
 
-    // Subtle sound on interactive element clicks (requires user gesture — safe here)
     document.addEventListener('click', e => {
       if (e.target.closest('.btn, .filter-btn, .lang-btn, .theme-btn, .nav-toggle')) {
         playUISound();
@@ -237,33 +386,30 @@
     }, true);
   }
 
-  // ── HOME PAGE ────────────────────────────────────────────────────
+  // ── HOME PAGE ──────────────────────────────────────────────────────
   function initHome() {
     if (typeof SHOP === 'undefined') return;
 
-    // Hero background — Ken Burns zoom on load
     const heroBg = document.getElementById('hero-bg');
     if (heroBg && SHOP.hero && SHOP.hero.image) {
       heroBg.setAttribute('role', 'img');
-      heroBg.setAttribute('aria-label', shopName(getLang()) + ' store');
+      heroBg.setAttribute('aria-label', shopName(getLang()) + ' hero');
       const probe = new Image();
       probe.onload = () => {
         heroBg.style.backgroundImage = "url('" + SHOP.hero.image + "')";
         heroBg.classList.add('loaded');
       };
+      probe.onerror = () => heroBg.classList.add('loaded'); // fade in even if image 404s
       probe.src = SHOP.hero.image;
     }
 
-    // Highlights
     refreshHighlights(getLang());
 
-    // Featured products (max 3)
     if (typeof PRODUCTS !== 'undefined') {
       renderProductGrid(PRODUCTS.filter(p => p.featured).slice(0, 3), 'featured-grid');
     }
   }
 
-  // Extracted so setLanguage can re-render highlights without re-running all of initHome.
   function refreshHighlights(lang) {
     const hlGrid = document.getElementById('hl-grid');
     if (!hlGrid || typeof SHOP === 'undefined' || !SHOP.highlights) return;
@@ -275,7 +421,7 @@
     `).join('');
   }
 
-  // ── PRODUCTS PAGE ────────────────────────────────────────────────
+  // ── PRODUCTS PAGE ─────────────────────────────────────────────────
   function initProducts() {
     if (typeof PRODUCTS === 'undefined') return;
     const filterBar = document.getElementById('filter-bar');
@@ -285,12 +431,7 @@
     renderProductGrid(PRODUCTS, 'products-grid');
 
     if (filterBar) {
-      const cats = ['all', ...new Set(PRODUCTS.map(p => p.category).filter(Boolean))];
-      filterBar.innerHTML = cats.map(cat => `
-        <button class="filter-btn${cat === 'all' ? ' active' : ''}" data-cat="${cat}">
-          ${cat === 'all' ? (t('products.filterAll') || 'All') : capitalize(cat)}
-        </button>
-      `).join('');
+      buildFilterBar(filterBar, getLang());
 
       filterBar.addEventListener('click', e => {
         const btn = e.target.closest('.filter-btn');
@@ -298,15 +439,32 @@
         filterBar.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
         grid.querySelectorAll('.product-card').forEach(card => {
-          card.style.display = (btn.dataset.cat === 'all' || card.dataset.cat === btn.dataset.cat) ? '' : 'none';
+          card.style.display =
+            (btn.dataset.cat === 'all' || card.dataset.cat === btn.dataset.cat) ? '' : 'none';
         });
       });
     }
   }
 
-  function refreshFilterAll() {
-    const allBtn = document.querySelector('.filter-btn[data-cat="all"]');
-    if (allBtn) allBtn.textContent = t('products.filterAll') || 'All';
+  function buildFilterBar(filterBar, lang) {
+    if (typeof PRODUCTS === 'undefined') return;
+    const cats = ['all', ...new Set(PRODUCTS.map(p => p.category).filter(Boolean))];
+    filterBar.innerHTML = cats.map(cat => `
+      <button class="filter-btn${cat === 'all' ? ' active' : ''}" data-cat="${cat}">
+        ${cat === 'all' ? (t('products.filterAll') || 'All') : getCatLabel(cat, lang)}
+      </button>
+    `).join('');
+  }
+
+  function refreshFilterLabels(lang) {
+    const filterBar = document.getElementById('filter-bar');
+    if (!filterBar) return;
+    filterBar.querySelectorAll('.filter-btn').forEach(btn => {
+      const cat = btn.dataset.cat;
+      btn.textContent = (cat === 'all')
+        ? (t('products.filterAll') || 'All')
+        : getCatLabel(cat, lang);
+    });
   }
 
   // ── LOCATION PAGE ────────────────────────────────────────────────
@@ -366,31 +524,31 @@
     setText('contact-hours', shopHours(lang, 'weekdays') + '  ·  ' + shopHours(lang, 'weekends'));
   }
 
-  // ── PRODUCT CARD RENDERER ────────────────────────────────────────
+  // ── PRODUCT CARD RENDERER ─────────────────────────────────────────
   function renderProductGrid(products, containerId) {
     const grid = document.getElementById(containerId);
     if (!grid) return;
 
-    if (!products.length) {
-      grid.innerHTML = '<p style="color:var(--text-muted);text-align:center;padding:40px 0">No products to show.</p>';
+    if (!products || !products.length) {
+      grid.innerHTML = '<p style="color:var(--text-muted);text-align:center;padding:40px 0">No items to show.</p>';
       return;
     }
 
     const lang = getLang();
 
     grid.innerHTML = products.map(p => {
-      const name   = lang === 'ar' ? p.name : (p.nameEn || p.name);
-      const desc   = lang === 'ar' ? p.description : (p.descriptionEn || p.description);
-      const imgSrc = p.image || IMG_PLACEHOLDER;
+      const name    = lang === 'ar' ? p.name : (p.nameEn || p.name);
+      const desc    = lang === 'ar' ? p.description : (p.descriptionEn || p.description);
+      const catName = p._catNameAr || p._catNameEn
+        ? (lang === 'ar' ? (p._catNameAr || p._catNameEn) : (p._catNameEn || p._catNameAr))
+        : getCatLabel(p.category || '', lang);
+      // Use file placeholder when image is empty; broken src falls back to IMG_BROKEN inline.
+      const imgSrc  = p.image || IMG_DEFAULT;
       return `
         <article class="product-card" data-cat="${p.category || ''}">
           <div class="product-img">
-            <img
-              src="${imgSrc}"
-              alt="${name}"
-              loading="lazy"
-            />
-            ${p.category ? `<span class="product-cat-badge" aria-hidden="true">${capitalize(p.category)}</span>` : ''}
+            <img src="${imgSrc}" alt="${name}" loading="lazy" />
+            ${p.category ? `<span class="product-cat-badge" aria-hidden="true">${catName}</span>` : ''}
           </div>
           <div class="product-body">
             <h3 class="product-name">${name}</h3>
@@ -401,17 +559,14 @@
       `;
     }).join('');
 
-    // Post-render error handlers — keeps card layout intact if an image 404s.
-    grid.querySelectorAll('.product-img img').forEach(function(img) {
-      img.addEventListener('error', function() {
-        this.src = IMG_PLACEHOLDER;
-      }, { once: true });
+    grid.querySelectorAll('.product-img img').forEach(function (img) {
+      img.addEventListener('error', function () { this.src = IMG_BROKEN; }, { once: true });
     });
 
     if (grid.classList.contains('reveal-grid')) grid.classList.add('visible');
   }
 
-  // ── SCROLL REVEAL ────────────────────────────────────────────────
+  // ── SCROLL REVEAL ─────────────────────────────────────────────────
   function initReveal() {
     const targets = document.querySelectorAll('.reveal, .reveal-grid');
     if (!('IntersectionObserver' in window)) {
@@ -426,12 +581,13 @@
     targets.forEach(el => io.observe(el));
   }
 
-  // ── SOUND FEEDBACK ───────────────────────────────────────────────
-  // Uses Web Audio API — no audio files needed, zero network requests.
-  // Disable per shop: set SHOP_SETTINGS.sounds = false in shop.js.
+  // ── SOUND FEEDBACK ────────────────────────────────────────────────
   var _audioCtx = null;
   function playUISound() {
-    if (typeof SHOP_SETTINGS === 'undefined' || !SHOP_SETTINGS.sounds) return;
+    const sounds = typeof SHOP_SETTINGS !== 'undefined'
+      ? SHOP_SETTINGS.sounds
+      : (typeof SHOP !== 'undefined' ? SHOP.sounds : false);
+    if (!sounds) return;
     try {
       if (!_audioCtx) _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
       if (_audioCtx.state === 'suspended') _audioCtx.resume();
@@ -449,7 +605,7 @@
     } catch (e) {}
   }
 
-  // ── HELPERS ──────────────────────────────────────────────────────
+  // ── HELPERS ───────────────────────────────────────────────────────
   function setText(id, text) {
     const el = document.getElementById(id);
     if (el && text !== undefined && text !== null) el.textContent = text;
@@ -461,20 +617,35 @@
   }
   function capitalize(s) { return s ? s.charAt(0).toUpperCase() + s.slice(1) : ''; }
 
-  // ── BOOT ─────────────────────────────────────────────────────────
-  function boot() {
+  // ── BOOT (async) ──────────────────────────────────────────────────
+  async function boot() {
     const lang  = getLang();
     const theme = getTheme();
 
     applyTheme(theme);
     initNav();
+
+    if (isSupabaseConfigured()) {
+      showLoading();
+      try {
+        await loadFromSupabase();
+      } catch (err) {
+        console.error('[app.js] Supabase load error:', err);
+        showAppError(
+          'فشل تحميل المحتوى. يرجى تحديث الصفحة.<br/>' +
+          '<span style="font-size:12px;opacity:.6">Failed to load content. Please refresh.</span>'
+        );
+        return;
+      }
+      hideLoading();
+    }
+
     applyTranslations(lang);
     applyShopContent(lang);
     applyOgTags();
     updateWaLinks();
     initReveal();
 
-    // Footer year
     const yearEl = document.getElementById('footer-year');
     if (yearEl) yearEl.textContent = new Date().getFullYear();
 
@@ -486,7 +657,8 @@
     }
   }
 
+  // Support both DOMContentLoaded and already-loaded pages
   document.readyState === 'loading'
-    ? document.addEventListener('DOMContentLoaded', boot)
+    ? document.addEventListener('DOMContentLoaded', () => boot())
     : boot();
 })();

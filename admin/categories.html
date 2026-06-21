@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="robots" content="noindex, nofollow" />
+  <title>Categories — Admin · Taste The West</title>
+  <link rel="stylesheet" href="css/admin.css" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🍕</text></svg>" />
+</head>
+<body data-admin-page="categories">
+
+  <div class="sidebar-overlay" id="sidebar-overlay"></div>
+
+  <div class="admin-layout">
+
+    <aside class="admin-sidebar" id="admin-sidebar">
+      <div class="sidebar-brand">
+        <span class="sidebar-icon">🍕</span>
+        <span class="sidebar-name" id="sidebar-name">Dashboard</span>
+      </div>
+      <nav class="sidebar-nav">
+        <a href="dashboard.html"  class="sidebar-link" data-page="dashboard">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+          Overview
+        </a>
+        <a href="menu.html"       class="sidebar-link" data-page="menu">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/></svg>
+          Menu Items
+        </a>
+        <a href="categories.html" class="sidebar-link" data-page="categories">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><circle cx="3" cy="6" r="1"/><circle cx="3" cy="12" r="1"/><circle cx="3" cy="18" r="1"/></svg>
+          Categories
+        </a>
+        <a href="settings.html"   class="sidebar-link" data-page="settings">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+          Settings
+        </a>
+      </nav>
+      <div class="sidebar-footer">
+        <button class="btn-logout" data-logout>Sign Out</button>
+      </div>
+    </aside>
+
+    <header class="admin-topbar">
+      <button class="topbar-menu-btn" id="topbar-menu-btn" aria-label="Open menu">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+      </button>
+      <span class="topbar-title">Categories</span>
+      <button class="topbar-logout-btn" data-logout>Out</button>
+    </header>
+
+    <main class="admin-main">
+      <div class="admin-page-header">
+        <div>
+          <h1 class="admin-page-title">Categories</h1>
+          <p class="admin-page-desc">Categories power the filter bar on the public menu page.</p>
+        </div>
+      </div>
+
+      <!-- Add new category -->
+      <div class="acard mb-3">
+        <div class="acard-title">Add Category</div>
+        <form id="add-cat-form" novalidate>
+          <div class="form-row triple">
+            <div class="form-group">
+              <label for="cat-slug">Slug <span class="required">*</span> <small>(URL-safe, e.g. pizza)</small></label>
+              <input type="text" id="cat-slug" placeholder="pizza" pattern="[a-z0-9-]+" required />
+            </div>
+            <div class="form-group">
+              <label for="cat-name-en">Name (English) <span class="required">*</span></label>
+              <input type="text" id="cat-name-en" placeholder="Pizza" required />
+            </div>
+            <div class="form-group">
+              <label for="cat-name-ar">Name (Arabic) <span class="required">*</span></label>
+              <input type="text" id="cat-name-ar" dir="rtl" placeholder="بيتزا" required />
+            </div>
+          </div>
+          <button type="submit" class="btn btn-primary" id="add-cat-btn">Add Category</button>
+        </form>
+      </div>
+
+      <!-- Existing categories -->
+      <div class="acard">
+        <div class="acard-title">Existing Categories <small style="text-transform:none;font-weight:400;color:var(--amuted)">(use ↑ ↓ to reorder)</small></div>
+        <ul class="cat-list" id="cat-list">
+          <li class="empty-state" style="padding:32px 0">
+            <div class="empty-state-icon">📋</div>
+            <h3>No categories yet</h3>
+            <p>Add your first category above.</p>
+          </li>
+        </ul>
+      </div>
+    </main>
+  </div>
+
+  <!-- Confirm delete -->
+  <div class="modal-backdrop" id="confirm-modal" role="dialog" aria-modal="true">
+    <div class="confirm-dialog">
+      <h2 class="confirm-title">Delete category?</h2>
+      <p class="confirm-msg" id="confirm-msg">Products in this category will have their category cleared but will not be deleted.</p>
+      <div class="confirm-actions">
+        <button class="btn btn-ghost" id="confirm-cancel">Cancel</button>
+        <button class="btn btn-danger" id="confirm-ok">Delete</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast-container" id="toast-container" aria-live="polite"></div>
+  <div class="admin-loading" id="admin-loading" hidden><div class="spinner"></div></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+  <script src="../config/supabase.js"></script>
+  <script src="js/client.js"></script>
+  <script src="js/auth.js"></script>
+  <script src="js/categories.js"></script>
+</body>
+</html>

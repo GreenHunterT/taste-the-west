@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 450">
+  <rect width="600" height="450" fill="#1a1814"/>
+  <g transform="translate(300 205)" opacity="0.25">
+    <!-- Pizza slice outline -->
+    <path d="M0,-72 L58,52 L-58,52 Z" fill="none" stroke="#c9a84c" stroke-width="3.5" stroke-linejoin="round" stroke-linecap="round"/>
+    <!-- Toppings -->
+    <circle cx="0"  cy="-18" r="7"   fill="#c9a84c"/>
+    <circle cx="-22" cy="22" r="5.5" fill="#c9a84c"/>
+    <circle cx="18"  cy="28" r="6"   fill="#c9a84c"/>
+    <circle cx="-5"  cy="42" r="4"   fill="#c9a84c"/>
+    <circle cx="32"  cy="10" r="4.5" fill="#c9a84c"/>
+  </g>
+  <text x="300" y="348" text-anchor="middle"
+        font-family="system-ui,-apple-system,sans-serif"
+        font-size="13" letter-spacing="1.5"
+        fill="#5a5449" text-transform="uppercase">NO IMAGE</text>
+</svg>

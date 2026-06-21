@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="robots" content="noindex, nofollow" />
+  <title>Menu Items — Admin · Taste The West</title>
+  <link rel="stylesheet" href="css/admin.css" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🍕</text></svg>" />
+</head>
+<body data-admin-page="menu">
+
+  <div class="sidebar-overlay" id="sidebar-overlay"></div>
+
+  <div class="admin-layout">
+
+    <aside class="admin-sidebar" id="admin-sidebar">
+      <div class="sidebar-brand">
+        <span class="sidebar-icon">🍕</span>
+        <span class="sidebar-name" id="sidebar-name">Dashboard</span>
+      </div>
+      <nav class="sidebar-nav">
+        <a href="dashboard.html"  class="sidebar-link" data-page="dashboard">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+          Overview
+        </a>
+        <a href="menu.html"       class="sidebar-link" data-page="menu">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/></svg>
+          Menu Items
+        </a>
+        <a href="categories.html" class="sidebar-link" data-page="categories">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><circle cx="3" cy="6" r="1"/><circle cx="3" cy="12" r="1"/><circle cx="3" cy="18" r="1"/></svg>
+          Categories
+        </a>
+        <a href="settings.html"   class="sidebar-link" data-page="settings">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+          Settings
+        </a>
+      </nav>
+      <div class="sidebar-footer">
+        <button class="btn-logout" data-logout>Sign Out</button>
+      </div>
+    </aside>
+
+    <header class="admin-topbar">
+      <button class="topbar-menu-btn" id="topbar-menu-btn" aria-label="Open menu">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+      </button>
+      <span class="topbar-title">Menu Items</span>
+      <button class="topbar-logout-btn" data-logout>Out</button>
+    </header>
+
+    <main class="admin-main">
+      <div class="admin-page-header">
+        <div>
+          <h1 class="admin-page-title">Menu Items</h1>
+          <p class="admin-page-desc">Manage all products available on your public menu.</p>
+        </div>
+        <button class="btn btn-primary" id="add-product-btn">+ Add Item</button>
+      </div>
+
+      <div class="acard">
+        <div class="table-toolbar">
+          <div class="table-search">
+            <svg class="table-search-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+            <input type="search" id="table-search" placeholder="Search items…" />
+          </div>
+          <select id="cat-filter" style="width:auto">
+            <option value="">All categories</option>
+          </select>
+        </div>
+
+        <div id="products-table-wrap">
+          <div class="empty-state">
+            <div class="empty-state-icon">🍕</div>
+            <h3>No items yet</h3>
+            <p>Add your first menu item to get started.</p>
+            <button class="btn btn-primary" id="add-product-btn-empty">+ Add Item</button>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- Add / Edit Modal -->
+  <div class="modal-backdrop" id="product-modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+    <div class="modal">
+      <div class="modal-header">
+        <h2 class="modal-title" id="modal-title">Add Menu Item</h2>
+        <button class="modal-close" id="modal-close" aria-label="Close">×</button>
+      </div>
+      <div class="modal-body">
+        <form id="product-form" novalidate>
+          <input type="hidden" id="product-id" />
+
+          <div class="form-row">
+            <div class="form-group">
+              <label for="p-name-ar">Name (Arabic) <span class="required">*</span></label>
+              <input type="text" id="p-name-ar" dir="rtl" placeholder="مارغريتا كلاسيك" required />
+            </div>
+            <div class="form-group">
+              <label for="p-name-en">Name (English) <span class="required">*</span></label>
+              <input type="text" id="p-name-en" placeholder="Classic Margherita" required />
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label for="p-desc-ar">Description (Arabic)</label>
+              <textarea id="p-desc-ar" dir="rtl" placeholder="وصف المنتج…" rows="2"></textarea>
+            </div>
+            <div class="form-group">
+              <label for="p-desc-en">Description (English)</label>
+              <textarea id="p-desc-en" placeholder="Product description…" rows="2"></textarea>
+            </div>
+          </div>
+
+          <div class="form-row triple">
+            <div class="form-group">
+              <label for="p-price">Price <span class="required">*</span></label>
+              <input type="text" id="p-price" placeholder="39 SAR" required />
+            </div>
+            <div class="form-group">
+              <label for="p-category">Category</label>
+              <select id="p-category"><option value="">— None —</option></select>
+            </div>
+            <div class="form-group">
+              <label for="p-sort">Sort Order</label>
+              <input type="number" id="p-sort" value="0" min="0" />
+            </div>
+          </div>
+
+          <div class="form-group mb-2">
+            <label>Product Image <small>(JPG · PNG · WebP · max 5 MB)</small></label>
+            <div class="img-upload-area" onclick="document.getElementById('p-image-file').click()">
+              <input type="file" id="p-image-file" accept="image/jpeg,image/png,image/webp" />
+              <div class="img-upload-icon">📷</div>
+              <div class="img-upload-label"><strong>Click to upload</strong> or drag and drop</div>
+              <div class="img-upload-hint">600×450 px recommended</div>
+            </div>
+            <div style="margin-top:10px">
+              <img id="p-image-preview" class="img-preview" hidden alt="Product preview" />
+            </div>
+          </div>
+
+          <div class="divider"></div>
+
+          <div class="toggle-row">
+            <div class="toggle-info">
+              <strong>Featured</strong>
+              <span>Shows on the homepage spotlight</span>
+            </div>
+            <label class="toggle">
+              <input type="checkbox" id="p-featured" />
+              <span class="toggle-track"></span>
+            </label>
+          </div>
+          <div class="toggle-row">
+            <div class="toggle-info">
+              <strong>Available</strong>
+              <span>Visible on the public menu (uncheck to hide temporarily)</span>
+            </div>
+            <label class="toggle">
+              <input type="checkbox" id="p-available" checked />
+              <span class="toggle-track"></span>
+            </label>
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-ghost" id="modal-cancel">Cancel</button>
+        <button class="btn btn-primary" id="modal-save">Save Item</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Confirm Delete Dialog -->
+  <div class="modal-backdrop" id="confirm-modal" role="dialog" aria-modal="true" aria-labelledby="confirm-title">
+    <div class="confirm-dialog">
+      <h2 class="confirm-title" id="confirm-title">Delete item?</h2>
+      <p class="confirm-msg" id="confirm-msg">This will permanently remove the item from your menu. This cannot be undone.</p>
+      <div class="confirm-actions">
+        <button class="btn btn-ghost" id="confirm-cancel">Cancel</button>
+        <button class="btn btn-danger" id="confirm-ok">Delete</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast-container" id="toast-container" aria-live="polite"></div>
+  <div class="admin-loading" id="admin-loading" hidden><div class="spinner"></div></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+  <script src="../config/supabase.js"></script>
+  <script src="js/client.js"></script>
+  <script src="js/auth.js"></script>
+  <script src="js/menu.js"></script>
+</body>
+</html>

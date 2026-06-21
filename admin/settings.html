@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="robots" content="noindex, nofollow" />
+  <title>Settings — Admin · Taste The West</title>
+  <link rel="stylesheet" href="css/admin.css" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🍕</text></svg>" />
+</head>
+<body data-admin-page="settings">
+
+  <div class="sidebar-overlay" id="sidebar-overlay"></div>
+
+  <div class="admin-layout">
+
+    <aside class="admin-sidebar" id="admin-sidebar">
+      <div class="sidebar-brand">
+        <span class="sidebar-icon">🍕</span>
+        <span class="sidebar-name" id="sidebar-name">Dashboard</span>
+      </div>
+      <nav class="sidebar-nav">
+        <a href="dashboard.html"  class="sidebar-link" data-page="dashboard">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+          Overview
+        </a>
+        <a href="menu.html"       class="sidebar-link" data-page="menu">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/></svg>
+          Menu Items
+        </a>
+        <a href="categories.html" class="sidebar-link" data-page="categories">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><circle cx="3" cy="6" r="1"/><circle cx="3" cy="12" r="1"/><circle cx="3" cy="18" r="1"/></svg>
+          Categories
+        </a>
+        <a href="settings.html"   class="sidebar-link" data-page="settings">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+          Settings
+        </a>
+      </nav>
+      <div class="sidebar-footer">
+        <button class="btn-logout" data-logout>Sign Out</button>
+      </div>
+    </aside>
+
+    <header class="admin-topbar">
+      <button class="topbar-menu-btn" id="topbar-menu-btn" aria-label="Open menu">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+      </button>
+      <span class="topbar-title">Settings</span>
+      <button class="topbar-logout-btn" data-logout>Out</button>
+    </header>
+
+    <main class="admin-main">
+      <div class="admin-page-header">
+        <div>
+          <h1 class="admin-page-title">Restaurant Settings</h1>
+          <p class="admin-page-desc">Changes are visible on the public site after saving.</p>
+        </div>
+        <button class="btn btn-primary" id="save-btn">Save Changes</button>
+      </div>
+
+      <form id="settings-form" novalidate>
+
+        <!-- Identity -->
+        <div class="acard">
+          <div class="acard-title">Identity</div>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="name_ar">Name (Arabic) <span class="required">*</span></label>
+              <input type="text" id="name_ar" name="name_ar" placeholder="تيست ذا ويست" dir="rtl" required />
+            </div>
+            <div class="form-group">
+              <label for="name_en">Name (English) <span class="required">*</span></label>
+              <input type="text" id="name_en" name="name_en" placeholder="Taste The West" required />
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="tagline_ar">Tagline (Arabic)</label>
+              <input type="text" id="tagline_ar" name="tagline_ar" placeholder="بيتزا بأسلوب مختلف" dir="rtl" />
+            </div>
+            <div class="form-group">
+              <label for="tagline_en">Tagline (English)</label>
+              <input type="text" id="tagline_en" name="tagline_en" placeholder="A Different Kind of Pizza" />
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="description_ar">Description (Arabic)</label>
+              <textarea id="description_ar" name="description_ar" dir="rtl" placeholder="وصف المطعم بالعربية…"></textarea>
+            </div>
+            <div class="form-group">
+              <label for="description_en">Description (English)</label>
+              <textarea id="description_en" name="description_en" placeholder="Restaurant description in English…"></textarea>
+            </div>
+          </div>
+        </div>
+
+        <!-- Contact -->
+        <div class="acard mt-2">
+          <div class="acard-title">Contact</div>
+          <div class="form-row triple">
+            <div class="form-group">
+              <label for="phone">Phone <small>(display format)</small></label>
+              <input type="tel" id="phone" name="phone" placeholder="+966 5X XXX XXXX" />
+            </div>
+            <div class="form-group">
+              <label for="whatsapp">WhatsApp Number <small>(digits only)</small></label>
+              <input type="text" id="whatsapp" name="whatsapp" placeholder="9665XXXXXXXX" />
+            </div>
+            <div class="form-group">
+              <label for="instagram">Instagram</label>
+              <input type="text" id="instagram" name="instagram" placeholder="@tastethewest" />
+            </div>
+          </div>
+          <div class="form-row single">
+            <div class="form-group">
+              <label for="email">Email <small>(leave blank to hide)</small></label>
+              <input type="email" id="email" name="email" placeholder="info@example.com" />
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="wa_message_ar">WhatsApp Pre-fill (Arabic)</label>
+              <input type="text" id="wa_message_ar" name="wa_message_ar" dir="rtl" placeholder="مرحباً! أريد طلب…" />
+            </div>
+            <div class="form-group">
+              <label for="wa_message_en">WhatsApp Pre-fill (English)</label>
+              <input type="text" id="wa_message_en" name="wa_message_en" placeholder="Hi! I'd like to order…" />
+            </div>
+          </div>
+        </div>
+
+        <!-- Location -->
+        <div class="acard mt-2">
+          <div class="acard-title">Location</div>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="address_ar">Address (Arabic)</label>
+              <input type="text" id="address_ar" name="address_ar" dir="rtl" placeholder="حي السلطانة، المدينة المنورة" />
+            </div>
+            <div class="form-group">
+              <label for="address_en">Address (English)</label>
+              <input type="text" id="address_en" name="address_en" placeholder="Sultana District, Madinah" />
+            </div>
+          </div>
+          <div class="form-row single">
+            <div class="form-group">
+              <label for="map_directions">Google Maps Share Link</label>
+              <input type="text" id="map_directions" name="map_directions" placeholder="https://maps.app.goo.gl/…" />
+              <p class="field-hint">Open Google Maps → Share → Copy link</p>
+            </div>
+          </div>
+          <div class="form-row single">
+            <div class="form-group">
+              <label for="map_embed">Google Maps Embed URL <small>(for the iframe)</small></label>
+              <input type="text" id="map_embed" name="map_embed" placeholder="https://maps.google.com/maps?q=…&output=embed" />
+              <p class="field-hint">Google Maps → Share → Embed a map → copy the src value from the iframe code</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Hours -->
+        <div class="acard mt-2">
+          <div class="acard-title">Opening Hours</div>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="hours_weekdays_en">Weekdays (English)</label>
+              <input type="text" id="hours_weekdays_en" name="hours_weekdays_en" placeholder="12:00 PM – 12:00 AM" />
+            </div>
+            <div class="form-group">
+              <label for="hours_weekdays_ar">Weekdays (Arabic)</label>
+              <input type="text" id="hours_weekdays_ar" name="hours_weekdays_ar" dir="rtl" placeholder="١٢:٠٠ ظهراً – ١٢:٠٠ منتصف الليل" />
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="hours_weekends_en">Weekends (English)</label>
+              <input type="text" id="hours_weekends_en" name="hours_weekends_en" placeholder="12:00 PM – 1:00 AM" />
+            </div>
+            <div class="form-group">
+              <label for="hours_weekends_ar">Weekends (Arabic)</label>
+              <input type="text" id="hours_weekends_ar" name="hours_weekends_ar" dir="rtl" placeholder="١٢:٠٠ ظهراً – ١:٠٠ فجراً" />
+            </div>
+          </div>
+        </div>
+
+        <!-- Images -->
+        <div class="acard mt-2">
+          <div class="acard-title">Images</div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Hero Image <small>(displayed on homepage)</small></label>
+              <div class="img-upload-area" onclick="document.getElementById('hero-file').click()">
+                <input type="file" id="hero-file" accept="image/jpeg,image/png,image/webp" />
+                <div class="img-upload-icon">🖼</div>
+                <div class="img-upload-label"><strong>Click to upload</strong> or drag and drop</div>
+                <div class="img-upload-hint">JPG, PNG or WebP · max 5 MB · 1920×1080 px recommended</div>
+              </div>
+              <img id="hero-preview" class="img-preview-wide" hidden alt="Hero preview" />
+              <input type="hidden" id="hero_image_url" name="hero_image_url" />
+            </div>
+            <div class="form-group">
+              <label>Logo / Brand Image <small>(optional)</small></label>
+              <div class="img-upload-area" onclick="document.getElementById('logo-file').click()">
+                <input type="file" id="logo-file" accept="image/jpeg,image/png,image/webp" />
+                <div class="img-upload-icon">🏷</div>
+                <div class="img-upload-label"><strong>Click to upload</strong> or drag and drop</div>
+                <div class="img-upload-hint">JPG, PNG or WebP · max 5 MB · square format recommended</div>
+              </div>
+              <img id="logo-preview" class="img-preview-wide" hidden alt="Logo preview" />
+              <input type="hidden" id="logo_url" name="logo_url" />
+            </div>
+          </div>
+        </div>
+
+        <!-- App settings -->
+        <div class="acard mt-2">
+          <div class="acard-title">App Settings</div>
+          <div class="toggle-row">
+            <div class="toggle-info">
+              <strong>UI Click Sounds</strong>
+              <span>Subtle audio feedback when buttons are pressed</span>
+            </div>
+            <label class="toggle">
+              <input type="checkbox" id="sounds_enabled" name="sounds_enabled" />
+              <span class="toggle-track"></span>
+            </label>
+          </div>
+        </div>
+
+        <div class="mt-3" style="display:flex;justify-content:flex-end">
+          <button type="submit" class="btn btn-primary" id="save-btn-bottom">Save Changes</button>
+        </div>
+
+      </form>
+    </main>
+  </div>
+
+  <div class="toast-container" id="toast-container" aria-live="polite"></div>
+  <div class="admin-loading" id="admin-loading" hidden><div class="spinner"></div></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+  <script src="../config/supabase.js"></script>
+  <script src="js/client.js"></script>
+  <script src="js/auth.js"></script>
+  <script src="js/settings.js"></script>
+</body>
+</html>

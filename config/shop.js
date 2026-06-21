@@ -61,5 +61,12 @@ const SHOP = {
   // ── WhatsApp pre-filled message ───────────────────────────────
   social: {
     whatsappMessage: "مرحباً! أريد طلب من تيست ذا ويست."
-  }
+  },
+
+  // ── Categories (static fallback — auto-loaded from DB when Supabase configured) ──
+  categories: [
+    { slug: 'pizza',  nameAr: 'بيتزا',    nameEn: 'Pizza'  },
+    { slug: 'sides',  nameAr: 'مقبلات',   nameEn: 'Sides'  },
+    { slug: 'drinks', nameAr: 'مشروبات',  nameEn: 'Drinks' },
+  ]
 };
