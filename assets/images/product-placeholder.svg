@@ -1,17 +1,23 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 450">
-  <rect width="600" height="450" fill="#1a1814"/>
-  <g transform="translate(300 205)" opacity="0.25">
-    <!-- Pizza slice outline -->
-    <path d="M0,-72 L58,52 L-58,52 Z" fill="none" stroke="#c9a84c" stroke-width="3.5" stroke-linejoin="round" stroke-linecap="round"/>
-    <!-- Toppings -->
-    <circle cx="0"  cy="-18" r="7"   fill="#c9a84c"/>
-    <circle cx="-22" cy="22" r="5.5" fill="#c9a84c"/>
-    <circle cx="18"  cy="28" r="6"   fill="#c9a84c"/>
-    <circle cx="-5"  cy="42" r="4"   fill="#c9a84c"/>
-    <circle cx="32"  cy="10" r="4.5" fill="#c9a84c"/>
-  </g>
-  <text x="300" y="348" text-anchor="middle"
-        font-family="system-ui,-apple-system,sans-serif"
-        font-size="13" letter-spacing="1.5"
-        fill="#5a5449" text-transform="uppercase">NO IMAGE</text>
+  <rect width="600" height="450" fill="#1a1815"/>
+  <defs>
+    <pattern id="g" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M40 0L0 0 0 40" fill="none" stroke="#221f1b" stroke-width="1"/>
+    </pattern>
+  </defs>
+  <rect width="600" height="450" fill="url(#g)"/>
+  <rect x="28" y="28" width="544" height="394" fill="none" stroke="#c9a84c" stroke-width="1.5" stroke-dasharray="10 7" opacity="0.45"/>
+  <!-- Camera body -->
+  <rect x="247" y="175" width="106" height="82" rx="8" fill="none" stroke="#c9a84c" stroke-width="2.5" opacity="0.75"/>
+  <!-- Camera lens -->
+  <circle cx="300" cy="216" r="22" fill="none" stroke="#c9a84c" stroke-width="2.5" opacity="0.75"/>
+  <circle cx="300" cy="216" r="10" fill="none" stroke="#c9a84c" stroke-width="1.5" opacity="0.5"/>
+  <!-- Viewfinder bump -->
+  <rect x="275" y="167" width="30" height="13" rx="4" fill="none" stroke="#c9a84c" stroke-width="2" opacity="0.6"/>
+  <!-- Label EN -->
+  <text x="300" y="295" font-family="'Segoe UI', Arial, sans-serif" font-size="15" font-weight="600" fill="#c9a84c" text-anchor="middle" letter-spacing="2" opacity="0.85">ADD PRODUCT PHOTO</text>
+  <!-- Label AR -->
+  <text x="300" y="322" font-family="'Segoe UI', Tahoma, Arial, sans-serif" font-size="13" fill="#9a9585" text-anchor="middle" opacity="0.65">أضف صورة المنتج هنا</text>
+  <!-- Bottom note -->
+  <text x="300" y="408" font-family="'Segoe UI', Arial, sans-serif" font-size="11" fill="#5a5650" text-anchor="middle">Admin → Menu → Edit → Upload Image</text>
 </svg>

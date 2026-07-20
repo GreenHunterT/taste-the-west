@@ -22,8 +22,9 @@ const SHOP = {
     "A western-inspired pizza experience with a unique taste, bringing a different style of pizza to Madinah.",
 
   // ── Contact ───────────────────────────────────────────────────
-  phone:     "+966 5X XXX XXXX",   // ← replace with real number before launch
-  whatsapp:  "9665XXXXXXXX",        // ← replace: digits only, no + or spaces
+  // DEMO PLACEHOLDERS — replace with owner's real numbers before launch
+  phone:     "+966 50 000 0000",    // ← demo number, visible on contact page
+  whatsapp:  "966500000000",        // ← demo number, used in WhatsApp button links
   instagram: "@tastethewest",
   email:     "",                    // leave empty to hide email row
 
@@ -52,10 +53,10 @@ const SHOP = {
   ],
 
   // ── Hero image ────────────────────────────────────────────────
-  // Demo: using loremflickr food image (no hotlink blocking, actual food photos).
-  // Replace with owner's real photo: hero: { image: "assets/images/hero.jpg" }
+  // Placeholder — replace with owner's actual restaurant photo before launch.
+  // Recommended: 1920×1080px, under 500KB. Upload via Admin → Settings.
   hero: {
-    image: "https://loremflickr.com/1920/1080/pizza,restaurant?lock=555"
+    image: "assets/images/hero-placeholder.svg"
   },
 
   // ── WhatsApp pre-filled message ───────────────────────────────

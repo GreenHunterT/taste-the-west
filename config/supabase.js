@@ -9,9 +9,9 @@
 //  NEVER put the service_role key in any frontend file.
 // =================================================================
 
-const SUPABASE_URL      = 'YOUR_SUPABASE_URL';       // e.g. https://xyzxyz.supabase.co
-const SUPABASE_ANON_KEY = 'YOUR_SUPABASE_ANON_KEY';  // eyJhbGci... (anon/public key)
+const SUPABASE_URL      = 'https://cblnagqjmlzismkojxud.supabase.co';       // e.g. https://xyzxyz.supabase.co
+const SUPABASE_ANON_KEY = 'sb_publishable_Em1qaLuY8YGLROI4nFsIPw_U0GgF2P2';  // eyJhbGci... (anon/public key)
 
 // UUID of the restaurant row — get it after running the seed query in schema.sql.
 // Dashboard → Table Editor → restaurants → copy the id column value.
-const RESTAURANT_ID = 'YOUR_RESTAURANT_UUID';         // e.g. a1b2c3d4-e5f6-...
+const RESTAURANT_ID = '57ee591f-39fb-4320-af05-fec66ebd512a';         // e.g. a1b2c3d4-e5f6-...
