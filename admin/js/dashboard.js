@@ -21,13 +21,15 @@
 
   // Fetch stats in parallel
   const rid = restaurant.id;
+  // Anonymous read (categories_public_read): publishable key in `apikey` only,
+  // never as a Bearer token.
   const headers = {
     'apikey': SUPABASE_ANON_KEY,
-    'Authorization': 'Bearer ' + SUPABASE_ANON_KEY,
   };
 
   // Use the admin session token so RLS owner policies apply (sees unavailable products too)
-  const { data: { session: s } } = await db.auth.getSession();
+  const s = await requireAuth();
+  if (!s) return;
   const authHeaders = {
     'apikey': SUPABASE_ANON_KEY,
     'Authorization': 'Bearer ' + s.access_token,

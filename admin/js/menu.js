@@ -19,7 +19,8 @@
 
   const RID = restaurant.id;
   // Use authenticated token so owner sees unavailable products
-  const { data: { session: s } } = await db.auth.getSession();
+  const s = await requireAuth();
+  if (!s) return;
   const authToken = s.access_token;
 
   let allProducts  = [];
