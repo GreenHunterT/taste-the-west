@@ -10,12 +10,15 @@
   // Populate form with existing data
   if (restaurant) populateForm(restaurant);
 
-  // Image file pickers
+  // Image file pickers + explicit-remove state (hero and logo are independent)
   let heroFile = null;
   let logoFile = null;
+  let removeHero = false;
+  let removeLogo = false;
 
-  initImageInput('hero-file', 'hero-preview', f => { heroFile = f; });
-  initImageInput('logo-file', 'logo-preview', f => { logoFile = f; });
+  // Picking a new file always supersedes a pending "remove".
+  initImageInput('hero-file', 'hero-preview', f => { heroFile = f; removeHero = false; updateBrandingRemoveBtns(); });
+  initImageInput('logo-file', 'logo-preview', f => { logoFile = f; removeLogo = false; updateBrandingRemoveBtns(); });
 
   // Show existing images if saved
   if (restaurant && restaurant.hero_image_url) {
@@ -25,6 +28,36 @@
   if (restaurant && restaurant.logo_url) {
     const prev = document.getElementById('logo-preview');
     if (prev) { prev.src = restaurant.logo_url; prev.hidden = false; }
+  }
+
+  // ── Remove image buttons ─────────────────────────────────────────
+  wireRemoveBtn('hero-remove', 'hero-file', 'hero-preview', () => { heroFile = null; removeHero = true; });
+  wireRemoveBtn('logo-remove', 'logo-file', 'logo-preview', () => { logoFile = null; removeLogo = true; });
+  updateBrandingRemoveBtns();
+
+  function wireRemoveBtn(btnId, fileId, previewId, setFlag) {
+    const btn = document.getElementById(btnId);
+    if (!btn) return;
+    btn.addEventListener('click', () => {
+      setFlag();
+      const input = document.getElementById(fileId);
+      if (input) input.value = '';
+      const prev = document.getElementById(previewId);
+      if (prev) { prev.src = ''; prev.hidden = true; }
+      updateBrandingRemoveBtns();
+    });
+  }
+
+  function updateBrandingRemoveBtns() {
+    toggleRemoveBtn('hero-remove', 'hero-preview', heroFile);
+    toggleRemoveBtn('logo-remove', 'logo-preview', logoFile);
+  }
+  function toggleRemoveBtn(btnId, previewId, pickedFile) {
+    const btn = document.getElementById(btnId);
+    if (!btn) return;
+    const prev = document.getElementById(previewId);
+    const hasImage = !!pickedFile || (prev && !prev.hidden && !!prev.getAttribute('src'));
+    btn.hidden = !hasImage;
   }
 
   // Form submit — both the top and bottom Save buttons
@@ -38,18 +71,38 @@
     btn.disabled = true;
     btn.innerHTML = '<span class="btn-spinner"></span> Saving…';
 
+    // Branding image lifecycle — hero and logo tracked independently.
+    const oldHeroUrl = restaurant ? (restaurant.hero_image_url || '') : '';
+    const oldLogoUrl = restaurant ? (restaurant.logo_url       || '') : '';
+    let uploadedHeroUrl = null;   // set only if THIS save uploaded a new hero object
+    let uploadedLogoUrl = null;
+    let persisted = false;        // true only once the restaurants row write succeeds
+
     try {
-      // Upload new images if selected
-      let heroUrl = restaurant ? restaurant.hero_image_url : '';
-      let logoUrl = restaurant ? restaurant.logo_url       : '';
+      // Validate the required name BEFORE any upload, so a missing name can
+      // never leave an orphaned branding object behind.
+      if (!val('name_ar') || !val('name_en')) {
+        showToast('Restaurant name (Arabic and English) is required.', 'error');
+        btn.disabled = false; btn.textContent = 'Save Changes';
+        return;
+      }
+
+      // Resolve the hero/logo URLs to persist.
+      let heroUrl = oldHeroUrl;
+      let logoUrl = oldLogoUrl;
 
       if (heroFile) {
-        const path = 'branding/' + session.user.id + '-hero';
-        heroUrl = await uploadToStorage(heroFile, path);
+        heroUrl = await uploadToStorage(heroFile, 'branding/' + session.user.id + '-hero');
+        uploadedHeroUrl = heroUrl;
+      } else if (removeHero) {
+        heroUrl = '';
       }
+
       if (logoFile) {
-        const path = 'branding/' + session.user.id + '-logo';
-        logoUrl = await uploadToStorage(logoFile, path);
+        logoUrl = await uploadToStorage(logoFile, 'branding/' + session.user.id + '-logo');
+        uploadedLogoUrl = logoUrl;
+      } else if (removeLogo) {
+        logoUrl = '';
       }
 
       const payload = {
@@ -78,24 +131,50 @@
         sounds_enabled:   document.getElementById('sounds_enabled').checked,
       };
 
-      // Validate required
-      if (!payload.name_ar || !payload.name_en) {
-        showToast('Restaurant name (Arabic and English) is required.', 'error');
-        btn.disabled = false; btn.textContent = 'Save Changes';
-        return;
-      }
-
-      let result;
-      if (restaurant) {
-        result = await db.from('restaurants').update(payload).eq('id', restaurant.id);
-      } else {
-        result = await db.from('restaurants').insert({ ...payload, owner_id: session.user.id });
-      }
+      const result = restaurant
+        ? await db.from('restaurants').update(payload).eq('id', restaurant.id)
+        : await db.from('restaurants').insert({ ...payload, owner_id: session.user.id });
 
       if (result.error) throw new Error(result.error.message);
+      persisted = true;
+
+      // Persistence landed — the row now owns heroUrl/logoUrl. Best-effort
+      // cleanup of genuinely-orphaned old objects. A same-key upsert
+      // (uploaded URL === old URL) is skipped: that object is the one in use.
+      if (uploadedHeroUrl && oldHeroUrl && oldHeroUrl !== uploadedHeroUrl) {
+        await deleteFromStorage(oldHeroUrl);      // hero extension changed
+      } else if (removeHero && oldHeroUrl) {
+        await deleteFromStorage(oldHeroUrl);      // hero explicitly removed
+      }
+
+      if (uploadedLogoUrl && oldLogoUrl && oldLogoUrl !== uploadedLogoUrl) {
+        await deleteFromStorage(oldLogoUrl);      // logo extension changed
+      } else if (removeLogo && oldLogoUrl) {
+        await deleteFromStorage(oldLogoUrl);      // logo explicitly removed
+      }
+
+      // Reset transient branding state so a later save this session is a no-op.
+      if (restaurant) { restaurant.hero_image_url = heroUrl; restaurant.logo_url = logoUrl; }
+      heroFile = null; logoFile = null;
+      removeHero = false; removeLogo = false;
+      const heroInput = document.getElementById('hero-file'); if (heroInput) heroInput.value = '';
+      const logoInput = document.getElementById('logo-file'); if (logoInput) logoInput.value = '';
+      updateBrandingRemoveBtns();
 
       showToast('Settings saved successfully.', 'success');
     } catch (err) {
+      // Roll back a newly-uploaded branding object ONLY when the DB write did
+      // not land AND the upload created a genuinely new Storage key. A same-key
+      // upsert replaced the object the unchanged DB row still points at —
+      // deleting it would break that row, so leave it.
+      if (!persisted) {
+        if (uploadedHeroUrl && uploadedHeroUrl !== oldHeroUrl) {
+          await deleteFromStorage(uploadedHeroUrl);
+        }
+        if (uploadedLogoUrl && uploadedLogoUrl !== oldLogoUrl) {
+          await deleteFromStorage(uploadedLogoUrl);
+        }
+      }
       console.error(err);
       showToast('Save failed: ' + err.message, 'error');
     } finally {
