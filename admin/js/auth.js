@@ -123,6 +123,66 @@ async function uploadToStorage(file, storagePath) {
   return publicUrl;
 }
 
+// Given a Supabase Storage *public URL* for the `restaurant-media` bucket,
+// return just the object key (e.g. "products/<rid>-<ts>.jpg"), or null when
+// the URL is empty, malformed, from another origin, or from another bucket.
+// Never throws.
+function storageKeyFromPublicUrl(url) {
+  if (!url || typeof url !== 'string') return null;
+
+  let target, origin;
+  try {
+    target = new URL(url);
+    origin = new URL(SUPABASE_URL);
+  } catch (e) {
+    return null; // malformed url (or misconfigured SUPABASE_URL)
+  }
+
+  // Same Supabase project only — ignore external / CDN / pasted URLs.
+  if (target.origin !== origin.origin) return null;
+
+  // Accept the plain public form and the image-transform public form.
+  const MARKERS = [
+    '/storage/v1/object/public/restaurant-media/',
+    '/storage/v1/render/image/public/restaurant-media/',
+  ];
+  let key = null;
+  for (const marker of MARKERS) {
+    const at = target.pathname.indexOf(marker);
+    if (at !== -1) { key = target.pathname.slice(at + marker.length); break; }
+  }
+  if (!key) return null; // same origin, but not a restaurant-media public object
+
+  try {
+    key = decodeURIComponent(key);
+  } catch (e) {
+    return null; // malformed percent-encoding
+  }
+
+  key = key.replace(/^\/+/, '').trim();
+  return key || null;
+}
+
+// Best-effort delete of a `restaurant-media` object identified by its public
+// URL. Never throws. Returns { status: 'ok' | 'skipped' | 'error', key, error? }
+// so callers can tell a real failure from a no-op.
+async function deleteFromStorage(url) {
+  const key = storageKeyFromPublicUrl(url);
+  if (!key) return { status: 'skipped', key: null };
+
+  try {
+    const { error } = await db.storage.from('restaurant-media').remove([key]);
+    if (error) {
+      console.warn('[storage] delete failed for', key, '—', error.message);
+      return { status: 'error', key, error };
+    }
+    return { status: 'ok', key };
+  } catch (err) {
+    console.warn('[storage] delete threw for', key, '—', err && err.message);
+    return { status: 'error', key, error: err };
+  }
+}
+
 // Wire up a file input → preview image + validate.
 // Returns a getter function: call it to get the selected File (or null if none selected).
 function initImageInput(inputId, previewId, onFilePicked) {

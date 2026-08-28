@@ -18,19 +18,21 @@
   }
 
   const RID = restaurant.id;
-  // Use authenticated token so owner sees unavailable products
-  const s = await requireAuth();
-  if (!s) return;
-  const authToken = s.access_token;
 
   let allProducts  = [];
   let allCategories = [];
   let productImageFile = null;
+  let removeImage = false;
 
   // ── Load data ────────────────────────────────────────────────────
   async function loadAll() {
+    // Re-verify the session on every load so a refreshed or expired access
+    // token is never reused for the authenticated raw request below.
+    const s = await requireAuth();
+    if (!s) return; // requireAuth() has already redirected to /admin/
+
     const base = SUPABASE_URL + '/rest/v1';
-    const h = { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + authToken };
+    const h = { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + s.access_token };
 
     const [pRes, cRes] = await Promise.all([
       fetch(base + '/products?restaurant_id=eq.' + RID + '&order=sort_order&select=*,categories(id,slug,name_ar,name_en)', { headers: h }),
@@ -169,8 +171,21 @@
     document.getElementById('product-id').value = '';
     const prev = document.getElementById('p-image-preview');
     prev.src = ''; prev.hidden = true;
+    document.getElementById('p-image-file').value = '';
     productImageFile = null;
+    removeImage = false;
+    updateImageRemoveBtn();
     document.getElementById('modal-title').textContent = 'Add Menu Item';
+  }
+
+  // Show the "Remove image" button whenever there is an image to remove
+  // (an existing product image still shown, or a freshly picked file).
+  function updateImageRemoveBtn() {
+    const btn = document.getElementById('p-image-remove');
+    if (!btn) return;
+    const prev = document.getElementById('p-image-preview');
+    const hasImage = !!productImageFile || (prev && !prev.hidden && !!prev.getAttribute('src'));
+    btn.hidden = !hasImage;
   }
 
   document.getElementById('modal-close').addEventListener('click', closeModal);
@@ -209,11 +224,30 @@
       const prev = document.getElementById('p-image-preview');
       prev.src = p.image_url; prev.hidden = false;
     }
+    updateImageRemoveBtn();
     openModal();
   }
 
   // ── Image picker ───────────────────────────────────────────────────
-  initImageInput('p-image-file', 'p-image-preview', f => { productImageFile = f; });
+  // Picking a new file always supersedes a pending "remove".
+  initImageInput('p-image-file', 'p-image-preview', f => {
+    productImageFile = f;
+    removeImage = false;
+    updateImageRemoveBtn();
+  });
+
+  // ── Remove image ───────────────────────────────────────────────────
+  const imageRemoveBtn = document.getElementById('p-image-remove');
+  if (imageRemoveBtn) {
+    imageRemoveBtn.addEventListener('click', () => {
+      productImageFile = null;
+      removeImage = true;
+      document.getElementById('p-image-file').value = '';
+      const prev = document.getElementById('p-image-preview');
+      prev.src = ''; prev.hidden = true;
+      updateImageRemoveBtn();
+    });
+  }
 
   // ── Save (add or edit) ────────────────────────────────────────────
   document.getElementById('modal-save').addEventListener('click', async () => {
@@ -228,16 +262,28 @@
     saveBtn.disabled = true;
     saveBtn.innerHTML = '<span class="btn-spinner"></span> Saving…';
 
-    try {
-      let imageUrl = null;
-      const editId = document.getElementById('product-id').value;
+    // Tracks the object THIS save uploaded, and whether the DB write landed.
+    // Rollback of a fresh upload must happen ONLY when persistence did not
+    // succeed — never for an error thrown after the row was already saved.
+    let uploadedThisOp = null;
+    let persisted = false;
 
+    try {
+      const editId   = document.getElementById('product-id').value;
+      const existing = editId ? allProducts.find(x => x.id === editId) : null;
+      const oldUrl   = existing ? (existing.image_url || '') : '';
+
+      let imageUrl;
       if (productImageFile) {
         const path = 'products/' + RID + '-' + Date.now();
         imageUrl = await uploadToStorage(productImageFile, path);
+        uploadedThisOp = imageUrl;
+      } else if (removeImage) {
+        imageUrl = '';                 // explicit remove, no replacement
       } else if (editId) {
-        const existing = allProducts.find(x => x.id === editId);
-        imageUrl = existing ? existing.image_url : null;
+        imageUrl = oldUrl;             // keep the current image
+      } else {
+        imageUrl = '';                 // new product, no image
       }
 
       const catVal = document.getElementById('p-category').value;
@@ -255,19 +301,31 @@
         sort_order:     parseInt(document.getElementById('p-sort').value, 10) || 0,
       };
 
-      let result;
-      if (editId) {
-        result = await db.from('products').update(payload).eq('id', editId);
-      } else {
-        result = await db.from('products').insert(payload);
-      }
+      const result = editId
+        ? await db.from('products').update(payload).eq('id', editId)
+        : await db.from('products').insert(payload);
 
       if (result.error) throw new Error(result.error.message);
+      persisted = true;
+
+      // Persistence succeeded — from here the row owns `imageUrl`, so never
+      // roll it back. Best-effort clean-up of the now-unreferenced old object.
+      if (uploadedThisOp && oldUrl && oldUrl !== uploadedThisOp) {
+        await deleteFromStorage(oldUrl);        // replaced
+      } else if (removeImage && oldUrl) {
+        await deleteFromStorage(oldUrl);        // explicitly removed
+      }
 
       showToast(editId ? 'Item updated.' : 'Item added.', 'success');
       closeModal();
       await loadAll();
     } catch (err) {
+      // Roll back ONLY the object this operation uploaded, and ONLY if the
+      // product was never saved. An error after a successful DB write (e.g.
+      // loadAll) must NOT delete an image the row now references.
+      if (uploadedThisOp && !persisted) {
+        await deleteFromStorage(uploadedThisOp);
+      }
       showToast('Error: ' + err.message, 'error');
     } finally {
       saveBtn.disabled = false;
@@ -286,23 +344,37 @@
   }
 
   // ── Delete ─────────────────────────────────────────────────────────
-  let pendingDeleteId = null;
+  let pendingDeleteId  = null;
+  let pendingDeleteImg = '';
   function confirmDelete(id, name) {
     pendingDeleteId = id;
+    const p = allProducts.find(x => x.id === id);
+    pendingDeleteImg = p ? (p.image_url || '') : '';
     document.getElementById('confirm-msg').textContent =
       `"${name}" will be permanently removed from your menu. This cannot be undone.`;
     document.getElementById('confirm-modal').classList.add('open');
   }
   document.getElementById('confirm-cancel').addEventListener('click', () => {
     pendingDeleteId = null;
+    pendingDeleteImg = '';
     document.getElementById('confirm-modal').classList.remove('open');
   });
   document.getElementById('confirm-ok').addEventListener('click', async () => {
     if (!pendingDeleteId) return;
     document.getElementById('confirm-modal').classList.remove('open');
-    const { error } = await db.from('products').delete().eq('id', pendingDeleteId);
-    pendingDeleteId = null;
+    const id  = pendingDeleteId;
+    const img = pendingDeleteImg;
+    pendingDeleteId  = null;
+    pendingDeleteImg = '';
+
+    // 1) delete the row first
+    const { error } = await db.from('products').delete().eq('id', id);
     if (error) { showToast('Delete failed: ' + error.message, 'error'); return; }
+
+    // 2) row is gone — best-effort remove its image. A Storage failure here
+    //    must not undo the delete or recreate the row.
+    await deleteFromStorage(img);
+
     showToast('Item deleted.', 'success');
     await loadAll();
   });
