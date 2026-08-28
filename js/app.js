@@ -62,7 +62,11 @@
       },
       highlights:  Array.isArray(r.highlights) ? r.highlights : [],
       hero:   { image: r.hero_image_url || '' },
-      social: { whatsappMessage: r.wa_message_ar || '' },
+      logo:   r.logo_url || '',
+      social: {
+        whatsappMessage:   r.wa_message_ar || '',
+        whatsappMessageEn: r.wa_message_en || '',
+      },
       sounds: r.sounds_enabled !== false,
       categories: [], // populated after categories fetch
     };
@@ -263,6 +267,7 @@
     if (typeof SHOP === 'undefined') return;
     const name = shopName(lang);
     setText('nav-logo',    name);
+    applyNavLogo(lang);
     setText('footer-logo', name);
     setText('footer-name', name);
     setText('footer-tag',  shopTagline(lang));
@@ -279,6 +284,29 @@
       ? `${pageLabel} | ${name}`
       : `${name} — ${shopTagline(lang)}`;
     setMeta('description', shopDesc(lang).slice(0, 160));
+  }
+
+  // Renders the restaurant logo image in the nav brand area when SHOP.logo
+  // is set. Falls back silently to text-only branding when it is empty or
+  // the image fails to load. DOM APIs only — never innerHTML.
+  function applyNavLogo(lang) {
+    const img = document.getElementById('nav-logo-img');
+    if (!img) return;
+    const url = (typeof SHOP !== 'undefined' && SHOP.logo != null)
+      ? String(SHOP.logo).trim()
+      : '';
+    if (!url) {
+      img.hidden = true;
+      img.removeAttribute('src');
+      return;
+    }
+    const name = shopName(lang);
+    img.alt = name ? name + ' logo' : 'Restaurant logo';
+    if (img.getAttribute('src') !== url) {
+      img.onload  = function () { img.hidden = false; };
+      img.onerror = function () { img.hidden = true; img.removeAttribute('src'); };
+      img.src = url;
+    }
   }
 
   // ── OPEN GRAPH ────────────────────────────────────────────────────
@@ -324,7 +352,16 @@
   // ── WHATSAPP ──────────────────────────────────────────────────────
   function waLink() {
     if (typeof SHOP === 'undefined') return '#';
-    const msg = t('wa.message') || (SHOP.social && SHOP.social.whatsappMessage) || '';
+    // Prefer the restaurant's live DB message for the active language; fall
+    // back to the existing static translation when that message is
+    // missing / blank / whitespace-only.
+    const lang  = getLang();
+    const dbMsg = SHOP.social
+      ? (lang === 'ar' ? SHOP.social.whatsappMessage : SHOP.social.whatsappMessageEn)
+      : '';
+    const msg = (typeof dbMsg === 'string' && dbMsg.trim())
+      ? dbMsg
+      : (t('wa.message') || '');
     return 'https://wa.me/' + SHOP.whatsapp + '?text=' + encodeURIComponent(msg);
   }
   function updateWaLinks() {

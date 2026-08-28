@@ -212,6 +212,9 @@ p { line-height: 1.7; }
 }
 
 .nav-logo {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
   font-family: var(--f-display);
   font-size: 1.5rem;
   font-weight: 600;
@@ -219,6 +222,16 @@ p { line-height: 1.7; }
   letter-spacing: .02em;
   flex-shrink: 0;
 }
+.nav-logo-img {
+  height: 26px;
+  width: auto;
+  max-width: 110px;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+/* Explicit rule: the global `img { display:block }` reset overrides the UA
+   stylesheet's `[hidden] { display:none }`, so hide the logo img here. */
+.nav-logo-img[hidden] { display: none; }
 
 .nav-links {
   display: none;
