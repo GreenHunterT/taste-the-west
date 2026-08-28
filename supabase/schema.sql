@@ -189,39 +189,111 @@ CREATE POLICY "products_owner_delete"
   );
 
 
--- ── STORAGE SETUP ─────────────────────────────────────────────────
--- After running this SQL, do the following in the Supabase Dashboard:
+-- ── STORAGE: restaurant-media BUCKET RLS ─────────────────────────
+-- Bucket setup is NOT managed from this file: create the
+-- `restaurant-media` bucket and set it to Public in the Supabase
+-- Dashboard (Storage → New Bucket). Public website reads are served
+-- by that Public flag; the policies below govern authenticated
+-- (owner) writes/reads on storage.objects, whose RLS Supabase
+-- enables by default.
 --
--- 1. Go to Storage → New Bucket
---    Name:   restaurant-media
---    Public: YES  (images must be publicly accessible for the website)
+-- The object-name matching below is deliberate: it mirrors the exact
+-- Storage key conventions written by the admin upload code
+-- (uploadToStorage in admin/js/auth.js, called from admin/js/menu.js
+-- and admin/js/settings.js):
 --
--- 2. Go to Storage → restaurant-media → Policies → New Policy
+--   products/<restaurant_id>-<timestamp>.<ext>   per-restaurant product image
+--   branding/<auth_user_id>-hero.<ext>           restaurant hero image
+--   branding/<auth_user_id>-logo.<ext>           restaurant logo
 --
---    Policy 1 — Public read:
---      Operation: SELECT
---      Policy definition (check expression): true
---      Name: storage_public_read
+-- A caller may touch a `branding/` object only when auth.uid()
+-- prefixes the object name, and a `products/` object only when it is
+-- prefixed by the id of a restaurant they own
+-- (public.restaurants.owner_id). These four owner-scoped policies
+-- replace the earlier insecure bucket-wide
+-- `auth.role() = 'authenticated'` approach.
 --
---    Policy 2 — Authenticated uploads:
---      Operation: INSERT
---      Policy definition (check expression): (auth.role() = 'authenticated')
---      Name: storage_owner_upload
---
---    Policy 3 — Authenticated updates:
---      Operation: UPDATE
---      Using expression: (auth.role() = 'authenticated')
---      Name: storage_owner_update
---
---    Policy 4 — Authenticated deletes:
---      Operation: DELETE
---      Using expression: (auth.role() = 'authenticated')
---      Name: storage_owner_delete
---
--- Storage folder structure (created automatically on first upload):
---   restaurant-media/
---     products/    ← product images
---     branding/    ← hero + logo images
+-- Each policy is dropped-then-created so it is individually safe to
+-- re-run; the rest of this file is not idempotent.
+
+DROP POLICY IF EXISTS restaurant_media_owner_select ON storage.objects;
+CREATE POLICY restaurant_media_owner_select
+  ON storage.objects
+  FOR SELECT
+  TO authenticated
+  USING (
+    bucket_id = 'restaurant-media'
+    AND (
+      name LIKE ('branding/' || auth.uid()::text || '-%')
+      OR EXISTS (
+        SELECT 1 FROM public.restaurants r
+        WHERE r.owner_id = auth.uid()
+          AND storage.objects.name LIKE ('products/' || r.id::text || '-%')
+      )
+    )
+  );
+
+DROP POLICY IF EXISTS restaurant_media_owner_insert ON storage.objects;
+CREATE POLICY restaurant_media_owner_insert
+  ON storage.objects
+  FOR INSERT
+  TO authenticated
+  WITH CHECK (
+    bucket_id = 'restaurant-media'
+    AND (
+      name LIKE ('branding/' || auth.uid()::text || '-%')
+      OR EXISTS (
+        SELECT 1 FROM public.restaurants r
+        WHERE r.owner_id = auth.uid()
+          AND storage.objects.name LIKE ('products/' || r.id::text || '-%')
+      )
+    )
+  );
+
+DROP POLICY IF EXISTS restaurant_media_owner_update ON storage.objects;
+CREATE POLICY restaurant_media_owner_update
+  ON storage.objects
+  FOR UPDATE
+  TO authenticated
+  USING (
+    bucket_id = 'restaurant-media'
+    AND (
+      name LIKE ('branding/' || auth.uid()::text || '-%')
+      OR EXISTS (
+        SELECT 1 FROM public.restaurants r
+        WHERE r.owner_id = auth.uid()
+          AND storage.objects.name LIKE ('products/' || r.id::text || '-%')
+      )
+    )
+  )
+  WITH CHECK (
+    bucket_id = 'restaurant-media'
+    AND (
+      name LIKE ('branding/' || auth.uid()::text || '-%')
+      OR EXISTS (
+        SELECT 1 FROM public.restaurants r
+        WHERE r.owner_id = auth.uid()
+          AND storage.objects.name LIKE ('products/' || r.id::text || '-%')
+      )
+    )
+  );
+
+DROP POLICY IF EXISTS restaurant_media_owner_delete ON storage.objects;
+CREATE POLICY restaurant_media_owner_delete
+  ON storage.objects
+  FOR DELETE
+  TO authenticated
+  USING (
+    bucket_id = 'restaurant-media'
+    AND (
+      name LIKE ('branding/' || auth.uid()::text || '-%')
+      OR EXISTS (
+        SELECT 1 FROM public.restaurants r
+        WHERE r.owner_id = auth.uid()
+          AND storage.objects.name LIKE ('products/' || r.id::text || '-%')
+      )
+    )
+  );
 
 
 -- ── SEED: TASTE THE WEST — PRESENTATION DEMO ─────────────────────

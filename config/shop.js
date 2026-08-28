@@ -9,7 +9,7 @@ const SHOP_SETTINGS = {
   sounds:          true,    // subtle UI click feedback — set false to disable
 };
 
-const SHOP = {
+var SHOP = {
 
   // ── Identity ──────────────────────────────────────────────────
   name:       "تيست ذا ويست",

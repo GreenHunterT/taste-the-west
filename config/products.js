@@ -6,7 +6,7 @@
 //  clearly indicating where the owner's real product photos go.
 //  Upload actual photos via Admin → Menu → Edit → Upload Image.
 // ─────────────────────────────────────────────────────────────────
-const PRODUCTS = [
+var PRODUCTS = [
 
   // ── PIZZA ─────────────────────────────────────────────────────
   {

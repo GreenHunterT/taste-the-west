@@ -91,9 +91,11 @@
   // The anon key + RLS policies enforce read-only access to published data.
   async function loadFromSupabase() {
     const base = SUPABASE_URL + '/rest/v1';
+    // Anonymous public access: the publishable key goes in `apikey` only.
+    // Do NOT add an Authorization header here — a Bearer token must carry a
+    // signed-in user's JWT, never the sb_publishable key.
     const h = {
-      'apikey':        SUPABASE_ANON_KEY,
-      'Authorization': 'Bearer ' + SUPABASE_ANON_KEY,
+      'apikey': SUPABASE_ANON_KEY,
     };
 
     const [rRes, cRes, pRes] = await Promise.all([
