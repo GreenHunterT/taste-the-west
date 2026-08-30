@@ -225,6 +225,191 @@ img { max-width: 100%; display: block; }
 .stat-value { font-size: 32px; font-weight: 700; color: var(--aaccent); line-height: 1.1; }
 .stat-label { font-size: 12.5px; color: var(--amuted); margin-top: 4px; text-transform: uppercase; letter-spacing: .6px; }
 
+/* ── SETTINGS: two-column editor + sticky full-page Live Preview ───
+   Single column by default (also the narrow-admin / phone layout);
+   splits into editor + sticky preview only on wide admin screens.
+   Settings-only: widen the content area and use `overflow: clip` (NOT
+   `hidden`) so .admin-main does not become a scroll container that would
+   break `position: sticky` on .live-preview. */
+body[data-admin-page="settings"] .admin-main {
+  max-width: min(1680px, 100%);
+  overflow-x: clip;
+}
+.settings-layout { display: grid; gap: 24px; }
+.settings-layout__editor,
+.settings-layout__preview { min-width: 0; }
+
+.live-preview {
+  display: flex;
+  flex-direction: column;
+  background: var(--acard);
+  border: 1px solid var(--aborder);
+  border-radius: var(--radius);
+  padding: 14px;
+  position: static;               /* sticky only enabled on wide screens */
+}
+.live-preview__head {
+  display: flex; align-items: baseline; flex-wrap: wrap;
+  gap: 4px 10px; margin-bottom: 8px;
+}
+.live-preview__title { font-size: 15px; font-weight: 600; color: var(--atext); }
+.live-preview__hint { font-size: 11.5px; color: var(--amuted); flex: 1 1 auto; }
+.live-preview__head .btn { margin-left: auto; align-self: center; }
+
+/* Grouped, labelled preview controls (Page / Device / Language / Theme / View).
+   Wrap cleanly; never one giant unreadable row. */
+.live-preview__controls {
+  display: flex; flex-wrap: wrap; align-items: flex-end;
+  gap: 8px 14px; margin-bottom: 10px;
+}
+.lp-group { display: flex; flex-direction: column; gap: 3px; }
+.lp-group__label {
+  font-size: 10px; font-weight: 700; letter-spacing: .6px;
+  text-transform: uppercase; color: var(--amuted);
+}
+
+/* Segmented toggles */
+.lp-seg { display: inline-flex; border: 1px solid var(--ainput-bd); border-radius: 999px; overflow: hidden; }
+.lp-seg__btn {
+  background: var(--ainput);
+  color: var(--amuted);
+  border: none;
+  padding: 5px 11px;
+  font-family: var(--f);
+  font-size: 12px;
+  line-height: 1.4;
+  cursor: pointer;
+}
+.lp-seg__btn + .lp-seg__btn { border-left: 1px solid var(--ainput-bd); }
+.lp-seg__btn.is-active { background: var(--aaccent); color: #0d0f13; font-weight: 600; }
+.lp-seg__btn:focus-visible { outline: 2px solid var(--aaccent); outline-offset: -2px; }
+
+/* Preview stage: holds the double-buffered public-page frames, scaled. All
+   overflow (100% viewport wider than the panel, tall page) is contained here —
+   never on the admin page. Each frame scrolls its own document.
+   The stage background is the neutral surface seen only on the FIRST load
+   (both frames still at opacity 0); on page switches the ACTIVE frame covers
+   it the whole time, so the current page never blanks. */
+.live-preview__stage {
+  flex: 1 1 auto;
+  min-height: 420px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  background: #14120f;          /* never white */
+  border: 1px solid var(--aborder);
+  border-radius: 8px;
+}
+.live-preview__stage[data-theme="light"] { background: #f4f1ea; }
+.lp-viewport {
+  position: relative;           /* frames are absolutely stacked inside */
+  overflow: hidden;             /* trims only the frames' invisible scaled-away
+                                   overflow — never the visible page (JS sizes
+                                   this box to the SCALED on-screen rectangle) */
+}
+/* Double-buffered frames: stacked, only .is-active shown + interactive.
+   JS sets width / height to the UNSCALED virtual viewport and transform:
+   scale() to fit — so the full 1024px (or 390px) page is scaled, never clipped. */
+.preview-frame {
+  position: absolute;
+  top: 0; left: 0;
+  transform-origin: top left;
+  display: block;
+  border: 0;
+  background: #1c1914;          /* matches the public dark ground */
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 130ms linear;
+}
+.preview-frame.is-active  { opacity: 1; pointer-events: auto; }
+.preview-frame.is-leaving { opacity: 0; pointer-events: none; }
+@media (prefers-reduced-motion: reduce) {
+  .preview-frame { transition: none; }
+}
+
+/* ── SETTINGS: mode bar (narrow-screen Edit | Preview + dirty state) ── */
+.settings-modebar {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;              /* stack seg + status on very narrow admin */
+  gap: 8px 12px;
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  background: var(--abg);
+  padding: 8px 0;
+}
+#admin-mode-seg { margin-right: auto; }
+
+.stats-dirty { font-size: 12px; font-weight: 600; white-space: nowrap; }
+.stats-dirty.is-dirty { color: var(--awarning); }
+.stats-dirty.is-clean { color: var(--asuccess); }
+
+/* ── SETTINGS: Homepage Statistics builder ──────────────────────── */
+.stats-toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 14px 0 2px; }
+
+.stat-card-ed {
+  border: 1px solid var(--aborder);
+  border-radius: var(--radius);
+  background: var(--abg);
+  padding: 14px;
+  margin-top: 12px;
+}
+.stat-card-ed.is-hidden { opacity: .55; }
+.stat-card-ed__head {
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: 10px; margin-bottom: 10px;
+}
+.stat-card-ed__title { font-size: 13px; font-weight: 600; color: var(--atext); }
+.stat-card-ed__summary { font-size: 11.5px; color: var(--amuted); text-align: right; }
+.stat-card-ed__row { margin-bottom: 10px; }
+.stat-card-ed__row.two { display: grid; gap: 12px; }
+@media (min-width: 560px) { .stat-card-ed__row.two { grid-template-columns: 1fr 1fr; } }
+.stat-card-ed input[type="range"] { accent-color: var(--aaccent); }
+.stat-value-out { min-width: 4.5ch; text-align: right; color: var(--aaccent); font-weight: 600; }
+.stat-card-ed__foot { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 4px; }
+.stat-card-ed__foot .spacer { flex: 1 1 12px; }
+
+.stat-card-ed.is-flash { animation: statFlash 1.3s ease; }
+@keyframes statFlash {
+  0%   { box-shadow: 0 0 0 0 rgba(201,168,76,0); }
+  12%  { box-shadow: 0 0 0 3px var(--aaccent); }
+  100% { box-shadow: 0 0 0 0 rgba(201,168,76,0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .stat-card-ed.is-flash { animation: none; outline: 2px solid var(--aaccent); }
+}
+
+@media (min-width: 1180px) {
+  /* Editor ~57% / Preview ~43% (adaptive: preview grows on wide screens,
+     never past ~840px, never below 440px). */
+  .settings-layout {
+    grid-template-columns: minmax(0, 1fr) clamp(440px, 43%, 840px);
+    align-items: stretch;
+  }
+  /* Sticky preview uses almost the whole viewport height; compact chrome means
+     the real website frame gets the rest. The iframe scrolls independently. */
+  .live-preview {
+    position: sticky;
+    top: 44px;                              /* clears the sticky mode bar */
+    height: calc(100dvh - 56px);
+  }
+  #admin-mode-seg { display: none; }        /* both columns already visible */
+
+  /* Expand Preview: preview takes the whole content area for close inspection. */
+  .settings-layout.is-preview-expanded { grid-template-columns: minmax(0, 1fr); }
+  .settings-layout.is-preview-expanded .settings-layout__editor { display: none; }
+}
+
+/* Narrow admin: one pane at a time, switched by the mode bar */
+@media (max-width: 1179px) {
+  .settings-layout[data-admin-mode="edit"]    .settings-layout__preview { display: none; }
+  .settings-layout[data-admin-mode="preview"] .settings-layout__editor  { display: none; }
+  .settings-layout[data-admin-mode="preview"] .settings-layout__preview { width: 100%; }
+  .settings-layout[data-admin-mode="preview"] .live-preview { height: calc(100dvh - 120px); }
+}
+
 /* ── FORMS ───────────────────────────────────────────────────────── */
 .form-section { margin-bottom: 32px; }
 .form-section-title {

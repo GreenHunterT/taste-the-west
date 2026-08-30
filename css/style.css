@@ -498,7 +498,20 @@ p { line-height: 1.7; }
   gap: clamp(40px, 6vw, 80px);
   align-items: center;
 }
-@media (min-width: 768px) { .about-grid { grid-template-columns: 1fr 1fr; } }
+@media (min-width: 768px) {
+  .about-grid { grid-template-columns: 1fr 1fr; }
+  /* When only one half has content, collapse to a single column so the other
+     side never leaves an empty gap. JS (applyAboutVisibility) sets the class
+     and hides the empty child; the whole section is removed when both are empty. */
+  .about-grid.about-grid--text-only,
+  .about-grid.about-grid--stats-only { grid-template-columns: 1fr; }
+}
+.about-grid--stats-only .highlights {
+  width: 100%;
+  max-width: 640px;
+  margin-inline: auto;
+}
+.about-grid--text-only { max-width: 640px; }
 
 .about-text .section-title { margin-bottom: 16px; }
 

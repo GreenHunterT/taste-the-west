@@ -35,6 +35,73 @@
     );
   }
 
+  // ── ADMIN PREVIEW MODE ───────────────────────────────────────────
+  // When this page is embedded in the Admin Settings Live Preview iframe
+  // (?adminPreview=1) it renders draft data pushed from the parent via
+  // postMessage instead of loading from Supabase. It NEVER writes anything.
+  // Absent the flag, everything below is inert and the site behaves normally.
+  var PREVIEW = (function () {
+    try { return new URLSearchParams(window.location.search).has('adminPreview'); }
+    catch (e) { return false; }
+  })();
+  // Language + theme in preview are AUTHORITATIVE Admin state: the parent echoes
+  // them in every PREVIEW_DATA and the child obeys verbatim. They are only ever
+  // changed here by (a) a value the parent sent, or (b) the real in-iframe
+  // control — which reports the change back UP so parent and child never drift.
+  // Never derived from localStorage / restaurant data / a locale default.
+  var _previewLang  = null;   // 'ar' | 'en'
+  var _previewTheme = null;   // 'dark' | 'light'
+  var _previewApplied = false; // set once the first PREVIEW_DATA has been applied
+  // This document's preview navigation generation — read from its OWN boot URL
+  // (?previewNav=N) and fixed for the document's lifetime. Stamped on every
+  // message so the parent can reject a stale document whose slot was re-navigated.
+  // PREVIEW_DATA never redefines it.
+  var _previewNav = (function () {
+    try {
+      var v = new URLSearchParams(window.location.search).get('previewNav');
+      var n = v == null ? NaN : parseInt(v, 10);
+      return Number.isFinite(n) ? n : null;
+    } catch (e) { return null; }
+  })();
+  function parentPost(msg) {
+    try {
+      if (window.parent && window.parent !== window) {
+        window.parent.postMessage(msg, window.location.origin);
+      }
+    } catch (e) {}
+  }
+
+  // In-iframe nav link → Admin preview page key. Turns a same-site navigation
+  // click inside the preview into a PREVIEW_NAVIGATE message (the parent owns
+  // the page selector + iframe src). Any href that is not one of these four
+  // local pages resolves to null and the click is simply neutralised.
+  var PREVIEW_NAV_PAGES = {
+    'index.html': 'home', '': 'home',
+    'products.html': 'menu',
+    'location.html': 'location',
+    'contact.html': 'contact',
+  };
+  function previewPageForHref(href) {
+    href = String(href || '').trim();
+    if (!href || href.charAt(0) === '#') return null;      // in-page anchor / empty
+    try {
+      var u = new URL(href, window.location.href);
+      if (u.origin !== window.location.origin) return null;              // external
+      if (u.protocol !== 'http:' && u.protocol !== 'https:') return null; // tel:/mailto:
+      var base = u.pathname.split('/').pop();
+      return Object.prototype.hasOwnProperty.call(PREVIEW_NAV_PAGES, base)
+        ? PREVIEW_NAV_PAGES[base] : null;
+    } catch (e) { return null; }
+  }
+
+  // Live catalog for Admin Preview. Categories + products are NOT Settings
+  // state, so the preview loads them read-only from Supabase (publishable key,
+  // exactly the access the public site already uses) rather than showing the
+  // bundled demo menu. The Admin parent still owns restaurant/settings, pushed
+  // in over postMessage.
+  var _previewCategories    = null;   // live categories, re-applied after each draft
+  var _previewCatalogFailed = false;  // true only if the live catalog fetch errored
+
   // ── DB → SHOP SHAPE MAPPING ───────────────────────────────────────
   function mapRestaurant(r) {
     return {
@@ -102,8 +169,35 @@
       'apikey': SUPABASE_ANON_KEY,
     };
 
-    const [rRes, cRes, pRes] = await Promise.all([
+    // Restaurant row and catalog fetched in parallel, same as before.
+    const [rRes, catalog] = await Promise.all([
       fetch(base + '/restaurants?id=eq.' + RESTAURANT_ID + '&select=*', { headers: h }),
+      fetchCatalog(base, h),
+    ]);
+
+    if (!rRes.ok) throw new Error('Restaurant fetch failed (' + rRes.status + ')');
+
+    const [restaurantRaw] = await rRes.json();
+    if (!restaurantRaw) throw new Error('No restaurant found for RESTAURANT_ID: ' + RESTAURANT_ID);
+
+    // Mutate globals so all existing render functions work unchanged.
+    window.SHOP     = mapRestaurant(restaurantRaw);
+    window.PRODUCTS = catalog.products;
+    window.SHOP.categories = catalog.categories;
+
+    // Sync sounds flag to SHOP_SETTINGS so playUISound() respects DB value
+    if (typeof SHOP_SETTINGS !== 'undefined') {
+      SHOP_SETTINGS.sounds = restaurantRaw.sounds_enabled !== false;
+    }
+  }
+
+  // Public catalog read — categories + available products for RESTAURANT_ID,
+  // mapped to the SHOP/PRODUCTS shape. Shared by the normal page load and the
+  // Admin Preview: read-only, anon key, no Authorization header. A failed
+  // sub-request degrades to an empty list exactly as the old inline code did;
+  // a network-level failure rejects and is handled by the caller.
+  async function fetchCatalog(base, h) {
+    const [cRes, pRes] = await Promise.all([
       fetch(base + '/categories?restaurant_id=eq.' + RESTAURANT_ID + '&order=sort_order', { headers: h }),
       fetch(
         base + '/products?restaurant_id=eq.' + RESTAURANT_ID +
@@ -112,28 +206,41 @@
         { headers: h }
       ),
     ]);
+    const catsRaw  = cRes.ok ? await cRes.json() : [];
+    const prodsRaw = pRes.ok ? await pRes.json() : [];
+    return {
+      products: (prodsRaw || []).map(mapProduct),
+      categories: (catsRaw || []).map(c => ({
+        slug:   c.slug,
+        nameAr: c.name_ar,
+        nameEn: c.name_en,
+      })),
+    };
+  }
 
-    if (!rRes.ok) throw new Error('Restaurant fetch failed (' + rRes.status + ')');
-
-    const [restaurantRaw] = await rRes.json();
-    if (!restaurantRaw) throw new Error('No restaurant found for RESTAURANT_ID: ' + RESTAURANT_ID);
-
-    const catsRaw  = cRes.ok  ? await cRes.json()  : [];
-    const prodsRaw = pRes.ok  ? await pRes.json()  : [];
-
-    // Mutate globals so all existing render functions work unchanged.
-    window.SHOP     = mapRestaurant(restaurantRaw);
-    window.PRODUCTS = prodsRaw.map(mapProduct);
-
-    window.SHOP.categories = (catsRaw || []).map(c => ({
-      slug:   c.slug,
-      nameAr: c.name_ar,
-      nameEn: c.name_en,
-    }));
-
-    // Sync sounds flag to SHOP_SETTINGS so playUISound() respects DB value
-    if (typeof SHOP_SETTINGS !== 'undefined') {
-      SHOP_SETTINGS.sounds = restaurantRaw.sounds_enabled !== false;
+  // Admin Preview only: load the LIVE catalog so the preview reflects the real
+  // current menu, never the bundled demo. restaurant/settings still come from
+  // the Admin parent via postMessage. On any error, degrade to an empty catalog
+  // plus a preview-only notice — demo products are never shown as if real.
+  async function loadPreviewCatalog() {
+    if (!isSupabaseConfigured()) {
+      // No live backend configured: the bundled config IS this site's real
+      // content, so keeping the bundled PRODUCTS is accurate, not misleading.
+      _previewCategories = (typeof SHOP !== 'undefined' && Array.isArray(SHOP.categories))
+        ? SHOP.categories : [];
+      return;
+    }
+    const base = SUPABASE_URL + '/rest/v1';
+    const h = { 'apikey': SUPABASE_ANON_KEY };
+    try {
+      const catalog = await fetchCatalog(base, h);
+      window.PRODUCTS    = catalog.products;
+      _previewCategories = catalog.categories;
+    } catch (e) {
+      console.warn('[app.js] preview catalog load failed:', e);
+      _previewCatalogFailed = true;
+      window.PRODUCTS    = [];
+      _previewCategories = [];
     }
   }
 
@@ -181,10 +288,9 @@
 
   // ── LANGUAGE HELPERS ──────────────────────────────────────────────
   function getLang() {
-    return (
-      localStorage.getItem('souqsite_language') ||
-      (typeof SHOP_SETTINGS !== 'undefined' ? SHOP_SETTINGS.defaultLanguage : 'ar')
-    );
+    var fallback = (typeof SHOP_SETTINGS !== 'undefined' ? SHOP_SETTINGS.defaultLanguage : 'ar');
+    if (PREVIEW) return _previewLang || fallback;   // preview never reads shared storage
+    return localStorage.getItem('souqsite_language') || fallback;
   }
 
   function t(key) {
@@ -229,7 +335,14 @@
 
   // ── SET LANGUAGE ─────────────────────────────────────────────────
   function setLanguage(lang) {
-    localStorage.setItem('souqsite_language', lang);
+    if (PREVIEW) {
+      // Real in-iframe language control: update locally AND report up so the
+      // Admin preview-language selector stays in sync. Never touches storage.
+      _previewLang = lang;
+      parentPost({ type: 'PREVIEW_LANGUAGE_CHANGE', lang: lang });
+    } else {
+      localStorage.setItem('souqsite_language', lang);
+    }
     document.documentElement.lang = lang;
     document.documentElement.dir  = lang === 'ar' ? 'rtl' : 'ltr';
     applyTranslations(lang);
@@ -334,10 +447,9 @@
 
   // ── THEME ─────────────────────────────────────────────────────────
   function getTheme() {
-    return (
-      localStorage.getItem('souqsite_theme') ||
-      (typeof SHOP_SETTINGS !== 'undefined' ? SHOP_SETTINGS.defaultTheme : 'dark')
-    );
+    var fallback = (typeof SHOP_SETTINGS !== 'undefined' ? SHOP_SETTINGS.defaultTheme : 'dark');
+    if (PREVIEW) return _previewTheme || fallback;   // preview never reads shared storage
+    return localStorage.getItem('souqsite_theme') || fallback;
   }
   function applyTheme(theme) {
     if (theme === 'light') document.documentElement.setAttribute('data-theme', 'light');
@@ -345,6 +457,14 @@
   }
   function toggleTheme() {
     const next = getTheme() === 'dark' ? 'light' : 'dark';
+    if (PREVIEW) {
+      // Real in-iframe theme control: update locally AND report up so the Admin
+      // preview-theme selector stays in sync. Never touches storage.
+      _previewTheme = next;
+      applyTheme(next);
+      parentPost({ type: 'PREVIEW_THEME_CHANGE', theme: next });
+      return;
+    }
     localStorage.setItem('souqsite_theme', next);
     applyTheme(next);
   }
@@ -443,45 +563,146 @@
     }
 
     refreshHighlights(getLang());
+    applyAboutVisibility();
 
-    if (typeof PRODUCTS !== 'undefined') {
+    if (PREVIEW && _previewCatalogFailed) {
+      showPreviewCatalogNotice('featured-grid');
+    } else if (typeof PRODUCTS !== 'undefined') {
       renderProductGrid(PRODUCTS.filter(p => p.featured).slice(0, 3), 'featured-grid');
     }
+  }
+
+  // A statistic counts as real content only when it is visible AND has a
+  // non-blank value / label / labelAr. `visible === false` or an all-blank
+  // entry never renders and never keeps the About section alive.
+  function statHasContent(h) {
+    if (!h || h.visible === false) return false;
+    var v = h.value == null ? '' : String(h.value);
+    return !!(v.trim() ||
+      (typeof h.label === 'string' && h.label.trim()) ||
+      (typeof h.labelAr === 'string' && h.labelAr.trim()));
+  }
+  // About/Our-Story text exists if EITHER language has meaningful text — the
+  // site already falls back across languages, so the check is language-neutral.
+  function aboutHasText() {
+    if (typeof SHOP === 'undefined') return false;
+    var a = SHOP.description, b = SHOP.descriptionEn;
+    return !!((typeof a === 'string' && a.trim()) || (typeof b === 'string' && b.trim()));
+  }
+  // Content-based visibility for the whole About section (shared by the public
+  // site and the Live Preview — no preview-only rule). Hides the section when it
+  // would be empty; collapses to a single column when only one half has content.
+  function applyAboutVisibility() {
+    var section = document.getElementById('about');
+    if (!section) return;
+    var grid    = section.querySelector('.about-grid');
+    var textCol = section.querySelector('.about-text');
+    var hlGrid  = document.getElementById('hl-grid');
+
+    var hasText  = aboutHasText();
+    var hasStats = typeof SHOP !== 'undefined' && Array.isArray(SHOP.highlights) &&
+      SHOP.highlights.some(statHasContent);
+
+    if (!hasText && !hasStats) { section.style.display = 'none'; return; }
+    section.style.display = '';
+
+    if (textCol) textCol.style.display = hasText  ? '' : 'none';
+    if (hlGrid)  hlGrid.style.display  = hasStats ? '' : 'none';
+    if (grid) {
+      grid.classList.toggle('about-grid--text-only',  hasText && !hasStats);
+      grid.classList.toggle('about-grid--stats-only', !hasText && hasStats);
+      // In the preview the section can appear after edits, past the point where
+      // the scroll-reveal observer would fire — show it without the animation.
+      if (PREVIEW) grid.classList.add('visible');
+    }
+    if (PREVIEW && hlGrid) hlGrid.classList.add('visible');
+  }
+
+  // Admin Preview: shown in place of a product grid when the live catalog could
+  // not be loaded, so the owner never mistakes bundled demo items for real ones.
+  function showPreviewCatalogNotice(containerId) {
+    const grid = document.getElementById(containerId || 'featured-grid');
+    if (!grid) return;
+    grid.textContent = '';
+    const p = document.createElement('p');
+    p.style.cssText = 'color:var(--text-muted);text-align:center;padding:40px 0;font-size:14px';
+    p.textContent = 'Live menu data could not be loaded for this preview.';
+    grid.appendChild(p);
   }
 
   function refreshHighlights(lang) {
     const hlGrid = document.getElementById('hl-grid');
     if (!hlGrid || typeof SHOP === 'undefined' || !SHOP.highlights) return;
-    hlGrid.innerHTML = SHOP.highlights.map(h => `
-      <div class="hl-card">
-        <div class="hl-value">${h.value}</div>
-        <div class="hl-label">${lang === 'ar' ? (h.labelAr || h.label) : (h.label || h.labelAr)}</div>
-      </div>
-    `).join('');
+    // Owner-entered strings: build with DOM APIs + textContent (no innerHTML).
+    // statHasContent keeps legacy entries (no `visible` field) but drops
+    // explicit visible:false AND all-blank entries. `type` does not affect output.
+    const cards = SHOP.highlights
+      .filter(statHasContent)
+      .map(h => {
+        const card  = document.createElement('div');
+        card.className = 'hl-card';
+        const value = document.createElement('div');
+        value.className = 'hl-value';
+        value.textContent = h.value == null ? '' : String(h.value);
+        const label = document.createElement('div');
+        label.className = 'hl-label';
+        label.textContent = lang === 'ar'
+          ? (h.labelAr || h.label || '')
+          : (h.label || h.labelAr || '');
+        card.appendChild(value);
+        card.appendChild(label);
+        // In Admin Preview: each card links back to its editor card.
+        if (PREVIEW && h._previewId != null) {
+          card.dataset.previewId = String(h._previewId);
+          card.setAttribute('role', 'button');
+          card.tabIndex = 0;
+          card.style.cursor = 'pointer';
+          const send = function () {
+            parentPost({ type: 'PREVIEW_STAT_CLICK', previewId: card.dataset.previewId });
+          };
+          card.addEventListener('click', send);
+          card.addEventListener('keydown', function (ev) {
+            if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); send(); }
+          });
+        }
+        return card;
+      });
+    hlGrid.replaceChildren(...cards);
   }
 
   // ── PRODUCTS PAGE ─────────────────────────────────────────────────
+  // Idempotent: safe to re-run on every Admin-preview draft update. The filter
+  // click handler is delegated and attached once (guarded), so re-rendering the
+  // grid / rebuilding the filter buttons never stacks listeners.
   function initProducts() {
     if (typeof PRODUCTS === 'undefined') return;
     const filterBar = document.getElementById('filter-bar');
     const grid      = document.getElementById('products-grid');
     if (!grid) return;
 
+    if (PREVIEW && _previewCatalogFailed) {
+      showPreviewCatalogNotice('products-grid');
+      return;
+    }
+
     renderProductGrid(PRODUCTS, 'products-grid');
 
     if (filterBar) {
       buildFilterBar(filterBar, getLang());
 
-      filterBar.addEventListener('click', e => {
-        const btn = e.target.closest('.filter-btn');
-        if (!btn) return;
-        filterBar.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
-        grid.querySelectorAll('.product-card').forEach(card => {
-          card.style.display =
-            (btn.dataset.cat === 'all' || card.dataset.cat === btn.dataset.cat) ? '' : 'none';
+      if (!filterBar.dataset.wired) {
+        filterBar.dataset.wired = '1';
+        filterBar.addEventListener('click', e => {
+          const btn = e.target.closest('.filter-btn');
+          if (!btn) return;
+          filterBar.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+          grid.querySelectorAll('.product-card').forEach(card => {
+            card.style.display =
+              (btn.dataset.cat === 'all' || card.dataset.cat === btn.dataset.cat) ? '' : 'none';
+          });
         });
-      });
+      }
     }
   }
 
@@ -623,6 +844,7 @@
   // ── SOUND FEEDBACK ────────────────────────────────────────────────
   var _audioCtx = null;
   function playUISound() {
+    if (PREVIEW) return;                 // no click beeps inside the Admin preview
     const sounds = typeof SHOP_SETTINGS !== 'undefined'
       ? SHOP_SETTINGS.sounds
       : (typeof SHOP !== 'undefined' ? SHOP.sounds : false);
@@ -656,6 +878,131 @@
   }
   function capitalize(s) { return s ? s.charAt(0).toUpperCase() + s.slice(1) : ''; }
 
+  // Run whichever page-specific renderer the public site normally uses for this
+  // document. Reused for the first Admin-preview paint AND every later draft
+  // update — no parallel renderers. Each initX() is idempotent.
+  function renderCurrentPage() {
+    switch (document.body.dataset.page) {
+      case 'home':     initHome();     break;
+      case 'products': initProducts(); break;
+      case 'location': initLocation(); break;
+      case 'contact':  initContact();  break;
+    }
+  }
+
+  // ── ADMIN PREVIEW: render from parent-supplied draft data ────────
+  async function initPreviewMode() {
+    const page = document.body.dataset.page;
+
+    // Stay visually hidden until the parent's real Preview state (language,
+    // theme, unsaved draft) has been applied — otherwise a freshly navigated
+    // page paints its bundled-default language/theme for a frame and flashes.
+    // Revealed again in applyPreviewData(), which also posts PREVIEW_APPLIED.
+    // Reachable ONLY via boot()'s `if (PREVIEW)` branch, so a normal visitor is
+    // never affected.
+    document.documentElement.style.visibility = 'hidden';
+
+    // In-iframe navigation: a same-site nav link becomes a PREVIEW_NAVIGATE
+    // message (the parent owns the page selector + iframe src). Every other
+    // link — WhatsApp / Instagram / Maps / mailto / tel / "#" — is neutralised
+    // so the preview can never wander off the site. Stat cards keep their own
+    // click-to-edit handler.
+    document.addEventListener('click', function (e) {
+      const a = e.target.closest('a');
+      if (!a || a.closest('.hl-card')) return;
+      e.preventDefault();
+      const pg = previewPageForHref(a.getAttribute('href') || '');
+      if (pg) parentPost({ type: 'PREVIEW_NAVIGATE', page: pg });
+    }, true);
+
+    window.addEventListener('message', onPreviewMessage);
+
+    // Live categories + products, read-only — only where the page renders them.
+    // restaurant/settings still arrive from the Admin parent via postMessage.
+    if (page === 'home' || page === 'products') {
+      await loadPreviewCatalog();
+      if (typeof SHOP !== 'undefined' && Array.isArray(_previewCategories)) {
+        SHOP.categories = _previewCategories;
+      }
+    }
+
+    // First paint from bundled config (still hidden) so layout is warm, then
+    // tell the parent we're ready for the real settings draft.
+    const lang = getLang();
+    applyTheme(getTheme());
+    applyTranslations(lang);
+    applyShopContent(lang);
+    applyOgTags();
+    updateWaLinks();
+    initReveal();
+    const yearEl = document.getElementById('footer-year');
+    if (yearEl) yearEl.textContent = new Date().getFullYear();
+    renderCurrentPage();
+
+    parentPost({ type: 'PREVIEW_READY', nav: _previewNav });
+  }
+
+  function onPreviewMessage(e) {
+    if (e.origin !== window.location.origin) return;      // same-origin only
+    if (e.source !== window.parent) return;               // from our embedder only
+    const msg = e.data;
+    if (!msg || typeof msg !== 'object') return;
+    if (msg.type === 'PREVIEW_DATA') {
+      applyPreviewData(msg.payload || {}, msg.nav);
+    } else if (msg.type === 'PREVIEW_SCROLL_TO' && msg.target === 'highlights') {
+      const g = document.getElementById('hl-grid');
+      if (g) g.scrollIntoView({ behavior: msg.behavior === 'auto' ? 'auto' : 'smooth', block: 'center' });
+    }
+  }
+
+  // Draft restaurant row (+ highlights carrying local _previewId) from Admin.
+  // Applied through the SAME render path as live DB content. Never persisted.
+  // `nav` is the generation the parent thinks this document is. It must equal
+  // this document's own generation (from its boot URL). A mismatch means the
+  // message was meant for a different document (a slot mid-renavigation) — drop
+  // it, and DO NOT adopt the foreign generation.
+  function applyPreviewData(payload, nav) {
+    payload = payload || {};
+    if (nav != null && _previewNav != null && nav !== _previewNav) return;
+    const r = payload.restaurant || {};
+    try {
+      window.SHOP = mapRestaurant(r);                     // includes highlights pass-through
+      // Catalog stays LIVE: the Admin draft owns restaurant/settings, but
+      // categories + products remain whatever Supabase returned for the preview.
+      if (Array.isArray(_previewCategories)) window.SHOP.categories = _previewCategories;
+      if (typeof SHOP_SETTINGS !== 'undefined' && r.sounds_enabled !== undefined) {
+        SHOP_SETTINGS.sounds = r.sounds_enabled !== false;
+      }
+
+      // Language + theme are authoritative Admin state, echoed on EVERY message.
+      // Obey a valid value; otherwise KEEP the current one — never fall back to a
+      // locale / localStorage default. That fallback was the language-reset bug.
+      if (payload.lang === 'ar' || payload.lang === 'en')        _previewLang  = payload.lang;
+      if (payload.theme === 'dark' || payload.theme === 'light') _previewTheme = payload.theme;
+
+      const lang = _previewLang || getLang();
+      document.documentElement.lang = lang;
+      document.documentElement.dir  = lang === 'ar' ? 'rtl' : 'ltr';
+      applyTheme(_previewTheme || getTheme());
+
+      applyTranslations(lang);
+      applyShopContent(lang);
+      applyOgTags();
+      updateWaLinks();
+      renderCurrentPage();
+    } finally {
+      // First application done: reveal this document and tell the parent it is
+      // ready to promote (crossfade over the current page). `finally` so a render
+      // error can never leave the preview stuck hidden. No setTimeout in the
+      // handshake — PREVIEW_APPLIED is the sole readiness signal.
+      if (!_previewApplied) {
+        _previewApplied = true;
+        document.documentElement.style.visibility = '';
+        parentPost({ type: 'PREVIEW_APPLIED', nav: _previewNav });
+      }
+    }
+  }
+
   // ── BOOT (async) ──────────────────────────────────────────────────
   async function boot() {
     const lang  = getLang();
@@ -663,6 +1010,14 @@
 
     applyTheme(theme);
     initNav();
+
+    if (PREVIEW) {
+      initPreviewMode().catch(function (e) {
+        console.warn('[app.js] preview init failed:', e);
+        parentPost({ type: 'PREVIEW_ERROR', nav: _previewNav });   // parent keeps the current page visible
+      });
+      return;
+    }
 
     if (isSupabaseConfigured()) {
       showLoading();
@@ -688,12 +1043,7 @@
     const yearEl = document.getElementById('footer-year');
     if (yearEl) yearEl.textContent = new Date().getFullYear();
 
-    switch (document.body.dataset.page) {
-      case 'home':     initHome();     break;
-      case 'products': initProducts(); break;
-      case 'location': initLocation(); break;
-      case 'contact':  initContact();  break;
-    }
+    renderCurrentPage();
   }
 
   // Support both DOMContentLoaded and already-loaded pages

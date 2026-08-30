@@ -6,6 +6,12 @@
   <meta name="robots" content="noindex, nofollow" />
   <title>Settings — Admin · Taste The West</title>
   <link rel="stylesheet" href="css/admin.css" />
+  <!-- Fonts used by the public Homepage Statistics component, loaded only so the
+       Settings Live Preview mirrors its real typography. Falls back to the
+       stacks below if unavailable. -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700&family=Cormorant+Garamond:wght@600&display=swap" rel="stylesheet" />
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🍕</text></svg>" />
 </head>
 <body data-admin-page="settings">
@@ -60,6 +66,15 @@
       </div>
 
       <form id="settings-form" novalidate>
+      <div class="settings-layout" data-admin-mode="edit">
+        <div class="settings-modebar">
+          <div class="lp-seg" role="group" aria-label="Settings view" id="admin-mode-seg">
+            <button type="button" class="lp-seg__btn is-active" data-admin-mode="edit" aria-pressed="true">Edit</button>
+            <button type="button" class="lp-seg__btn" data-admin-mode="preview" aria-pressed="false">Preview</button>
+          </div>
+          <span class="stats-dirty is-clean" id="stats-dirty" role="status" aria-live="polite">✓ All changes saved</span>
+        </div>
+        <div class="settings-layout__editor">
 
         <!-- Identity -->
         <div class="acard">
@@ -216,6 +231,23 @@
           </div>
         </div>
 
+        <!-- Homepage Statistics -->
+        <div class="acard mt-2" id="stats-acard">
+          <div class="acard-title">Homepage Statistics</div>
+          <p class="field-hint">The quick facts shown near the top of your homepage. Order and visibility here match the public site.</p>
+
+          <div class="stats-toolbar">
+            <button type="button" class="btn btn-ghost btn-sm" id="stats-undo" disabled>Undo</button>
+            <button type="button" class="btn btn-ghost btn-sm" id="stats-reset">Reset to default</button>
+            <button type="button" class="btn btn-ghost btn-sm" id="stats-view-in-preview">View in Preview</button>
+          </div>
+
+          <div id="stats-cards"><!-- statistic cards built by settings.js --></div>
+
+          <button type="button" class="btn btn-secondary btn-sm mt-2" id="stats-add">+ Add statistic</button>
+          <p class="field-hint mt-1" id="stats-max-hint" hidden>Maximum of 6 statistics.</p>
+        </div>
+
         <!-- App settings -->
         <div class="acard mt-2">
           <div class="acard-title">App Settings</div>
@@ -234,6 +266,72 @@
         <div class="mt-3" style="display:flex;justify-content:flex-end">
           <button type="submit" class="btn btn-primary" id="save-btn-bottom">Save Changes</button>
         </div>
+
+        </div><!-- /.settings-layout__editor -->
+
+        <aside class="settings-layout__preview">
+          <div class="live-preview" id="live-preview">
+            <div class="live-preview__head">
+              <h2 class="live-preview__title">Live Preview</h2>
+              <span class="live-preview__hint">Unsaved changes appear instantly.</span>
+              <button type="button" class="btn btn-ghost btn-sm" id="lp-expand" aria-pressed="false">Expand</button>
+            </div>
+
+            <div class="live-preview__controls">
+              <div class="lp-group">
+                <span class="lp-group__label" id="lp-lbl-page">Page</span>
+                <div class="lp-seg" role="group" aria-labelledby="lp-lbl-page">
+                  <button type="button" class="lp-seg__btn is-active" data-page="home" aria-pressed="true">Home</button>
+                  <button type="button" class="lp-seg__btn" data-page="menu" aria-pressed="false">Menu</button>
+                  <button type="button" class="lp-seg__btn" data-page="location" aria-pressed="false">Location</button>
+                  <button type="button" class="lp-seg__btn" data-page="contact" aria-pressed="false">Contact</button>
+                </div>
+              </div>
+              <div class="lp-group">
+                <span class="lp-group__label" id="lp-lbl-device">Device</span>
+                <div class="lp-seg" role="group" aria-labelledby="lp-lbl-device">
+                  <button type="button" class="lp-seg__btn is-active" data-device="desktop" aria-pressed="true">Desktop</button>
+                  <button type="button" class="lp-seg__btn" data-device="mobile" aria-pressed="false">Mobile</button>
+                </div>
+              </div>
+              <div class="lp-group">
+                <span class="lp-group__label" id="lp-lbl-lang">Language</span>
+                <div class="lp-seg" role="group" aria-labelledby="lp-lbl-lang">
+                  <button type="button" class="lp-seg__btn is-active" data-lang="en" aria-pressed="true">English</button>
+                  <button type="button" class="lp-seg__btn" data-lang="ar" aria-pressed="false" lang="ar">العربية</button>
+                </div>
+              </div>
+              <div class="lp-group">
+                <span class="lp-group__label" id="lp-lbl-theme">Theme</span>
+                <div class="lp-seg" role="group" aria-labelledby="lp-lbl-theme">
+                  <button type="button" class="lp-seg__btn is-active" data-theme="dark" aria-pressed="true">Dark</button>
+                  <button type="button" class="lp-seg__btn" data-theme="light" aria-pressed="false">Light</button>
+                </div>
+              </div>
+              <div class="lp-group">
+                <span class="lp-group__label" id="lp-lbl-view">View</span>
+                <div class="lp-seg" role="group" aria-labelledby="lp-lbl-view">
+                  <button type="button" class="lp-seg__btn is-active" data-zoom="fit" aria-pressed="true">Fit</button>
+                  <button type="button" class="lp-seg__btn" data-zoom="100" aria-pressed="false">100%</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="live-preview__stage" id="lp-stage" data-device="desktop" data-zoom="fit" data-theme="dark">
+              <div class="lp-viewport" id="lp-viewport">
+                <!-- Double-buffered: only the .is-active frame is shown. A page
+                     switch loads the next page in the other frame, then crossfades.
+                     Both src values are set by settings.js so every load (first
+                     one included) carries a navigation generation (?previewNav=N). -->
+                <iframe class="preview-frame" data-slot="a" title="Website preview"
+                        referrerpolicy="same-origin"></iframe>
+                <iframe class="preview-frame" data-slot="b" title="Website preview" aria-hidden="true"
+                        referrerpolicy="same-origin"></iframe>
+              </div>
+            </div>
+          </div>
+        </aside>
+      </div><!-- /.settings-layout -->
 
       </form>
     </main>
