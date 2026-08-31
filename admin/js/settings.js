@@ -75,7 +75,27 @@
   let activeReady       = false;    // the active frame has rendered a draft at least once
   let previewInitDone   = false;    // the parent's Settings state is ready to send
   let previewSendQueued = false;
-  const _brandObj = { hero: { file: null, url: null }, logo: { file: null, url: null } };
+  const _brandObj = {
+    hero:     { file: null, url: null },
+    logo:     { file: null, url: null },
+    location: { file: null, url: null },
+  };
+
+  // Fail-closed Settings load. Settings only ever UPDATEs the ONE restaurant row
+  // it successfully loaded — never inserts, never guesses, never writes against
+  // blank state. Anything other than exactly-one-row → 'error': Save stays
+  // disabled, no draft is pushed to the preview, no dirty baseline is set.
+  let restaurantLoadState = 'loading';   // 'loading' | 'ready' | 'error'
+  let restaurant = null;
+
+  // Direct-in-Preview Location image edit session. Declared here (not with the
+  // other loc* draft state further down) because postPreviewData() reads
+  // locEditActive, and postPreviewData runs during populateForm() BEFORE that
+  // block — a `let` down there would be in the temporal dead zone and throw,
+  // aborting the rest of Settings wiring. These have no `restaurant` dependency.
+  let locEditActive  = false;
+  let locEditPending = false;   // true while waiting for the Location page to become ready
+  let locEditSnapshot = null;   // composition captured on Edit start, for Cancel
 
   if (lpStage) lpStage.dataset.theme = previewTheme;   // themed first-load surface (behind the frames)
 
@@ -94,27 +114,95 @@
   // every page switch (no special / unstamped first-load path).
   if (previewFrames[0]) previewFrames[0].src = previewSrc('home', previewNavId);
 
+  // Save is disabled from the very first paint until a single restaurant row
+  // has loaded (§5) — a mid-load click can never write.
+  const saveBtnEls = ['save-btn', 'save-btn-bottom']
+    .map(id => document.getElementById(id)).filter(Boolean);
+  saveBtnEls.forEach(b => { b.disabled = true; });
+
   showLoading();
   const session = await requireAuth();
   if (!session) return;
 
-  const restaurant = await getMyRestaurant(session.user.id);
-  initAdminShell(restaurant ? restaurant.name_en || restaurant.name_ar : 'My Restaurant');
+  // Load the owner's restaurant row WITHOUT .single() so 0 vs >1 vs error are
+  // distinguishable and can each fail closed.
+  let _loadErr = null, _rows = null;
+  try {
+    const res = await db.from('restaurants').select('*').eq('owner_id', session.user.id);
+    _loadErr = res.error; _rows = res.data;
+  } catch (err) { _loadErr = err; }
+
+  if (_loadErr) {
+    restaurantLoadState = 'error';
+    console.error('[settings] restaurant load failed:', _loadErr && (_loadErr.message || _loadErr), _loadErr);
+  } else if (!Array.isArray(_rows) || _rows.length === 0) {
+    restaurantLoadState = 'error';
+    console.error('[settings] no restaurant row for owner_id', session.user.id,
+      '— Settings does not create restaurants.');
+  } else if (_rows.length > 1) {
+    restaurantLoadState = 'error';
+    console.error('[settings] DATA INTEGRITY: ' + _rows.length +
+      ' restaurant rows for owner_id ' + session.user.id + ' →', _rows.map(r => r.id));
+  } else if (!_rows[0] || !_rows[0].id) {
+    restaurantLoadState = 'error';
+    console.error('[settings] restaurant row has no id:', _rows[0]);
+  } else {
+    restaurant = _rows[0];
+    restaurantLoadState = 'ready';
+  }
+
+  initAdminShell(restaurant ? (restaurant.name_en || restaurant.name_ar || 'My Restaurant') : 'My Restaurant');
   hideLoading();
 
-  // Populate form with existing data
-  if (restaurant) populateForm(restaurant);
-  else { renderStatsEditor(); renderLivePreview(); recomputeDirty(); updateUndoBtn(); }
+  if (restaurantLoadState === 'ready') {
+    populateForm(restaurant);                       // establishes the dirty baseline + first draft
+    saveBtnEls.forEach(b => { b.disabled = false; });
+  } else {
+    showSettingsLoadError();                        // persistent owner-facing banner
+    const addB = document.getElementById('stats-add');
+    if (addB) addB.disabled = true;
+    renderLivePreview();                            // size the iframe only — postPreviewData is gated on 'ready'
+  }
 
-  // Image file pickers + explicit-remove state (hero and logo are independent)
+  function showSettingsLoadError() {
+    const main = document.querySelector('.admin-main');
+    if (!main || document.getElementById('settings-load-error')) return;
+    const box = document.createElement('div');
+    box.id = 'settings-load-error';
+    box.className = 'settings-load-error';
+    box.setAttribute('role', 'alert');
+    box.textContent = 'Restaurant settings could not be loaded. Reload the page before making changes.';
+    const header = main.querySelector('.admin-page-header');
+    main.insertBefore(box, header ? header.nextSibling : main.firstChild);
+  }
+
+  // Image file pickers + explicit-remove state (hero, logo, location are independent)
   let heroFile = null;
   let logoFile = null;
+  let locationFile = null;
   let removeHero = false;
   let removeLogo = false;
+  let removeLocation = false;
+  // Location-page big visual: 'map' | 'image' — ordinary draft data, not a
+  // Statistics-style dirty-tracked field (same as map_embed / map_directions).
+  let locVisualMode = (restaurant && restaurant.location_visual_mode === 'image') ? 'image' : 'map';
+  // Location image composition (ordinary draft data; the PUBLIC renderer owns
+  // how these translate to object-fit / object-position / scale).
+  let locFit  = (restaurant && restaurant.location_image_fit === 'contain') ? 'contain' : 'cover';
+  let locPosX = numOr(restaurant && restaurant.location_image_position_x, 0, 100, 50);
+  let locPosY = numOr(restaurant && restaurant.location_image_position_y, 0, 100, 50);
+  let locZoom = numOr(restaurant && restaurant.location_image_zoom, 1, 1.6, 1);
+  let locHeight = (restaurant && (restaurant.location_image_height === 'short' || restaurant.location_image_height === 'tall'))
+    ? restaurant.location_image_height : 'standard';
+  // Direct-in-Preview image editing session state (locEditActive / locEditPending
+  // / locEditSnapshot) is declared up with restaurantLoadState — see the note
+  // there. Crop position + zoom are NOT shown to the owner as a "focal point":
+  // they drag the real image in the real Live Preview.
 
   // Picking a new file always supersedes a pending "remove".
   initImageInput('hero-file', 'hero-preview', f => { heroFile = f; removeHero = false; updateBrandingRemoveBtns(); postPreviewData(); });
   initImageInput('logo-file', 'logo-preview', f => { logoFile = f; removeLogo = false; updateBrandingRemoveBtns(); postPreviewData(); });
+  initImageInput('location-file', 'location-preview', f => { locationFile = f; removeLocation = false; updateBrandingRemoveBtns(); refreshLocCompose(); postPreviewData(); });
 
   // Show existing images if saved
   if (restaurant && restaurant.hero_image_url) {
@@ -125,11 +213,115 @@
     const prev = document.getElementById('logo-preview');
     if (prev) { prev.src = restaurant.logo_url; prev.hidden = false; }
   }
+  if (restaurant && restaurant.location_image_url) {
+    const prev = document.getElementById('location-preview');
+    if (prev) { prev.src = restaurant.location_image_url; }
+  }
+  // Reflect the loaded visual mode in the segmented control + uploader visibility.
+  syncSeg('data-loc-visual', locVisualMode);
+  const locImgField0 = document.getElementById('loc-image-field');
+  if (locImgField0) locImgField0.hidden = locVisualMode !== 'image';
 
   // ── Remove image buttons ─────────────────────────────────────────
   wireRemoveBtn('hero-remove', 'hero-file', 'hero-preview', () => { heroFile = null; removeHero = true; });
   wireRemoveBtn('logo-remove', 'logo-file', 'logo-preview', () => { logoFile = null; removeLogo = true; });
+  wireRemoveBtn('location-remove', 'location-file', 'location-preview', () => { locationFile = null; removeLocation = true; refreshLocCompose(); });
   updateBrandingRemoveBtns();
+
+  // ── Location Visual: Map | Business Image (preview-only until Save) ─────
+  document.querySelectorAll('.lp-seg__btn[data-loc-visual]').forEach(btn => {
+    btn.addEventListener('click', () => setLocationVisualMode(btn.dataset.locVisual));
+  });
+  function setLocationVisualMode(mode) {
+    locVisualMode = (mode === 'image') ? 'image' : 'map';
+    syncSeg('data-loc-visual', locVisualMode);
+    const field = document.getElementById('loc-image-field');
+    if (field) field.hidden = locVisualMode !== 'image';
+    if (locVisualMode !== 'image' && (locEditActive || locEditPending)) endLocImageEdit(false);
+    refreshLocCompose();
+    postPreviewData();
+  }
+
+  // ── Location image: Fit/Fill + Frame Height (owner controls) ─────
+  // Detailed composition (position + zoom) is done by DRAGGING the real image
+  // in the Live Preview — see startLocImageEdit / PREVIEW_LOCATION_* below.
+  document.querySelectorAll('.lp-seg__btn[data-loc-fit]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      locFit = btn.dataset.locFit === 'contain' ? 'contain' : 'cover';
+      if (locFit !== 'cover' && (locEditActive || locEditPending)) endLocImageEdit(false);
+      refreshLocCompose(); postPreviewData();
+    });
+  });
+  document.querySelectorAll('.lp-seg__btn[data-loc-height]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const h = btn.dataset.locHeight;
+      locHeight = (h === 'short' || h === 'tall') ? h : 'standard';
+      syncSeg('data-loc-height', locHeight);
+      if (locEditActive) sendLocEdit(true);   // keep the open editor in sync
+      postPreviewData();
+    });
+  });
+  const locEditBtn = document.getElementById('loc-edit-btn');
+  if (locEditBtn) locEditBtn.addEventListener('click', startLocImageEdit);
+
+  // Sync the (now minimal) Settings image controls to state.
+  function refreshLocCompose() {
+    const hasImg  = !!locationFile || (!removeLocation && !!(restaurant && restaurant.location_image_url));
+    const compose = document.getElementById('loc-compose');
+    const editBtn = document.getElementById('loc-edit-btn');
+    const hint    = document.getElementById('loc-fit-hint');
+    if (compose) compose.hidden = !hasImg;
+    if (editBtn) editBtn.hidden = locFit !== 'cover';   // direct edit only makes sense for Fill Frame
+    if (hint)    hint.hidden    = locFit !== 'contain';
+    syncSeg('data-loc-fit', locFit);
+    syncSeg('data-loc-height', locHeight);
+    updateLocEditUi();
+  }
+
+  function updateLocEditUi() {
+    const b = document.getElementById('loc-edit-btn');
+    if (b) b.textContent = locEditActive ? 'Editing in Preview…' : 'Edit Image in Preview';
+  }
+
+  // Enter direct-edit: ensure the Location page is the active preview, then tell
+  // the child to enter edit mode. Snapshot the composition for Cancel.
+  function startLocImageEdit() {
+    if (restaurantLoadState !== 'ready' || locVisualMode !== 'image' || locFit !== 'cover') return;
+    if (locEditActive || locEditPending) return;
+    locEditSnapshot = { x: locPosX, y: locPosY, zoom: locZoom, height: locHeight };
+    locEditActive = true;
+    updateLocEditUi();
+    if (isNarrowAdmin()) setAdminMode('preview');
+    if (activePreviewPage !== 'location' || pendingNav) {
+      locEditPending = true;
+      setPreviewPage('location');   // child edit-start fires from completeNavigation
+      return;
+    }
+    sendLocEdit(true);
+  }
+  function sendLocEdit(on) {
+    if (!activeFrame || !activeFrame.contentWindow) return;
+    activeFrame.contentWindow.postMessage({
+      type: 'PREVIEW_LOCATION_EDIT',
+      on: !!on,
+      seed: on ? { position_x: locPosX, position_y: locPosY, zoom: locZoom, height: locHeight } : undefined,
+    }, window.location.origin);
+  }
+  // Exit edit mode. restore=true → revert composition to the Edit-start snapshot.
+  function endLocImageEdit(restore) {
+    if (!locEditActive && !locEditPending) return;
+    if (restore && locEditSnapshot) {
+      locPosX = locEditSnapshot.x; locPosY = locEditSnapshot.y;
+      locZoom = locEditSnapshot.zoom; locHeight = locEditSnapshot.height;
+    }
+    const wasActive = locEditActive;
+    locEditActive = false; locEditPending = false; locEditSnapshot = null;
+    updateLocEditUi();
+    syncSeg('data-loc-height', locHeight);
+    if (wasActive) sendLocEdit(false);
+    postPreviewData();   // one full resync now that editing is over (§14 boundary)
+  }
+  refreshLocCompose();
 
   // ── Homepage Statistics: wiring ───────────────────────────────
   const addBtn   = document.getElementById('stats-add');
@@ -181,12 +373,29 @@
   const lpViewBtn = document.getElementById('stats-view-in-preview');
   if (lpViewBtn) lpViewBtn.addEventListener('click', viewStatsInPreview);
 
+  // Scalar restaurant columns the Settings form owns. A Save only writes one of
+  // these if the owner actually edited it this session — otherwise the value
+  // loaded from the DB is re-sent verbatim. This makes Save a true patch and
+  // means a field the form never populated (e.g. a mid-migration load glitch)
+  // can NEVER be blanked by clicking Save.
+  const SAVED_FIELD_IDS = [
+    'name_ar','name_en','tagline_ar','tagline_en','description_ar','description_en',
+    'phone','whatsapp','instagram','email','wa_message_ar','wa_message_en',
+    'address_ar','address_en','map_directions','map_embed',
+    'hours_weekdays_en','hours_weekdays_ar','hours_weekends_en','hours_weekends_ar',
+    'sounds_enabled',
+  ];
+  const editedFields = new Set();
+  function noteEdit(e) {
+    if (e.target && SAVED_FIELD_IDS.indexOf(e.target.id) !== -1) editedFields.add(e.target.id);
+  }
+
   // Any ordinary Settings field edit refreshes the live preview (rAF-coalesced
   // inside postPreviewData). Statistics edits also call renderLivePreview().
   const settingsForm = document.getElementById('settings-form');
   if (settingsForm) {
-    settingsForm.addEventListener('input',  postPreviewData);
-    settingsForm.addEventListener('change', postPreviewData);
+    settingsForm.addEventListener('input',  e => { noteEdit(e); postPreviewData(); });
+    settingsForm.addEventListener('change', e => { noteEdit(e); postPreviewData(); });
   }
 
   // Settings state is now fully loaded/wired — safe to push draft data.
@@ -211,6 +420,7 @@
   function updateBrandingRemoveBtns() {
     toggleRemoveBtn('hero-remove', 'hero-preview', heroFile);
     toggleRemoveBtn('logo-remove', 'logo-preview', logoFile);
+    toggleRemoveBtn('location-remove', 'location-preview', locationFile);
   }
   function toggleRemoveBtn(btnId, previewId, pickedFile) {
     const btn = document.getElementById(btnId);
@@ -227,29 +437,48 @@
 
   async function handleSave(e) {
     e.preventDefault();
+
+    // Fail closed: Settings only ever UPDATEs the row it successfully loaded.
+    if (restaurantLoadState !== 'ready' || !restaurant || !restaurant.id) {
+      showToast('Restaurant settings could not be loaded. Reload the page before saving.', 'error');
+      return;
+    }
+
     const btn = document.getElementById('save-btn-bottom');
     btn.disabled = true;
     btn.innerHTML = '<span class="btn-spinner"></span> Saving…';
 
-    // Branding image lifecycle — hero and logo tracked independently.
-    const oldHeroUrl = restaurant ? (restaurant.hero_image_url || '') : '';
-    const oldLogoUrl = restaurant ? (restaurant.logo_url       || '') : '';
+    // Branding / location image lifecycle — hero, logo and location tracked independently.
+    const oldHeroUrl     = restaurant ? (restaurant.hero_image_url     || '') : '';
+    const oldLogoUrl     = restaurant ? (restaurant.logo_url           || '') : '';
+    const oldLocationUrl = restaurant ? (restaurant.location_image_url || '') : '';
     let uploadedHeroUrl = null;   // set only if THIS save uploaded a new hero object
     let uploadedLogoUrl = null;
+    let uploadedLocationUrl = null;
     let persisted = false;        // true only once the restaurants row write succeeds
+
+    // For a form-owned column: the edited form value, else the value loaded
+    // from the DB (so an un-touched field is re-persisted, never blanked).
+    const fieldVal = (f) => {
+      if (editedFields.has(f) || !restaurant) return val(f);
+      const cur = restaurant[f];
+      return (cur !== undefined && cur !== null) ? String(cur) : val(f);
+    };
 
     try {
       // Validate the required name BEFORE any upload, so a missing name can
-      // never leave an orphaned branding object behind.
-      if (!val('name_ar') || !val('name_en')) {
+      // never leave an orphaned branding object behind. If the form never
+      // populated (load glitch) this blocks Save rather than wiping the row.
+      if (!fieldVal('name_ar') || !fieldVal('name_en')) {
         showToast('Restaurant name (Arabic and English) is required.', 'error');
         btn.disabled = false; btn.textContent = 'Save Changes';
         return;
       }
 
-      // Resolve the hero/logo URLs to persist.
-      let heroUrl = oldHeroUrl;
-      let logoUrl = oldLogoUrl;
+      // Resolve the hero/logo/location URLs to persist.
+      let heroUrl     = oldHeroUrl;
+      let logoUrl     = oldLogoUrl;
+      let locationUrl = oldLocationUrl;
 
       if (heroFile) {
         heroUrl = await uploadToStorage(heroFile, 'branding/' + session.user.id + '-hero');
@@ -265,40 +494,65 @@
         logoUrl = '';
       }
 
+      // Switching the visual back to Map does NOT delete a stored image —
+      // only an explicit "Remove image" (removeLocation) clears it.
+      if (locationFile) {
+        // Replacement lands on a UNIQUE key: the currently-published object is
+        // left untouched until the DB write succeeds, so a failed Save is a real
+        // rollback (old URL still resolves to the ORIGINAL bytes). The old
+        // object is deleted only AFTER `persisted`.
+        locationUrl = await uploadToStorage(
+          locationFile, 'branding/' + session.user.id + '-location-' + uniqueToken()
+        );
+        uploadedLocationUrl = locationUrl;
+      } else if (removeLocation) {
+        locationUrl = '';
+      }
+
       // Homepage statistics: persist the builder state as
       // [{ type, value, label, labelAr, visible }] — local ids are dropped.
       const highlights = normStats(statisticsState);
 
+      const soundsEl = document.getElementById('sounds_enabled');
       const payload = {
-        name_ar:          val('name_ar'),
-        name_en:          val('name_en'),
-        tagline_ar:       val('tagline_ar'),
-        tagline_en:       val('tagline_en'),
-        description_ar:   val('description_ar'),
-        description_en:   val('description_en'),
-        phone:            val('phone'),
-        whatsapp:         val('whatsapp').replace(/\D/g, ''),
-        instagram:        val('instagram'),
-        email:            val('email'),
-        wa_message_ar:    val('wa_message_ar'),
-        wa_message_en:    val('wa_message_en'),
-        address_ar:       val('address_ar'),
-        address_en:       val('address_en'),
-        map_directions:   val('map_directions'),
-        map_embed:        val('map_embed'),
-        hours_weekdays_en: val('hours_weekdays_en'),
-        hours_weekdays_ar: val('hours_weekdays_ar'),
-        hours_weekends_en: val('hours_weekends_en'),
-        hours_weekends_ar: val('hours_weekends_ar'),
+        name_ar:          fieldVal('name_ar'),
+        name_en:          fieldVal('name_en'),
+        tagline_ar:       fieldVal('tagline_ar'),
+        tagline_en:       fieldVal('tagline_en'),
+        description_ar:   fieldVal('description_ar'),
+        description_en:   fieldVal('description_en'),
+        phone:            fieldVal('phone'),
+        whatsapp:         fieldVal('whatsapp').replace(/\D/g, ''),
+        instagram:        fieldVal('instagram'),
+        email:            fieldVal('email'),
+        wa_message_ar:    fieldVal('wa_message_ar'),
+        wa_message_en:    fieldVal('wa_message_en'),
+        address_ar:       fieldVal('address_ar'),
+        address_en:       fieldVal('address_en'),
+        map_directions:   fieldVal('map_directions'),
+        map_embed:        fieldVal('map_embed'),
+        hours_weekdays_en: fieldVal('hours_weekdays_en'),
+        hours_weekdays_ar: fieldVal('hours_weekdays_ar'),
+        hours_weekends_en: fieldVal('hours_weekends_en'),
+        hours_weekends_ar: fieldVal('hours_weekends_ar'),
         hero_image_url:   heroUrl,
         logo_url:         logoUrl,
+        location_visual_mode: locVisualMode,
+        location_image_url:   locationUrl,
+        location_image_fit:        locFit,
+        location_image_position_x: locPosX,
+        location_image_position_y: locPosY,
+        location_image_zoom:       locZoom,
+        location_image_height:     locHeight,
         highlights:       highlights,
-        sounds_enabled:   document.getElementById('sounds_enabled').checked,
+        sounds_enabled:   (editedFields.has('sounds_enabled') || !restaurant)
+          ? (soundsEl ? soundsEl.checked : true)
+          : (restaurant.sounds_enabled !== false),
       };
 
-      const result = restaurant
-        ? await db.from('restaurants').update(payload).eq('id', restaurant.id)
-        : await db.from('restaurants').insert({ ...payload, owner_id: session.user.id });
+      // UPDATE only — never insert. The guard above guarantees a valid row.id.
+      // (A future "Create New Business" flow, not this page, would insert.)
+      const result = await db.from('restaurants').update(payload).eq('id', restaurant.id);
 
       if (result.error) throw new Error(result.error.message);
       persisted = true;
@@ -318,12 +572,29 @@
         await deleteFromStorage(oldLogoUrl);      // logo explicitly removed
       }
 
+      if (uploadedLocationUrl && oldLocationUrl && oldLocationUrl !== uploadedLocationUrl) {
+        await deleteFromStorage(oldLocationUrl);  // superseded location object (replacement used a fresh key)
+      } else if (removeLocation && oldLocationUrl) {
+        await deleteFromStorage(oldLocationUrl);  // location image explicitly removed
+      }
+
       // Reset transient branding state so a later save this session is a no-op.
-      if (restaurant) { restaurant.hero_image_url = heroUrl; restaurant.logo_url = logoUrl; }
-      heroFile = null; logoFile = null;
-      removeHero = false; removeLogo = false;
+      if (restaurant) {
+        restaurant.hero_image_url     = heroUrl;
+        restaurant.logo_url           = logoUrl;
+        restaurant.location_image_url = locationUrl;
+        restaurant.location_visual_mode = locVisualMode;
+        restaurant.location_image_fit        = locFit;
+        restaurant.location_image_position_x = locPosX;
+        restaurant.location_image_position_y = locPosY;
+        restaurant.location_image_zoom       = locZoom;
+        restaurant.location_image_height     = locHeight;
+      }
+      heroFile = null; logoFile = null; locationFile = null;
+      removeHero = false; removeLogo = false; removeLocation = false;
       const heroInput = document.getElementById('hero-file'); if (heroInput) heroInput.value = '';
       const logoInput = document.getElementById('logo-file'); if (logoInput) logoInput.value = '';
+      const locInput  = document.getElementById('location-file'); if (locInput) locInput.value = '';
       updateBrandingRemoveBtns();
 
       // Statistics: the just-saved state becomes the clean baseline; undo resets.
@@ -336,16 +607,21 @@
 
       showToast('Settings saved successfully.', 'success');
     } catch (err) {
-      // Roll back a newly-uploaded branding object ONLY when the DB write did
-      // not land AND the upload created a genuinely new Storage key. A same-key
-      // upsert replaced the object the unchanged DB row still points at —
-      // deleting it would break that row, so leave it.
+      // Roll back a newly-uploaded object ONLY when the DB write did not land AND
+      // the upload created a genuinely new Storage key. hero/logo still use a
+      // FIXED key + upsert, so a same-extension replace has no separate object to
+      // roll back (see report §H — production-hardening follow-up). The LOCATION
+      // replacement always uses a fresh unique key, so its rollback is
+      // unconditional and the previously-published image is never disturbed.
       if (!persisted) {
         if (uploadedHeroUrl && uploadedHeroUrl !== oldHeroUrl) {
           await deleteFromStorage(uploadedHeroUrl);
         }
         if (uploadedLogoUrl && uploadedLogoUrl !== oldLogoUrl) {
           await deleteFromStorage(uploadedLogoUrl);
+        }
+        if (uploadedLocationUrl && uploadedLocationUrl !== oldLocationUrl) {
+          await deleteFromStorage(uploadedLocationUrl);
         }
       }
       console.error(err);
@@ -361,6 +637,24 @@
   function val(id) {
     const el = document.getElementById(id);
     return el ? el.value.trim() : '';
+  }
+
+  // Numeric coerce + clamp with a default for missing / non-finite input.
+  function numOr(v, min, max, dflt) {
+    const n = typeof v === 'number' ? v : parseFloat(v);
+    if (!isFinite(n)) return dflt;
+    return n < min ? min : (n > max ? max : n);
+  }
+
+  // Collision-safe suffix for a NEW Storage object key. Used so an image
+  // REPLACEMENT never overwrites the currently-published object before the DB
+  // write lands — a failed Save then leaves the live image byte-for-byte intact.
+  // Not a secret; not the user's filename.
+  function uniqueToken() {
+    try {
+      if (window.crypto && typeof crypto.randomUUID === 'function') return crypto.randomUUID();
+    } catch (e) {}
+    return Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10);
   }
 
   // Statistic-specific text normalisation: trim surrounding whitespace ONLY.
@@ -907,6 +1201,9 @@
     if (!PREVIEW_PAGES[page] || previewFrames.length < 2) return;
     if (pendingNav && pendingNav.page === page) return;          // already loading it
     if (!pendingNav && page === activePreviewPage) return;       // already showing it
+    // Navigating away from Location ends an open image-edit session (§15) — the
+    // composition draft is kept, the edit overlay just goes away with the iframe.
+    if (locEditActive && page !== 'location') { locEditActive = false; updateLocEditUi(); }
     previewPage = page;                       // requested page — selector reflects it now
     syncSeg('data-page', previewPage);
     const incoming = (activeFrame === previewFrames[0]) ? previewFrames[1] : previewFrames[0];
@@ -944,6 +1241,15 @@
     incoming.removeAttribute('aria-hidden');
 
     if (doScroll) scrollPreviewTo(doScroll, 'auto');   // frame is active now; position before it settles
+
+    // "Edit Image" was pressed while off the Location page — the page is now
+    // ready and the draft has been sent; tell the child to enter edit mode.
+    if (locEditPending && activePreviewPage === 'location') {
+      locEditPending = false;
+      requestAnimationFrame(() => { sendLocEdit(true); updateLocEditUi(); });
+    } else if (locEditPending) {
+      locEditPending = false; locEditActive = false; updateLocEditUi();   // navigated elsewhere → abandon
+    }
 
     if (!outgoing) return;                    // first load — nothing to fade out
 
@@ -1097,7 +1403,7 @@
     return savedUrl || '';
   }
   function releasePreviewObjectUrls() {
-    ['hero', 'logo'].forEach(k => {
+    ['hero', 'logo', 'location'].forEach(k => {
       if (_brandObj[k].url) { try { URL.revokeObjectURL(_brandObj[k].url); } catch (e) {} _brandObj[k].url = null; }
     });
   }
@@ -1123,6 +1429,13 @@
       sounds_enabled: soundsEl ? soundsEl.checked : true,
       hero_image_url: brandingPreviewUrl('hero', heroFile, removeHero, restaurant && restaurant.hero_image_url),
       logo_url:       brandingPreviewUrl('logo', logoFile, removeLogo, restaurant && restaurant.logo_url),
+      location_visual_mode: locVisualMode,
+      location_image_url:   brandingPreviewUrl('location', locationFile, removeLocation, restaurant && restaurant.location_image_url),
+      location_image_fit:        locFit,
+      location_image_position_x: locPosX,
+      location_image_position_y: locPosY,
+      location_image_zoom:       locZoom,
+      location_image_height:     locHeight,
       highlights: statisticsState.map(s => ({
         _previewId: s._id,                                 // local editing id — never persisted
         type:    VALID_TYPES.has(s.type) ? s.type : 'custom',
@@ -1141,12 +1454,15 @@
   // Ordinary Settings edits → refresh the ACTIVE frame in place (no reload, no
   // double buffer). Coalesced to one send per animation frame.
   function postPreviewData() {
+    if (restaurantLoadState !== 'ready') return;   // never push a non-loaded / blank draft (§9)
+    if (locEditActive) return;                     // child owns the live image during a drag (§14)
     if (!previewInitDone || !activeFrame || !activeReady) return;
     if (previewSendQueued) return;
     previewSendQueued = true;
     requestAnimationFrame(() => { previewSendQueued = false; sendPreviewNow(activeFrame, activeNavId); });
   }
   function sendPreviewNow(frame, navId) {
+    if (restaurantLoadState !== 'ready') return;   // no draft leaves Settings unless a row loaded
     if (!previewInitDone || !frame || !frame.contentWindow) return;
     frame.contentWindow.postMessage(
       { type: 'PREVIEW_DATA', nav: navId, payload: buildPreviewPayload() }, window.location.origin);
@@ -1204,6 +1520,23 @@
         previewLang = msg.lang;
         syncSeg('data-lang', previewLang);
       }
+    } else if (msg.type === 'PREVIEW_LOCATION_COMPOSE') {
+      // Owner dragged / zoomed / resized the real Location image. Record the
+      // normalized draft; DO NOT re-send PREVIEW_DATA (§14 — the child owns the
+      // live visual until Done). Range-validated.
+      if (!fromActive) return;
+      const nx = Number(msg.position_x), ny = Number(msg.position_y), nz = Number(msg.zoom);
+      if (isFinite(nx)) locPosX = Math.min(100, Math.max(0, Math.round(nx)));
+      if (isFinite(ny)) locPosY = Math.min(100, Math.max(0, Math.round(ny)));
+      if (isFinite(nz)) locZoom = Math.min(1.6, Math.max(1, nz));
+      if (msg.height === 'short' || msg.height === 'standard' || msg.height === 'tall') {
+        locHeight = msg.height;
+        syncSeg('data-loc-height', locHeight);
+      }
+    } else if (msg.type === 'PREVIEW_LOCATION_EDIT_DONE') {
+      if (fromActive) endLocImageEdit(false);
+    } else if (msg.type === 'PREVIEW_LOCATION_EDIT_CANCEL') {
+      if (fromActive) endLocImageEdit(true);
     }
   }
 

@@ -52,6 +52,7 @@
   var _previewLang  = null;   // 'ar' | 'en'
   var _previewTheme = null;   // 'dark' | 'light'
   var _previewApplied = false; // set once the first PREVIEW_DATA has been applied
+  var _locEdit = null;         // Location-image direct-edit session state (preview only)
   // This document's preview navigation generation — read from its OWN boot URL
   // (?previewNav=N) and fixed for the document's lifetime. Stamped on every
   // message so the parent can reject a stale document whose slot was re-navigated.
@@ -121,6 +122,18 @@
       },
       mapEmbed:      r.map_embed        || '',
       mapDirections: r.map_directions   || '',
+      // Location-page big visual: 'map' (default) or 'image'. `locationImage`
+      // is a public URL shown, as a Google-Maps link, when mode is 'image'.
+      // Composition: 'contain' (Fit Whole Image, blurred filler) | 'cover'
+      // (Fill Frame) + normalized focal point (0–100) + zoom (1–1.6).
+      locationVisualMode: r.location_visual_mode === 'image' ? 'image' : 'map',
+      locationImage:      r.location_image_url || '',
+      locationImageFit:   r.location_image_fit === 'contain' ? 'contain' : 'cover',
+      locationImagePosX:  clampNum(r.location_image_position_x, 0, 100, 50),
+      locationImagePosY:  clampNum(r.location_image_position_y, 0, 100, 50),
+      locationImageZoom:  clampNum(r.location_image_zoom, 1, 1.6, 1),
+      locationImageHeight: (r.location_image_height === 'short' || r.location_image_height === 'tall')
+        ? r.location_image_height : 'standard',
       hours: {
         weekdays:   r.hours_weekdays_en || '',
         weekdaysAr: r.hours_weekdays_ar || '',
@@ -315,13 +328,16 @@
     return lang === 'ar' ? SHOP.description : (SHOP.descriptionEn || SHOP.description);
   }
   function shopAddr(lang) {
-    if (typeof SHOP === 'undefined') return '';
-    return lang === 'ar' ? SHOP.address.ar : SHOP.address.en;
+    if (typeof SHOP === 'undefined' || !SHOP.address) return '';
+    // Cross-language fallback, matching shopName/shopTagline/shopDesc.
+    return lang === 'ar'
+      ? (SHOP.address.ar || SHOP.address.en || '')
+      : (SHOP.address.en || SHOP.address.ar || '');
   }
   function shopHours(lang, type) {
     if (typeof SHOP === 'undefined' || !SHOP.hours) return '';
     if (lang === 'ar') return SHOP.hours[type + 'Ar'] || SHOP.hours[type] || '';
-    return SHOP.hours[type] || '';
+    return SHOP.hours[type] || SHOP.hours[type + 'Ar'] || '';
   }
 
   // Returns the display label for a category slug in the given language.
@@ -356,6 +372,7 @@
       setText('loc-address',  shopAddr(lang));
       setText('loc-weekdays', shopHours(lang, 'weekdays'));
       setText('loc-weekends', shopHours(lang, 'weekends'));
+      applyLocationVisual(lang);
     }
     if (page === 'contact') {
       setText('contact-hours', shopHours(lang, 'weekdays') + '  ·  ' + shopHours(lang, 'weekends'));
@@ -728,12 +745,10 @@
   }
 
   // ── LOCATION PAGE ────────────────────────────────────────────────
+  // Idempotent: re-run on every Admin-preview draft update.
   function initLocation() {
     if (typeof SHOP === 'undefined') return;
     const lang = getLang();
-
-    const frame = document.getElementById('map-frame');
-    if (frame && SHOP.mapEmbed) frame.src = SHOP.mapEmbed;
 
     setText('loc-address',  shopAddr(lang));
     setText('loc-weekdays', shopHours(lang, 'weekdays'));
@@ -741,6 +756,281 @@
 
     const dirBtn = document.getElementById('directions-btn');
     if (dirBtn && SHOP.mapDirections) dirBtn.href = SHOP.mapDirections;
+
+    applyLocationVisual(lang);
+  }
+
+  // The big Location visual: interactive map OR a composed business image that
+  // links to the same Google-Maps destination as "Get Directions". Owns the
+  // whole presentation (map vs image, contain vs cover, focal point, zoom,
+  // blurred filler). Falls back to the map whenever the image can't be used;
+  // hides the block only if neither a map nor an image is configured.
+  // DOM/CSSOM APIs only — no innerHTML.
+  function applyLocationVisual(lang) {
+    const visual  = document.querySelector('.loc-visual');
+    const mapWrap = document.getElementById('loc-map-wrap');
+    const imgLink = document.getElementById('loc-image-link');
+    const img     = document.getElementById('loc-image');
+    const blur    = document.getElementById('loc-image-blur');
+    const frame   = document.getElementById('map-frame');
+    if (!mapWrap && !imgLink) return;
+
+    const hasMap = !!(SHOP.mapEmbed && String(SHOP.mapEmbed).trim());
+    const url = (SHOP.locationVisualMode === 'image' && typeof SHOP.locationImage === 'string')
+      ? SHOP.locationImage.trim() : '';
+
+    // Keep the map iframe loaded whenever a map is configured — in EITHER mode —
+    // so an image→map fallback is instant and never flashes an empty frame.
+    if (frame && hasMap && frame.getAttribute('src') !== SHOP.mapEmbed) frame.src = SHOP.mapEmbed;
+
+    // §8: the whole block is in layout unless there is NEITHER a usable map NOR
+    // a usable image. This is decided HERE from data only — never from an
+    // in-flight image load. §7: a valid map in map mode is always shown.
+    function showBlock(on) {
+      if (!visual) return;
+      visual.style.display = on ? '' : 'none';
+      if (on && PREVIEW) visual.classList.add('visible');   // preview: don't wait on scroll-reveal
+    }
+    showBlock(hasMap || !!url);
+
+    function showMap() {
+      if (img)  { img.onload = null; img.onerror = null; img.removeAttribute('src'); }
+      if (blur) blur.style.backgroundImage = '';
+      if (imgLink) imgLink.hidden = true;                   // now honoured (CSS [hidden] rule)
+      if (mapWrap) mapWrap.hidden = !hasMap;
+    }
+
+    if (!url || !imgLink || !img) { showMap(); return; }    // map mode / no usable image → map
+
+    // ── Image mode ──────────────────────────────────────────────
+    const fit = SHOP.locationImageFit === 'contain' ? 'contain' : 'cover';
+
+    // Composition (fit / height / crop position / zoom). While the owner is
+    // dragging in edit mode the overlay owns all of this locally — a stray
+    // PREVIEW_DATA re-render must never jump or reset the image (§14).
+    if (!(_locEdit && _locEdit.active)) {
+      const height = (SHOP.locationImageHeight === 'short' || SHOP.locationImageHeight === 'tall')
+        ? SHOP.locationImageHeight : 'standard';
+      const posX = clampNum(SHOP.locationImagePosX, 0, 100, 50);
+      const posY = clampNum(SHOP.locationImagePosY, 0, 100, 50);
+      const zoom = clampNum(SHOP.locationImageZoom, 1, 1.6, 1);
+      imgLink.dataset.height = height;          // frame size (public CSS → responsive px)
+      imgLink.classList.toggle('is-contain', fit === 'contain');
+      imgLink.style.setProperty('--loc-pos', posX + '% ' + posY + '%');
+      imgLink.style.setProperty('--loc-zoom', fit === 'contain' ? '1' : String(zoom));
+    }
+
+    const dest = SHOP.mapDirections || '';
+    if (dest) { imgLink.href = dest; imgLink.setAttribute('aria-label', t('location.viewOnMaps') || 'View on Google Maps'); }
+    else      { imgLink.removeAttribute('href'); imgLink.removeAttribute('aria-label'); }  // shown, not clickable
+    const badge = document.getElementById('loc-image-badge-text');
+    if (badge) badge.textContent = t('location.viewOnMaps') || 'View on Google Maps';
+
+    const name = shopName(lang);
+    img.alt = (name ? name + ' — ' : '') + (t('location.title') || 'Location');
+
+    const reveal = function () {
+      // Blurred filler derives from the SAME cached image; only in Fit mode.
+      if (blur) blur.style.backgroundImage = (fit === 'contain') ? 'url(' + JSON.stringify(url) + ')' : '';
+      if (mapWrap) mapWrap.hidden = true;      // hide the map ONLY once the image is ready (§9)
+      if (imgLink) imgLink.hidden = false;
+    };
+    img.onload  = reveal;
+    img.onerror = function () {
+      img.onload = null; img.onerror = null;
+      showMap();                                // broken image → the map stays / returns
+      if (!hasMap) showBlock(false);            // ...and if there is no map either, hide the block (§8)
+    };
+    if (img.getAttribute('src') !== url) img.src = url;
+    else if (img.complete && img.naturalWidth > 0) reveal();  // already loaded (re-render)
+  }
+
+  // ── ADMIN PREVIEW: Location image direct-edit ───────────────────
+  // Only in ?adminPreview=1. The owner drags / zooms / resizes the REAL Location
+  // image inside the real page; normalized composition is reported UP to the
+  // parent (which owns the draft). The child applies the live transform locally
+  // during a drag — no full page re-render per pointermove (§14).
+  var _locEditRaf = false;
+
+  function locEditReport(final) {
+    if (!_locEdit) return;
+    var send = function () {
+      parentPost({
+        type: 'PREVIEW_LOCATION_COMPOSE',
+        position_x: Math.round(_locEdit.x),
+        position_y: Math.round(_locEdit.y),
+        zoom: Math.round(_locEdit.zoom * 100) / 100,
+        height: _locEdit.height,
+      });
+    };
+    if (final) { send(); return; }
+    if (_locEditRaf) return;
+    _locEditRaf = true;
+    requestAnimationFrame(function () { _locEditRaf = false; send(); });
+  }
+
+  function locEditApplyTransform() {
+    var link = document.getElementById('loc-image-link');
+    if (!link || !_locEdit) return;
+    link.style.setProperty('--loc-pos', _locEdit.x + '% ' + _locEdit.y + '%');
+    link.style.setProperty('--loc-zoom', String(_locEdit.zoom));
+    link.dataset.height = _locEdit.height;
+    if (_locEdit.overlay) {
+      var zv = _locEdit.overlay.querySelector('[data-loc-zoom-val]');
+      if (zv) zv.textContent = Math.round(_locEdit.zoom * 100) + '%';
+      var zr = _locEdit.overlay.querySelector('input[type="range"]');
+      if (zr && String(Math.round(_locEdit.zoom * 100)) !== zr.value) zr.value = String(Math.round(_locEdit.zoom * 100));
+      _locEdit.overlay.querySelectorAll('[data-h]').forEach(function (b) {
+        b.classList.toggle('is-on', b.dataset.h === _locEdit.height);
+      });
+    }
+  }
+
+  function locEditBuildOverlay() {
+    var mk = function (tag, cls, txt) { var n = document.createElement(tag); if (cls) n.className = cls; if (txt != null) n.textContent = txt; return n; };
+    var box = mk('div', 'loc-edit');
+
+    var head = mk('div', 'loc-edit__head');
+    head.appendChild(mk('span', 'loc-edit__badge', 'Editing image'));
+    head.appendChild(mk('span', 'loc-edit__hint', 'Drag to reposition'));
+    box.appendChild(head);
+
+    var ctl = mk('div', 'loc-edit__controls');
+
+    var zoomRow = mk('div', 'loc-edit__row');
+    zoomRow.appendChild(mk('span', 'loc-edit__lbl', 'Zoom'));
+    var zoom = document.createElement('input');
+    zoom.type = 'range'; zoom.min = '100'; zoom.max = '160'; zoom.step = '2';
+    zoom.value = String(Math.round(_locEdit.zoom * 100));
+    zoom.setAttribute('aria-label', 'Zoom');
+    zoom.addEventListener('input', function () {
+      _locEdit.zoom = clampNum(zoom.value, 100, 160, 100) / 100;
+      locEditApplyTransform(); locEditReport();
+    });
+    zoom.addEventListener('change', function () { locEditReport(true); });
+    zoomRow.appendChild(zoom);
+    var zv = mk('span', 'loc-edit__val', Math.round(_locEdit.zoom * 100) + '%');
+    zv.setAttribute('data-loc-zoom-val', '');
+    zoomRow.appendChild(zv);
+    ctl.appendChild(zoomRow);
+
+    var hRow = mk('div', 'loc-edit__row');
+    hRow.appendChild(mk('span', 'loc-edit__lbl', 'Frame'));
+    var hSeg = mk('div', 'loc-edit__seg');
+    [['short', 'Short'], ['standard', 'Standard'], ['tall', 'Tall']].forEach(function (p) {
+      var b = mk('button', null, p[1]); b.type = 'button'; b.dataset.h = p[0];
+      if (_locEdit.height === p[0]) b.classList.add('is-on');
+      b.addEventListener('click', function () {
+        _locEdit.height = p[0]; locEditApplyTransform(); locEditReport(true);
+      });
+      hSeg.appendChild(b);
+    });
+    hRow.appendChild(hSeg);
+    ctl.appendChild(hRow);
+
+    var pad = mk('div', 'loc-edit__pad');
+    var nudge = function (label, glyph, dx, dy) {
+      var b = mk('button', 'loc-edit__nudge', glyph); b.type = 'button';
+      b.setAttribute('aria-label', label);
+      b.addEventListener('click', function () {
+        _locEdit.x = clampNum(_locEdit.x + dx, 0, 100, _locEdit.x);
+        _locEdit.y = clampNum(_locEdit.y + dy, 0, 100, _locEdit.y);
+        locEditApplyTransform(); locEditReport(true);
+      });
+      return b;
+    };
+    var STEP = 4;
+    pad.appendChild(nudge('Move image up', '↑', 0, -STEP));
+    pad.appendChild(nudge('Move image left', '←', -STEP, 0));
+    pad.appendChild(mk('span', 'loc-edit__nudge loc-edit__nudge--dot', '●'));
+    pad.appendChild(nudge('Move image right', '→', STEP, 0));
+    pad.appendChild(nudge('Move image down', '↓', 0, STEP));
+    ctl.appendChild(pad);
+
+    var acts = mk('div', 'loc-edit__actions');
+    var reset = mk('button', 'loc-edit__btn', 'Reset'); reset.type = 'button';
+    reset.addEventListener('click', function () {
+      _locEdit.x = 50; _locEdit.y = 50; _locEdit.zoom = 1; _locEdit.height = 'standard';
+      locEditApplyTransform(); locEditReport(true);
+    });
+    var cancel = mk('button', 'loc-edit__btn', 'Cancel'); cancel.type = 'button';
+    cancel.addEventListener('click', function () { locEditTeardown(); parentPost({ type: 'PREVIEW_LOCATION_EDIT_CANCEL' }); });
+    var done = mk('button', 'loc-edit__btn loc-edit__btn--primary', 'Done'); done.type = 'button';
+    done.addEventListener('click', function () { locEditReport(true); locEditTeardown(); parentPost({ type: 'PREVIEW_LOCATION_EDIT_DONE' }); });
+    acts.appendChild(reset); acts.appendChild(cancel); acts.appendChild(done);
+    ctl.appendChild(acts);
+
+    box.appendChild(ctl);
+    return box;
+  }
+
+  function locEditStart(seed) {
+    var link = document.getElementById('loc-image-link');
+    var img  = document.getElementById('loc-image');
+    if (!PREVIEW || !link || !img) { parentPost({ type: 'PREVIEW_LOCATION_EDIT_DONE' }); return; }
+    if (_locEdit) locEditTeardown();
+
+    _locEdit = {
+      active: true,
+      x: clampNum(seed && seed.position_x, 0, 100, 50),
+      y: clampNum(seed && seed.position_y, 0, 100, 50),
+      zoom: clampNum(seed && seed.zoom, 1, 1.6, 1),
+      height: (seed && (seed.height === 'short' || seed.height === 'tall')) ? seed.height : 'standard',
+      drag: null, overlay: null, onDown: null, onMove: null, onUp: null,
+    };
+
+    link.classList.remove('is-contain');      // editing is Fill-Frame only (nothing to crop in contain)
+    link.classList.add('loc-editing');
+    link.dataset.prevHref = link.getAttribute('href') || '';
+    link.removeAttribute('href');              // dragging must not fire the Maps link (§20)
+    locEditApplyTransform();
+
+    var SENS = 1.15;
+    _locEdit.onDown = function (ev) {
+      if (ev.button != null && ev.button !== 0) return;
+      if (ev.target && ev.target.closest && ev.target.closest('.loc-edit__controls')) return;
+      ev.preventDefault();
+      try { link.setPointerCapture(ev.pointerId); } catch (e) {}
+      _locEdit.drag = { id: ev.pointerId, px: ev.clientX, py: ev.clientY };
+      link.classList.add('is-grabbing');
+    };
+    _locEdit.onMove = function (ev) {
+      var d = _locEdit.drag;
+      if (!d || ev.pointerId !== d.id) return;
+      var r = link.getBoundingClientRect();
+      _locEdit.x = clampNum(_locEdit.x - (ev.clientX - d.px) / (r.width  || 1) * 100 * SENS, 0, 100, _locEdit.x);
+      _locEdit.y = clampNum(_locEdit.y - (ev.clientY - d.py) / (r.height || 1) * 100 * SENS, 0, 100, _locEdit.y);
+      d.px = ev.clientX; d.py = ev.clientY;
+      locEditApplyTransform(); locEditReport();
+    };
+    _locEdit.onUp = function (ev) {
+      if (!_locEdit.drag || ev.pointerId !== _locEdit.drag.id) return;
+      try { link.releasePointerCapture(ev.pointerId); } catch (e) {}
+      _locEdit.drag = null;
+      link.classList.remove('is-grabbing');
+      locEditReport(true);
+    };
+    link.addEventListener('pointerdown', _locEdit.onDown);
+    link.addEventListener('pointermove', _locEdit.onMove);
+    link.addEventListener('pointerup', _locEdit.onUp);
+    link.addEventListener('pointercancel', _locEdit.onUp);
+
+    _locEdit.overlay = locEditBuildOverlay();
+    link.appendChild(_locEdit.overlay);
+  }
+
+  function locEditTeardown() {
+    var link = document.getElementById('loc-image-link');
+    if (link && _locEdit) {
+      link.removeEventListener('pointerdown', _locEdit.onDown);
+      link.removeEventListener('pointermove', _locEdit.onMove);
+      link.removeEventListener('pointerup', _locEdit.onUp);
+      link.removeEventListener('pointercancel', _locEdit.onUp);
+      link.classList.remove('loc-editing', 'is-grabbing');
+      if (_locEdit.overlay && _locEdit.overlay.parentNode) _locEdit.overlay.parentNode.removeChild(_locEdit.overlay);
+      if (link.dataset.prevHref) { link.setAttribute('href', link.dataset.prevHref); delete link.dataset.prevHref; }
+    }
+    _locEdit = null;
   }
 
   // ── CONTACT PAGE ─────────────────────────────────────────────────
@@ -877,6 +1167,12 @@
     if (content) el.content = content;
   }
   function capitalize(s) { return s ? s.charAt(0).toUpperCase() + s.slice(1) : ''; }
+  // Numeric coerce + clamp with a default for missing / non-finite input.
+  function clampNum(v, min, max, dflt) {
+    var n = typeof v === 'number' ? v : parseFloat(v);
+    if (!isFinite(n)) return dflt;
+    return n < min ? min : (n > max ? max : n);
+  }
 
   // Run whichever page-specific renderer the public site normally uses for this
   // document. Reused for the first Admin-preview paint AND every later draft
@@ -952,6 +1248,9 @@
     } else if (msg.type === 'PREVIEW_SCROLL_TO' && msg.target === 'highlights') {
       const g = document.getElementById('hl-grid');
       if (g) g.scrollIntoView({ behavior: msg.behavior === 'auto' ? 'auto' : 'smooth', block: 'center' });
+    } else if (msg.type === 'PREVIEW_LOCATION_EDIT') {
+      if (msg.on) locEditStart(msg.seed || {});
+      else        locEditTeardown();
     }
   }
 

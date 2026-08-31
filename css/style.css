@@ -676,6 +676,187 @@ p { line-height: 1.7; }
   display: block;
 }
 
+/* Business-image alternative to the map — same footprint, links to Google Maps.
+   The WRAP owns the height; the sharp image + an optional blurred filler stack
+   inside it. Composition (fit / focal point / zoom) is driven by JS-set CSS
+   custom properties, so the PUBLIC renderer owns the presentation. */
+.loc-visual { position: relative; }
+
+.loc-image-wrap {
+  display: block;
+  position: relative;
+  height: clamp(280px, 45vw, 440px);         /* "standard" frame height */
+  border-radius: var(--r-lg);
+  overflow: hidden;                          /* the crop window (§10) */
+  box-shadow: var(--sh-lg);
+  background: var(--surface);
+  text-decoration: none;
+}
+/* Frame Height — responsive, chosen by the owner; DB stores only short/std/tall */
+.loc-image-wrap[data-height="short"] { height: clamp(220px, 34vw, 320px); }
+.loc-image-wrap[data-height="tall"]  { height: clamp(340px, 58vw, 560px); }
+/* An author `display` rule silently beat the UA `[hidden]{display:none}`, so the
+   image link could never actually hide in Map mode — restore it. */
+.loc-image-wrap[hidden] { display: none; }
+
+/* Blurred + darkened copy of the SAME image — fills the letterbox in Fit mode.
+   Shown only when .is-contain. No second upload; one cached resource. */
+.loc-image-blur {
+  position: absolute;
+  inset: -6%;                               /* bleed so the blur edge never shows */
+  background-position: center;
+  background-size: cover;
+  background-repeat: no-repeat;
+  filter: blur(20px) brightness(.6) saturate(1.05);
+  transform: scale(1.05);
+  display: none;
+}
+.loc-image-wrap.is-contain .loc-image-blur { display: block; }
+
+.loc-image {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;                        /* Fill Frame (default) */
+  object-position: var(--loc-pos, 50% 50%);
+  transform: scale(var(--loc-zoom, 1));
+  transform-origin: var(--loc-pos, 50% 50%);
+}
+.loc-image-wrap.is-contain .loc-image {
+  object-fit: contain;                      /* Fit Whole Image — whole photo visible */
+  object-position: center;                  /* centred over the blurred filler */
+  transform: none;                          /* no focal zoom when nothing is cropped */
+}
+
+.loc-image-wrap::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to top, rgba(0, 0, 0, .30), rgba(0, 0, 0, 0) 42%);
+  opacity: 0;
+  transition: opacity .25s ease;
+  pointer-events: none;
+}
+.loc-image-wrap:hover::after,
+.loc-image-wrap:focus-visible::after { opacity: 1; }
+.loc-image-wrap:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.loc-image-badge {
+  position: absolute;
+  left: 16px;
+  bottom: 16px;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: rgba(14, 13, 11, .74);
+  color: #fff;
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1;
+}
+[dir="rtl"] .loc-image-badge { left: auto; right: 16px; }
+@media (prefers-reduced-motion: reduce) {
+  .loc-image-wrap::after { transition: none; }
+}
+
+/* ── ADMIN PREVIEW: Location image direct-edit overlay ────────────
+   Built by js/app.js ONLY inside ?adminPreview=1. Normal visitors never
+   see these elements, so this block is inert for them. */
+.loc-image-wrap.loc-editing {
+  cursor: grab;
+  touch-action: none;                       /* drag the image without scrolling the page */
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.loc-image-wrap.loc-editing.is-grabbing { cursor: grabbing; }
+.loc-image-wrap.loc-editing::after { opacity: 0 !important; }   /* hide the hover gradient while editing */
+
+.loc-edit {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;                     /* image stays draggable between controls */
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  font-family: var(--f, sans-serif);
+  line-height: 1.3;
+}
+.loc-edit__head {
+  align-self: flex-start;
+  margin: 12px;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.loc-edit__badge {
+  background: var(--accent);
+  color: #14120f;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 4px 9px;
+  border-radius: 999px;
+}
+.loc-edit__hint {
+  background: rgba(14, 13, 11, .78);
+  color: #fff;
+  font-size: 11.5px;
+  padding: 4px 9px;
+  border-radius: 999px;
+}
+.loc-edit__controls {
+  pointer-events: auto;
+  margin: 12px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: rgba(14, 13, 11, .84);
+  backdrop-filter: blur(4px);
+  color: #fff;
+  display: grid;
+  gap: 10px;
+  max-width: 340px;
+}
+.loc-edit__row { display: flex; align-items: center; gap: 10px; font-size: 12px; }
+.loc-edit__lbl { min-width: 44px; opacity: .85; }
+.loc-edit__row input[type="range"] { flex: 1; accent-color: var(--accent); }
+.loc-edit__val { min-width: 40px; text-align: right; font-weight: 600; }
+.loc-edit__seg { display: inline-flex; border: 1px solid rgba(255,255,255,.28); border-radius: 8px; overflow: hidden; }
+.loc-edit__seg button {
+  background: transparent; color: #fff; border: 0;
+  padding: 6px 11px; font: inherit; font-size: 11.5px; cursor: pointer;
+}
+.loc-edit__seg button + button { border-left: 1px solid rgba(255,255,255,.28); }
+.loc-edit__seg button.is-on { background: var(--accent); color: #14120f; font-weight: 700; }
+.loc-edit__pad {
+  display: grid;
+  grid-template-columns: repeat(3, 32px);
+  grid-template-rows: repeat(3, 28px);
+  gap: 3px;
+  justify-content: center;
+}
+.loc-edit__nudge {
+  background: rgba(255,255,255,.12); color: #fff; border: 0; border-radius: 6px;
+  font-size: 13px; cursor: pointer;
+}
+.loc-edit__nudge--up    { grid-area: 1 / 2; }
+.loc-edit__nudge--left  { grid-area: 2 / 1; }
+.loc-edit__nudge--dot   { grid-area: 2 / 2; align-self: center; text-align: center; opacity: .5; cursor: default; background: none; }
+.loc-edit__nudge--right { grid-area: 2 / 3; }
+.loc-edit__nudge--down  { grid-area: 3 / 2; }
+.loc-edit__actions { display: flex; gap: 8px; }
+.loc-edit__btn {
+  flex: 1; background: rgba(255,255,255,.14); color: #fff; border: 0;
+  padding: 7px 10px; border-radius: 8px; font: inherit; font-size: 12px; font-weight: 600; cursor: pointer;
+}
+.loc-edit__btn--primary { background: var(--accent); color: #14120f; }
+@media (prefers-reduced-motion: reduce) {
+  .loc-edit__controls { backdrop-filter: none; }
+}
+
 .location-details {
   display: grid;
   gap: 32px;
@@ -913,8 +1094,9 @@ p { line-height: 1.7; }
 @media (max-width: 768px) {
   /* Ensure contact grid doesn't overflow on tablets */
   .contact-grid { grid-template-columns: 1fr; }
-  /* Map fits width */
+  /* Map / business image fit width */
   .map-frame-wrap iframe { height: 280px; }
+  .loc-image-wrap { height: 280px; }
 }
 
 /* ── RESTAURANT POLISH ───────────────────────────────────────────── */

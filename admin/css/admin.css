@@ -191,6 +191,19 @@ img { max-width: 100%; display: block; }
 }
 .admin-page-desc { color: var(--amuted); font-size: 13.5px; margin-top: 3px; }
 
+/* Persistent load-failure banner (fail-closed Settings) */
+.settings-load-error {
+  margin-bottom: 22px;
+  padding: 14px 18px;
+  border: 1px solid var(--aerror);
+  border-left-width: 4px;
+  border-radius: var(--radius-sm);
+  background: rgba(239, 68, 68, .12);
+  color: var(--atext);
+  font-size: 13.5px;
+  line-height: 1.55;
+}
+
 /* ── CARDS ───────────────────────────────────────────────────────── */
 .acard {
   background: var(--acard);
@@ -537,6 +550,15 @@ select option { background: var(--acard); }
 }
 .img-upload-area input[type="file"] { display: none; }
 .img-upload-icon { font-size: 28px; margin-bottom: 8px; opacity: .5; }
+
+/* Location Visual: Map | Business Image + minimal image controls.
+   Detailed crop composition is done by dragging the real image in the Live
+   Preview, not here. */
+#loc-visual-seg  { margin-top: 2px; }
+#loc-image-field { margin-top: 14px; }
+#loc-fit-seg, #loc-height-seg { margin-top: 4px; }
+#loc-compose .img-preview-wide { margin-top: 12px; }
+#loc-edit-btn { display: block; }
 .img-upload-label { font-size: 13.5px; color: var(--amuted); }
 .img-upload-label strong { color: var(--aaccent); }
 .img-upload-hint { font-size: 11.5px; color: var(--amuted); margin-top: 6px; }

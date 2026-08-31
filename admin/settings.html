@@ -173,6 +173,47 @@
               <p class="field-hint">Google Maps → Share → Embed a map → copy the src value from the iframe code</p>
             </div>
           </div>
+          <div class="form-row single">
+            <div class="form-group">
+              <label id="loc-visual-label">Location Visual</label>
+              <div class="lp-seg" role="group" aria-labelledby="loc-visual-label" id="loc-visual-seg">
+                <button type="button" class="lp-seg__btn is-active" data-loc-visual="map" aria-pressed="true">Interactive Map</button>
+                <button type="button" class="lp-seg__btn" data-loc-visual="image" aria-pressed="false">Business Image</button>
+              </div>
+              <div id="loc-image-field" hidden>
+                <div class="img-upload-area" onclick="document.getElementById('location-file').click()">
+                  <input type="file" id="location-file" accept="image/jpeg,image/png,image/webp" />
+                  <div class="img-upload-icon">🏬</div>
+                  <div class="img-upload-label"><strong>Click to upload</strong> or drag and drop</div>
+                  <div class="img-upload-hint">Restaurant exterior, storefront, entrance or interior · JPG, PNG or WebP · max 5 MB</div>
+                </div>
+
+                <!-- Detailed composition happens by dragging the real image in the Live Preview -->
+                <div id="loc-compose" hidden>
+                  <img id="location-preview" class="img-preview-wide" alt="Business image" />
+
+                  <label id="loc-fit-label" class="mt-1" style="display:block">Image Display</label>
+                  <div class="lp-seg" role="group" aria-labelledby="loc-fit-label" id="loc-fit-seg">
+                    <button type="button" class="lp-seg__btn" data-loc-fit="contain" aria-pressed="false">Fit Entire Image</button>
+                    <button type="button" class="lp-seg__btn is-active" data-loc-fit="cover" aria-pressed="true">Fill Frame</button>
+                  </div>
+
+                  <label id="loc-height-label" class="mt-1" style="display:block">Frame Height</label>
+                  <div class="lp-seg" role="group" aria-labelledby="loc-height-label" id="loc-height-seg">
+                    <button type="button" class="lp-seg__btn" data-loc-height="short" aria-pressed="false">Short</button>
+                    <button type="button" class="lp-seg__btn is-active" data-loc-height="standard" aria-pressed="true">Standard</button>
+                    <button type="button" class="lp-seg__btn" data-loc-height="tall" aria-pressed="false">Tall</button>
+                  </div>
+
+                  <button type="button" class="btn btn-secondary btn-sm mt-2" id="loc-edit-btn">Edit Image in Preview</button>
+                  <p class="field-hint mt-1" id="loc-fit-hint" hidden>Fit Entire Image shows the whole photo; the edges are filled with a soft blur of the same photo so nothing is cropped.</p>
+                </div>
+
+                <button type="button" id="location-remove" class="btn btn-ghost btn-sm mt-2" hidden>Remove image</button>
+                <p class="field-hint mt-1">Shown on the public Location page instead of the map; clicking it opens your Google Maps Share Link.</p>
+              </div>
+            </div>
+          </div>
         </div>
 
         <!-- Hours -->

@@ -34,6 +34,13 @@ CREATE TABLE IF NOT EXISTS restaurants (
   address_en       TEXT          DEFAULT '',
   map_embed        TEXT          DEFAULT '',  -- Google Maps iframe ?output=embed src
   map_directions   TEXT          DEFAULT '',  -- maps.app.goo.gl share link
+  location_visual_mode TEXT      DEFAULT 'map',  -- 'map' | 'image' — big Location-page visual
+  location_image_url   TEXT      DEFAULT '',     -- public URL; shown (as a Maps link) when mode = 'image'
+  location_image_fit        TEXT    DEFAULT 'cover',      -- 'contain' (Fit Entire Image + blurred filler) | 'cover' (Fill Frame)
+  location_image_position_x NUMERIC DEFAULT 50,           -- internal crop position X, normalized 0–100 (object-position)
+  location_image_position_y NUMERIC DEFAULT 50,           -- internal crop position Y, normalized 0–100
+  location_image_zoom       NUMERIC DEFAULT 1,            -- Fill-Frame zoom, 1.0–1.6 (scale around the crop position)
+  location_image_height     TEXT    DEFAULT 'standard',   -- frame height: 'short' | 'standard' | 'tall' (public CSS maps to responsive px)
 
   -- Hours (bilingual)
   hours_weekdays_en TEXT         DEFAULT '',
@@ -58,6 +65,22 @@ CREATE TABLE IF NOT EXISTS restaurants (
   created_at       TIMESTAMPTZ   DEFAULT NOW(),
   updated_at       TIMESTAMPTZ   DEFAULT NOW()
 );
+
+
+-- ── MIGRATIONS (safe to run on an already-provisioned project) ────
+-- Fresh installs get these columns from CREATE TABLE above; existing
+-- projects (e.g. the live TasteTheWest project) apply them here.
+-- Ranges (fit ∈ {contain,cover}, position 0–100, zoom 1–1.6) are clamped by the
+-- app on both write (admin/js/settings.js) and read (js/app.js); no CHECK
+-- constraints, matching this schema's existing minimal style.
+ALTER TABLE restaurants
+  ADD COLUMN IF NOT EXISTS location_visual_mode      TEXT    DEFAULT 'map',
+  ADD COLUMN IF NOT EXISTS location_image_url        TEXT    DEFAULT '',
+  ADD COLUMN IF NOT EXISTS location_image_fit        TEXT    DEFAULT 'cover',
+  ADD COLUMN IF NOT EXISTS location_image_position_x NUMERIC DEFAULT 50,
+  ADD COLUMN IF NOT EXISTS location_image_position_y NUMERIC DEFAULT 50,
+  ADD COLUMN IF NOT EXISTS location_image_zoom       NUMERIC DEFAULT 1,
+  ADD COLUMN IF NOT EXISTS location_image_height     TEXT    DEFAULT 'standard';
 
 
 -- ── CATEGORIES ───────────────────────────────────────────────────
@@ -205,6 +228,12 @@ CREATE POLICY "products_owner_delete"
 --   products/<restaurant_id>-<timestamp>.<ext>   per-restaurant product image
 --   branding/<auth_user_id>-hero.<ext>           restaurant hero image
 --   branding/<auth_user_id>-logo.<ext>           restaurant logo
+--   branding/<auth_user_id>-location-<unique>.<ext>  business / location image
+--
+-- The `branding/<auth_user_id>-%` LIKE pattern in the four policies below
+-- already covers the location key (the `-<unique>` suffix is inside the `%`) —
+-- no policy change was needed. The location image is written to a fresh unique
+-- key on every replacement so a failed Save never overwrites the live object.
 --
 -- A caller may touch a `branding/` object only when auth.uid()
 -- prefixes the object name, and a `products/` object only when it is
