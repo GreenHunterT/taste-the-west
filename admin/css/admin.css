@@ -318,6 +318,10 @@ body[data-admin-page="settings"] .admin-main {
   overflow: hidden;             /* trims only the frames' invisible scaled-away
                                    overflow — never the visible page (JS sizes
                                    this box to the SCALED on-screen rectangle) */
+  margin: 0 auto;              /* centre the scaled rectangle in a wider stage
+                                  (Expanded desktop, Mobile). When the box is
+                                  wider than the stage (100%) `auto` → 0 and the
+                                  stage scrolls it from the left as before. */
 }
 /* Double-buffered frames: stacked, only .is-active shown + interactive.
    JS sets width / height to the UNSCALED virtual viewport and transform:

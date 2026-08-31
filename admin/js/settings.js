@@ -27,54 +27,15 @@
   let savedBaseline   = '[]';   // JSON.stringify(normStats(loaded)) — dirty baseline
   let _idSeq          = 0;
 
-  // Live Preview state — admin-only. NEVER persisted, NEVER in undo history,
-  // NEVER part of the dirty comparison. The preview is a same-origin <iframe>
-  // of a REAL public page (../<page>.html?adminPreview=1).
-  let previewPage   = 'home';    // 'home' | 'menu' | 'location' | 'contact'
-  let previewDevice = 'desktop'; // 'desktop' | 'mobile'
-  let previewLang   = 'en';      // 'en' | 'ar'  — authoritative; only the language control / a validated child message change it
-  let previewTheme  = 'dark';    // 'dark' | 'light' — authoritative, same rule
-  let previewZoom   = 'fit';     // 'fit' | '100'
-  let adminMode     = 'edit';    // narrow-screen Edit | Preview toggle
-  let previewPendingScroll = null;  // e.g. 'highlights' — fired once the next page is ready
-  // Whitelisted preview targets. The iframe src is only ever built from this
-  // map after validating the key — never from a raw postMessage string.
-  const PREVIEW_PAGES = {
-    home:     '../index.html',
-    menu:     '../products.html',
-    location: '../location.html',
-    contact:  '../contact.html',
-  };
-  // Simulated CSS viewport width. Desktop = 1024: the smallest width at which
-  // the public stylesheet's real desktop layout is fully active (its breakpoints
-  // are 768px and 1024px), so downscaling into the preview panel is far gentler
-  // and text/images stay legible.
-  const PREVIEW_VP_W = { desktop: 1024, mobile: 390 };
-  const lpStage = document.getElementById('lp-stage');
+  // ── Live Preview ────────────────────────────────────────────────
+  // The generic double-buffered <iframe> engine lives in live-preview.js.
+  // Settings only: builds the restaurant draft, decides WHEN it changed, and
+  // reacts to a few controller events. Frame lifecycle / navigation
+  // generations / handshake / scaling / Page·Device·Language·Theme·View
+  // controls / Expand / message validation are all the controller's.
+  let adminMode     = 'edit';    // narrow-screen Edit | Preview toggle (Settings layout)
+  let settingsReady = false;     // Settings state fully wired — safe to push a draft
 
-  // ── Double-buffered preview frames ───────────────────────────────
-  // Two <iframe> slots. Only ACTIVE is shown/interactive. A page switch loads
-  // the next page in the OTHER (incoming) slot, invisibly, runs the full
-  // handshake, then crossfades — the current page never blanks.
-  const previewFrames = Array.prototype.slice.call(document.querySelectorAll('.preview-frame'));
-  let activeFrame       = null;                       // frame currently shown (null until first promotion)
-  let incomingFrame     = previewFrames[0] || null;   // frame loading a page during a switch / first load
-  // Monotonic navigation generation. Baked into each preview URL as
-  // `?previewNav=N`; the child reads it from its OWN url at boot and stamps
-  // every message with it, so a stale document (whose slot was re-navigated)
-  // can never be mistaken for the current pending navigation — the iframe
-  // contentWindow identity alone is NOT sufficient (it survives same-origin
-  // src changes). Not a timestamp: a plain incrementing integer.
-  let previewNavId      = 1;
-  let pendingNav        = previewFrames[0]
-    ? { id: previewNavId, page: 'home', frame: previewFrames[0] }   // first load = navigation #1
-    : null;
-  let activeNavId       = 0;
-  let activePreviewPage = 'home';   // the page ACTUALLY rendered/visible (can briefly lag previewPage)
-  let previewReady      = false;    // the pending frame has posted a matching PREVIEW_READY
-  let activeReady       = false;    // the active frame has rendered a draft at least once
-  let previewInitDone   = false;    // the parent's Settings state is ready to send
-  let previewSendQueued = false;
   const _brandObj = {
     hero:     { file: null, url: null },
     logo:     { file: null, url: null },
@@ -88,31 +49,42 @@
   let restaurantLoadState = 'loading';   // 'loading' | 'ready' | 'error'
   let restaurant = null;
 
-  // Direct-in-Preview Location image edit session. Declared here (not with the
-  // other loc* draft state further down) because postPreviewData() reads
-  // locEditActive, and postPreviewData runs during populateForm() BEFORE that
-  // block — a `let` down there would be in the temporal dead zone and throw,
-  // aborting the rest of Settings wiring. These have no `restaurant` dependency.
+  // Direct-in-Preview Location image edit session — Settings' mirror of the
+  // controller's transport state, used only by Settings' own guards. Declared
+  // here (not with the other loc* draft state further down) so the early
+  // controller-event subscriptions can close over it without a TDZ risk.
   let locEditActive  = false;
   let locEditPending = false;   // true while waiting for the Location page to become ready
   let locEditSnapshot = null;   // composition captured on Edit start, for Cancel
 
-  if (lpStage) lpStage.dataset.theme = previewTheme;   // themed first-load surface (behind the frames)
+  if (!window.LivePreview || typeof window.LivePreview.mount !== 'function') {
+    console.error('[settings] LivePreview controller missing — check the <script> order in settings.html');
+    if (typeof showToast === 'function') showToast('Live Preview failed to load. Reload the page.', 'error');
+    hideLoading();
+    return;
+  }
 
-  // Per-frame load-failure watchers (added once, never removed — not global).
-  previewFrames.forEach(f => {
-    f.addEventListener('error', () => {
-      if (pendingNav && pendingNav.frame === f) handleNavFailure();
-    });
+  // Mount the preview engine now, so the first public page starts loading in
+  // parallel with the auth + restaurant round-trip below (unchanged timing).
+  const preview = window.LivePreview.mount({
+    root:         document.getElementById('live-preview'),
+    expandTarget: document.querySelector('.settings-layout'),
+    expandClass:  'is-preview-expanded',
   });
 
-  // Register the handshake listener synchronously — a frame may post
-  // PREVIEW_READY during the awaits below, before the rest of the wiring runs.
-  window.addEventListener('message', onPreviewMessage);
-
-  // Kick off the first-load navigation through the SAME generation mechanism as
-  // every page switch (no special / unstamped first-load path).
-  if (previewFrames[0]) previewFrames[0].src = previewSrc('home', previewNavId);
+  // Controller → Settings. The generic engine forwards intent; Settings owns
+  // the Admin-side reaction (editor DOM, composition draft, Cancel snapshot).
+  preview.on('stat-click', ({ previewId }) => focusStatCard(String(previewId)));
+  preview.on('locedit-compose', c => {
+    if (typeof c.position_x === 'number') locPosX = c.position_x;
+    if (typeof c.position_y === 'number') locPosY = c.position_y;
+    if (typeof c.zoom === 'number')       locZoom = c.zoom;
+    if (c.height) { locHeight = c.height; syncSeg('data-loc-height', locHeight); }
+  });
+  preview.on('locedit-done',   () => endLocImageEdit(false));
+  preview.on('locedit-cancel', () => endLocImageEdit(true));
+  preview.on('locedit-ready',  () => { locEditPending = false; updateLocEditUi(); });
+  preview.on('locedit-end',    () => { locEditActive = false; locEditPending = false; updateLocEditUi(); });
 
   // Save is disabled from the very first paint until a single restaurant row
   // has loaded (§5) — a mid-load click can never write.
@@ -257,7 +229,9 @@
       const h = btn.dataset.locHeight;
       locHeight = (h === 'short' || h === 'tall') ? h : 'standard';
       syncSeg('data-loc-height', locHeight);
-      if (locEditActive) sendLocEdit(true);   // keep the open editor in sync
+      if (locEditActive) {                     // keep the open editor in sync
+        preview.updateLocationImageEdit({ position_x: locPosX, position_y: locPosY, zoom: locZoom, height: locHeight });
+      }
       postPreviewData();
     });
   });
@@ -283,8 +257,9 @@
     if (b) b.textContent = locEditActive ? 'Editing in Preview…' : 'Edit Image in Preview';
   }
 
-  // Enter direct-edit: ensure the Location page is the active preview, then tell
-  // the child to enter edit mode. Snapshot the composition for Cancel.
+  // Enter direct-edit: ask the controller to put the Location page up and the
+  // child into edit mode. Snapshot the composition for Cancel. The controller
+  // handles the navigate-then-wait-for-APPLIED sequencing and the transport.
   function startLocImageEdit() {
     if (restaurantLoadState !== 'ready' || locVisualMode !== 'image' || locFit !== 'cover') return;
     if (locEditActive || locEditPending) return;
@@ -292,20 +267,9 @@
     locEditActive = true;
     updateLocEditUi();
     if (isNarrowAdmin()) setAdminMode('preview');
-    if (activePreviewPage !== 'location' || pendingNav) {
-      locEditPending = true;
-      setPreviewPage('location');   // child edit-start fires from completeNavigation
-      return;
-    }
-    sendLocEdit(true);
-  }
-  function sendLocEdit(on) {
-    if (!activeFrame || !activeFrame.contentWindow) return;
-    activeFrame.contentWindow.postMessage({
-      type: 'PREVIEW_LOCATION_EDIT',
-      on: !!on,
-      seed: on ? { position_x: locPosX, position_y: locPosY, zoom: locZoom, height: locHeight } : undefined,
-    }, window.location.origin);
+    const st = preview.getState();
+    if (st.activePage !== 'location' || st.navigating) locEditPending = true;
+    preview.startLocationImageEdit({ position_x: locPosX, position_y: locPosY, zoom: locZoom, height: locHeight });
   }
   // Exit edit mode. restore=true → revert composition to the Edit-start snapshot.
   function endLocImageEdit(restore) {
@@ -318,7 +282,7 @@
     locEditActive = false; locEditPending = false; locEditSnapshot = null;
     updateLocEditUi();
     syncSeg('data-loc-height', locHeight);
-    if (wasActive) sendLocEdit(false);
+    if (wasActive) preview.stopLocationImageEdit();
     postPreviewData();   // one full resync now that editing is over (§14 boundary)
   }
   refreshLocCompose();
@@ -340,36 +304,15 @@
     statsCards.addEventListener('focusout', onStatFocusOut);
   }
 
-  // Preview page / device / language / theme / zoom — ALL preview-only:
-  // never persisted, never dirty, never in Statistics Undo. Only lang + theme
-  // travel to the iframe (as preview metadata); page is the iframe src; device
-  // and zoom are pure parent-side sizing.
-  document.querySelectorAll('.lp-seg__btn[data-page]').forEach(btn => {
-    btn.addEventListener('click', () => setPreviewPage(btn.dataset.page));
-  });
-  document.querySelectorAll('.lp-seg__btn[data-device]').forEach(btn => {
-    btn.addEventListener('click', () => { previewDevice = btn.dataset.device; renderLivePreview(); });
-  });
-  document.querySelectorAll('.lp-seg__btn[data-lang]').forEach(btn => {
-    btn.addEventListener('click', () => { previewLang = btn.dataset.lang; renderLivePreview(); });
-  });
-  document.querySelectorAll('.lp-seg__btn[data-theme]').forEach(btn => {
-    btn.addEventListener('click', () => { previewTheme = btn.dataset.theme; renderLivePreview(); });
-  });
-  document.querySelectorAll('.lp-seg__btn[data-zoom]').forEach(btn => {
-    btn.addEventListener('click', () => { previewZoom = btn.dataset.zoom; renderLivePreview(); });
-  });
-  // Narrow-screen Edit | Preview mode.
+  // Narrow-screen Edit | Preview mode (Settings layout). The preview engine's
+  // own Page / Device / Language / Theme / View / Expand controls + the window
+  // resize + message listeners are wired by live-preview.js.
   document.querySelectorAll('.lp-seg__btn[data-admin-mode]').forEach(btn => {
     btn.addEventListener('click', () => setAdminMode(btn.dataset.adminMode));
   });
   setAdminMode('edit');
 
-  // Live Preview iframe plumbing (message listener already registered above).
-  window.addEventListener('resize', () => requestAnimationFrame(applyPreviewScale));
   window.addEventListener('beforeunload', releasePreviewObjectUrls);
-  const lpExpandBtn = document.getElementById('lp-expand');
-  if (lpExpandBtn) lpExpandBtn.addEventListener('click', toggleExpand);
   const lpViewBtn = document.getElementById('stats-view-in-preview');
   if (lpViewBtn) lpViewBtn.addEventListener('click', viewStatsInPreview);
 
@@ -398,9 +341,9 @@
     settingsForm.addEventListener('change', e => { noteEdit(e); postPreviewData(); });
   }
 
-  // Settings state is now fully loaded/wired — safe to push draft data.
-  previewInitDone = true;
-  if (previewReady && pendingNav) sendPreviewNow(pendingNav.frame, pendingNav.id);
+  // Settings state is now fully loaded/wired — safe to push draft data. The
+  // controller routes it to whichever frame is ready (first load or active).
+  settingsReady = true;
   postPreviewData();
 
   function wireRemoveBtn(btnId, fileId, previewId, setFlag) {
@@ -1170,154 +1113,18 @@
     syncSeg('data-admin-mode', adminMode);
     if (adminMode === 'preview') {
       renderLivePreview();
-      requestAnimationFrame(applyPreviewScale);   // stage now has real size
+      requestAnimationFrame(() => preview.applyScale());   // stage now has real size
     }
-  }
-
-  function toggleExpand() {
-    const layout = document.querySelector('.settings-layout');
-    if (!layout) return;
-    const on = !layout.classList.contains('is-preview-expanded');
-    layout.classList.toggle('is-preview-expanded', on);
-    if (lpExpandBtn) {
-      lpExpandBtn.textContent = on ? 'Back to editor' : 'Expand';
-      lpExpandBtn.setAttribute('aria-pressed', String(on));
-    }
-    requestAnimationFrame(applyPreviewScale);
-  }
-
-  // Change the previewed public page (double-buffered). `page` is validated
-  // against PREVIEW_PAGES; the iframe src is only ever built from that map.
-  // ACTIVE stays visible and interactive; the OTHER slot loads `page` invisibly,
-  // runs the full handshake, then crossfades in (completeNavigation). Every
-  // preview display setting and all unsaved Settings are untouched.
-  // Preview URL for a page + navigation generation. The child reads `previewNav`
-  // from this at boot; it is the ONLY source of the document's generation.
-  function previewSrc(page, navId) {
-    return PREVIEW_PAGES[page] + '?adminPreview=1&previewNav=' + navId;
-  }
-
-  function setPreviewPage(page) {
-    if (!PREVIEW_PAGES[page] || previewFrames.length < 2) return;
-    if (pendingNav && pendingNav.page === page) return;          // already loading it
-    if (!pendingNav && page === activePreviewPage) return;       // already showing it
-    // Navigating away from Location ends an open image-edit session (§15) — the
-    // composition draft is kept, the edit overlay just goes away with the iframe.
-    if (locEditActive && page !== 'location') { locEditActive = false; updateLocEditUi(); }
-    previewPage = page;                       // requested page — selector reflects it now
-    syncSeg('data-page', previewPage);
-    const incoming = (activeFrame === previewFrames[0]) ? previewFrames[1] : previewFrames[0];
-    previewNavId += 1;
-    pendingNav    = { id: previewNavId, page: page, frame: incoming };
-    incomingFrame = incoming;
-    previewReady  = false;
-    incoming.classList.remove('is-active', 'is-leaving');
-    incoming.setAttribute('aria-hidden', 'true');
-    if (lpStage) lpStage.dataset.theme = previewTheme;
-    applyPreviewScale();                      // pre-size so it appears at the right dimensions
-    incoming.src = previewSrc(page, previewNavId);
-  }
-
-  // Incoming frame is ready (matched PREVIEW_APPLIED): promote it over the
-  // current ACTIVE frame with a short crossfade, then recycle the old frame.
-  function completeNavigation() {
-    if (!pendingNav) return;
-    const incoming = pendingNav.frame;
-    const outgoing = (activeFrame && activeFrame !== incoming) ? activeFrame : null;
-
-    applyPreviewScale();                      // both frames sized identically — no jump
-    activeFrame       = incoming;
-    activeNavId       = pendingNav.id;
-    activePreviewPage = pendingNav.page;
-    activeReady       = true;
-    incomingFrame     = null;
-    previewReady      = false;
-    const doScroll = previewPendingScroll;
-    previewPendingScroll = null;
-    pendingNav = null;
-
-    incoming.classList.remove('is-leaving');
-    incoming.classList.add('is-active');      // opacity 0 → 1 (or instant, reduced motion)
-    incoming.removeAttribute('aria-hidden');
-
-    if (doScroll) scrollPreviewTo(doScroll, 'auto');   // frame is active now; position before it settles
-
-    // "Edit Image" was pressed while off the Location page — the page is now
-    // ready and the draft has been sent; tell the child to enter edit mode.
-    if (locEditPending && activePreviewPage === 'location') {
-      locEditPending = false;
-      requestAnimationFrame(() => { sendLocEdit(true); updateLocEditUi(); });
-    } else if (locEditPending) {
-      locEditPending = false; locEditActive = false; updateLocEditUi();   // navigated elsewhere → abandon
-    }
-
-    if (!outgoing) return;                    // first load — nothing to fade out
-
-    if (prefersReducedMotion()) {
-      parkFrame(outgoing);
-      return;
-    }
-    outgoing.classList.remove('is-active');
-    outgoing.classList.add('is-leaving');     // opacity 1 → 0
-    const done = () => {
-      outgoing.removeEventListener('transitionend', done);
-      clearTimeout(safety);
-      parkFrame(outgoing);
-    };
-    const safety = setTimeout(done, 260);     // cleanup only — not the readiness signal
-    outgoing.addEventListener('transitionend', done);
-  }
-
-  // Take a faded-out frame fully out of play and stop its document so no
-  // hidden public page keeps running. It is reused as the next incoming slot.
-  // Bails if the frame has since been re-tasked (rapid navigation) so a stale
-  // crossfade cleanup can never blank a frame that is now loading a new page.
-  function parkFrame(f) {
-    if (!f || f === activeFrame || f === incomingFrame) return;
-    if (pendingNav && f === pendingNav.frame) return;
-    f.classList.remove('is-active', 'is-leaving');
-    f.setAttribute('aria-hidden', 'true');
-    try { f.src = 'about:blank'; } catch (e) {}
-  }
-
-  // Incoming page could not load / initialise. Keep the working ACTIVE page
-  // visible; put the page selector back to it; surface a small notice.
-  function handleNavFailure() {
-    if (!pendingNav) return;
-    const dead = pendingNav.frame;
-    pendingNav = null;
-    incomingFrame = null;
-    previewReady = false;
-    previewPendingScroll = null;
-    parkFrame(dead);
-    previewPage = activePreviewPage;
-    syncSeg('data-page', previewPage);
-    if (typeof showToast === 'function') showToast('Preview page could not be loaded.', 'error');
   }
 
   function viewStatsInPreview() {
     if (isNarrowAdmin()) setAdminMode('preview');
-    if (pendingNav) {
-      previewPendingScroll = 'highlights';        // fires in completeNavigation
-      if (pendingNav.page !== 'home') setPreviewPage('home');
-      return;
-    }
-    if (activePreviewPage !== 'home') {
-      previewPendingScroll = 'highlights';
-      setPreviewPage('home');
-      return;
-    }
-    requestAnimationFrame(() => { applyPreviewScale(); scrollPreviewTo('highlights'); });
+    preview.showPage('home', { scrollTo: 'highlights' });   // navigate if needed, then scroll
   }
 
-  function scrollPreviewTo(target, behavior) {
-    if (activeFrame && activeFrame.contentWindow) {
-      activeFrame.contentWindow.postMessage(
-        { type: 'PREVIEW_SCROLL_TO', target: target, behavior: behavior || 'smooth' },
-        window.location.origin);
-    }
-  }
-
+  // Segmented-control sync for Settings' OWN toggles (data-loc-visual /
+  // data-loc-fit / data-loc-height / data-admin-mode). The preview engine
+  // syncs its own Page / Device / Language / Theme / View controls.
   function syncSeg(attr, value) {
     document.querySelectorAll('.lp-seg__btn[' + attr + ']').forEach(btn => {
       const on = btn.getAttribute(attr) === value;
@@ -1326,67 +1133,12 @@
     });
   }
 
-  // ── The ONE Live Preview render path ─────────────────────────
-  // The preview is a same-origin <iframe> of the real public homepage. This
-  // function only: sets the simulated device viewport + scale, keeps the
-  // segmented controls in sync, and pushes the current UNSAVED Settings draft
-  // to the iframe. No component markup is duplicated. Never touches the DB.
+  // Refresh the Live Preview after a Settings change: re-assert the engine's
+  // control state + geometry, then push the current UNSAVED draft. Never
+  // touches the DB. No component markup is duplicated.
   function renderLivePreview() {
-    const stage = document.getElementById('lp-stage');
-    if (stage) {
-      stage.dataset.device = previewDevice;
-      stage.dataset.zoom   = previewZoom;
-      stage.dataset.theme  = previewTheme;   // themed loading surface (no white flash)
-    }
-    syncSeg('data-page',   previewPage);
-    syncSeg('data-device', previewDevice);
-    syncSeg('data-lang',   previewLang);
-    syncSeg('data-theme',  previewTheme);
-    syncSeg('data-zoom',   previewZoom);
-    applyPreviewScale();
+    preview.refresh();
     postPreviewData();
-  }
-
-  // Geometry model (scale-to-fit without pre-transform clipping):
-  //   .preview-frame — the REAL website document. Rendered at the full unscaled
-  //     virtual viewport (targetW × tall: 1024 desktop / 390 mobile), then
-  //     CSS-scaled from its own top-left. The document keeps believing its
-  //     viewport is targetW wide, so the real desktop breakpoint is used.
-  //   #lp-viewport  — sized to the SCALED, on-screen rectangle (targetW*scale ×
-  //     availH). `overflow: hidden` only trims each frame's invisible
-  //     scaled-away layout overflow, so #lp-stage gets no phantom scrollbars.
-  //     It carries NO transform — that lives on the frames.
-  //   #lp-stage     — the visible Admin preview area; the only scroll boundary
-  //     (100% mode can scroll it horizontally; .admin-main is `overflow-x: clip`
-  //     so the admin page never scrolls).
-  // Both frames get identical width/height/transform → an exact crossfade stack.
-  // Reads previewDevice, previewZoom and the live stage size, so it is correct
-  // after resize, Expand, mode switch and page navigation.
-  function applyPreviewScale() {
-    const stage = document.getElementById('lp-stage');
-    const vp    = document.getElementById('lp-viewport');
-    if (!stage || !vp || !previewFrames.length) return;
-    const targetW = PREVIEW_VP_W[previewDevice] || 1024;
-    const availW  = Math.max(stage.clientWidth  || targetW, 1);
-    const availH  = Math.max(stage.clientHeight || Math.round(availW * 1.4), 240);
-
-    const scale = (previewZoom === '100')
-      ? 1
-      : Math.max(Math.min(1, availW / targetW), 0.25);
-
-    const fw = targetW + 'px';                        // unscaled virtual width
-    const fh = Math.round(availH / scale) + 'px';     // unscaled virtual height (tall)
-    const tf = scale === 1 ? 'none' : ('scale(' + scale + ')');
-    previewFrames.forEach(f => {
-      f.style.width     = fw;
-      f.style.height    = fh;
-      f.style.transform = tf;                         // scale the document itself
-    });
-    vp.style.width     = Math.round(targetW * scale) + 'px';   // on-screen rectangle
-    vp.style.height    = Math.round(availH) + 'px';
-    vp.style.transform = 'none';                      // never transform the viewport box
-    stage.dataset.scale = scale.toFixed(3);
-    stage.dataset.zoom  = previewZoom;
   }
 
   // Reuse the pending-file object URL across sends; revoke when the File
@@ -1412,9 +1164,10 @@
   // current UNSAVED form values + statisticsState + branding selection. Only
   // the public-facing fields the homepage renders — the loaded row is NOT
   // spread in, so owner_id / id / timestamps / tokens never reach the iframe.
-  function buildPreviewPayload() {
+  // The controller wraps this with the authoritative preview lang + theme.
+  function buildRestaurantDraft() {
     const soundsEl = document.getElementById('sounds_enabled');
-    const r = {
+    return {
       name_ar: val('name_ar'), name_en: val('name_en'),
       tagline_ar: val('tagline_ar'), tagline_en: val('tagline_en'),
       description_ar: val('description_ar'), description_en: val('description_en'),
@@ -1445,99 +1198,17 @@
         visible: s.visible !== false,
       })),
     };
-    // lang + theme are authoritative preview metadata, echoed on EVERY send so
-    // an ordinary Settings edit can never reset them. Taken straight from parent
-    // state — never from the admin document, restaurant data or localStorage.
-    return { restaurant: r, lang: previewLang, theme: previewTheme };
   }
 
-  // Ordinary Settings edits → refresh the ACTIVE frame in place (no reload, no
-  // double buffer). Coalesced to one send per animation frame.
+  // Push the current Settings draft to the Live Preview. No-op until Settings
+  // is fully wired, the restaurant row is loaded (fail-closed), or while the
+  // owner is dragging the Location image (the child owns the visual then). The
+  // controller handles rAF-coalescing and choosing the target frame.
   function postPreviewData() {
+    if (!settingsReady) return;
     if (restaurantLoadState !== 'ready') return;   // never push a non-loaded / blank draft (§9)
     if (locEditActive) return;                     // child owns the live image during a drag (§14)
-    if (!previewInitDone || !activeFrame || !activeReady) return;
-    if (previewSendQueued) return;
-    previewSendQueued = true;
-    requestAnimationFrame(() => { previewSendQueued = false; sendPreviewNow(activeFrame, activeNavId); });
-  }
-  function sendPreviewNow(frame, navId) {
-    if (restaurantLoadState !== 'ready') return;   // no draft leaves Settings unless a row loaded
-    if (!previewInitDone || !frame || !frame.contentWindow) return;
-    frame.contentWindow.postMessage(
-      { type: 'PREVIEW_DATA', nav: navId, payload: buildPreviewPayload() }, window.location.origin);
-  }
-
-  // Two frame contentWindows may exist during a transition — and a slot's
-  // contentWindow identity SURVIVES a same-origin src change, so source alone
-  // cannot tell a stale document from the fresh one in the same slot. Every
-  // child message therefore carries `nav` (the generation from its boot URL);
-  // READY / APPLIED / ERROR are only acted on when `msg.nav` still matches the
-  // navigation they claim to belong to.
-  function onPreviewMessage(e) {
-    if (e.origin !== window.location.origin) return;
-    const src = e.source;
-    const fromActive   = !!(activeFrame   && src === activeFrame.contentWindow);
-    const fromIncoming = !!(incomingFrame && src === incomingFrame.contentWindow);
-    if (!fromActive && !fromIncoming) return;
-    const msg = e.data;
-    if (!msg || typeof msg !== 'object') return;
-    const isPending = fromIncoming && pendingNav && incomingFrame === pendingNav.frame;
-    const navMatchesPending = isPending && msg.nav === pendingNav.id;
-
-    if (msg.type === 'PREVIEW_READY') {
-      if (navMatchesPending) {
-        previewReady = true;
-        sendPreviewNow(pendingNav.frame, pendingNav.id);   // no-op until previewInitDone
-      } else if (fromActive && msg.nav === activeNavId) {
-        sendPreviewNow(activeFrame, activeNavId);          // active re-announced (rare)
-      }
-      // stale READY (msg.nav ≠ current generation) → ignored: no PREVIEW_DATA sent
-    } else if (msg.type === 'PREVIEW_APPLIED') {
-      if (navMatchesPending) completeNavigation();
-      // stale / mismatched APPLIED → ignore; that frame is recycled on the next nav
-    } else if (msg.type === 'PREVIEW_ERROR') {
-      if (navMatchesPending) handleNavFailure();
-      // a stale generation's error must NOT cancel the newer incoming navigation
-    } else if (msg.type === 'PREVIEW_STAT_CLICK') {
-      if (fromActive) focusStatCard(String(msg.previewId));
-    } else if (msg.type === 'PREVIEW_NAVIGATE') {
-      // Same-site nav link clicked inside the ACTIVE preview. Validated against
-      // the page allow-list; arbitrary paths are ignored.
-      if (fromActive && PREVIEW_PAGES[msg.page]) setPreviewPage(msg.page);
-    } else if (msg.type === 'PREVIEW_THEME_CHANGE') {
-      // Real in-iframe theme button — keep the parent Theme control in sync.
-      // The child already applied it, so no re-send; not a Settings change.
-      if (fromActive && (msg.theme === 'dark' || msg.theme === 'light')) {
-        previewTheme = msg.theme;
-        syncSeg('data-theme', previewTheme);
-        if (lpStage) lpStage.dataset.theme = previewTheme;
-      }
-    } else if (msg.type === 'PREVIEW_LANGUAGE_CHANGE') {
-      // Real in-iframe language toggle — keep the parent Language control in
-      // sync. Child already applied it; no re-send; not a Settings change.
-      if (fromActive && (msg.lang === 'ar' || msg.lang === 'en')) {
-        previewLang = msg.lang;
-        syncSeg('data-lang', previewLang);
-      }
-    } else if (msg.type === 'PREVIEW_LOCATION_COMPOSE') {
-      // Owner dragged / zoomed / resized the real Location image. Record the
-      // normalized draft; DO NOT re-send PREVIEW_DATA (§14 — the child owns the
-      // live visual until Done). Range-validated.
-      if (!fromActive) return;
-      const nx = Number(msg.position_x), ny = Number(msg.position_y), nz = Number(msg.zoom);
-      if (isFinite(nx)) locPosX = Math.min(100, Math.max(0, Math.round(nx)));
-      if (isFinite(ny)) locPosY = Math.min(100, Math.max(0, Math.round(ny)));
-      if (isFinite(nz)) locZoom = Math.min(1.6, Math.max(1, nz));
-      if (msg.height === 'short' || msg.height === 'standard' || msg.height === 'tall') {
-        locHeight = msg.height;
-        syncSeg('data-loc-height', locHeight);
-      }
-    } else if (msg.type === 'PREVIEW_LOCATION_EDIT_DONE') {
-      if (fromActive) endLocImageEdit(false);
-    } else if (msg.type === 'PREVIEW_LOCATION_EDIT_CANCEL') {
-      if (fromActive) endLocImageEdit(true);
-    }
+    preview.setDraft(buildRestaurantDraft());
   }
 
   // Load statistics from the restaurant row. Never writes to Supabase.
