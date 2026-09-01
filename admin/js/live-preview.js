@@ -50,6 +50,11 @@ window.LivePreview = (function () {
     const PAGES  = opts.pages || DEFAULT_PAGES;
     const VP     = opts.viewport || DEFAULT_VIEWPORT;
     const ORIGIN = window.location.origin;
+    // Injected notice callback. Falls back to an ambient global only if nothing
+    // was supplied, so the host can keep the controller free of that dependency.
+    const TOAST  = (typeof opts.toast === 'function')
+      ? opts.toast
+      : (typeof showToast === 'function' ? showToast : function () {});
 
     // ── Preview display state — admin-only. NEVER persisted, NEVER dirty. ──
     let _page   = (opts.initialState && opts.initialState.page)   || 'home';    // requested page (selector reflects it now)
@@ -296,6 +301,7 @@ window.LivePreview = (function () {
       if (_stage) _stage.dataset.theme = _theme;
       applyScale();                            // pre-size so it appears at the right dimensions
       incoming.src = _src(page, _navId);
+      _notifyState();                          // requested page changed
     }
 
     // Incoming frame is ready (matched PREVIEW_APPLIED): promote it over the
@@ -374,7 +380,7 @@ window.LivePreview = (function () {
       _page = _activePage;
       _syncSeg('data-page', _page);
       _emit('error', { page: dead && dead.dataset ? dead.dataset.slot : null });
-      if (typeof showToast === 'function') showToast('Preview page could not be loaded.', 'error');
+      TOAST('Preview page could not be loaded.', 'error');
     }
 
     function _postToActive(msg) {
@@ -428,6 +434,7 @@ window.LivePreview = (function () {
           _syncControls();
           if (_stage) _stage.dataset.theme = _theme;
           _emit('theme-change', { theme: _theme });
+          _notifyState();
         }
       } else if (msg.type === 'PREVIEW_LANGUAGE_CHANGE') {
         // Real in-iframe language toggle — keep the parent Language control in
@@ -436,6 +443,7 @@ window.LivePreview = (function () {
           _lang = msg.lang;
           _syncControls();
           _emit('language-change', { lang: _lang });
+          _notifyState();
         }
       } else if (msg.type === 'PREVIEW_LOCATION_COMPOSE') {
         // Owner dragged / zoomed / resized the real Location image. Validate
@@ -455,24 +463,28 @@ window.LivePreview = (function () {
       }
     }
 
+    // Announce the current display state (page/device/lang/theme/zoom/expanded)
+    // so a host can persist it. UI-only — no restaurant data, no navigation.
+    function _notifyState() { _emit('state', getState()); }
+
     // ── Display-control setters (also driven by the in-panel buttons) ──
     function setDevice(v) {
       if (v !== 'desktop' && v !== 'mobile') return;
-      _device = v; _syncControls(); applyScale(); _flushActive();
+      _device = v; _syncControls(); applyScale(); _flushActive(); _notifyState();
     }
     function setLanguage(v) {
       if (v !== 'en' && v !== 'ar') return;
-      _lang = v; _syncControls(); applyScale(); _flushActive();   // re-send draft WITH the new lang
+      _lang = v; _syncControls(); applyScale(); _flushActive(); _notifyState();   // re-send draft WITH the new lang
     }
     function setTheme(v) {
       if (v !== 'dark' && v !== 'light') return;
       _theme = v;
       if (_stage) _stage.dataset.theme = _theme;
-      _syncControls(); applyScale(); _flushActive();
+      _syncControls(); applyScale(); _flushActive(); _notifyState();
     }
     function setViewMode(v) {
       if (v !== 'fit' && v !== '100') return;
-      _zoom = v; _syncControls(); applyScale(); _flushActive();
+      _zoom = v; _syncControls(); applyScale(); _flushActive(); _notifyState();
     }
 
     function setExpanded(on2) {
@@ -491,6 +503,7 @@ window.LivePreview = (function () {
       if (_ro) _scheduleScale();
       else requestAnimationFrame(function () { requestAnimationFrame(applyScale); });
       _emit('expand', { expanded: _expanded });
+      _notifyState();
     }
 
     // ── Location-image direct-edit capability (explicitly named) ───────

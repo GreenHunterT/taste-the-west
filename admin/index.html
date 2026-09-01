@@ -4,86 +4,152 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="robots" content="noindex, nofollow" />
-  <title>Admin Login — Taste The West</title>
+  <title>Admin — Taste The West</title>
   <link rel="stylesheet" href="css/admin.css" />
+  <!-- Fonts used by the public Homepage Statistics component, loaded so the
+       shell Live Preview mirrors its real typography. Falls back otherwise. -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700&family=Cormorant+Garamond:wght@600&display=swap" rel="stylesheet" />
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🍕</text></svg>" />
 </head>
-<body>
+<body data-admin-shell>
 
-  <main class="login-page" aria-labelledby="login-title">
-    <div class="login-card">
-      <div class="login-logo" aria-hidden="true">🍕</div>
-      <h1 class="login-title" id="login-title">Taste The West</h1>
-      <p class="login-sub">Owner Dashboard — sign in to continue</p>
+  <div class="sidebar-overlay" id="sidebar-overlay"></div>
 
-      <div class="login-error" id="login-error" hidden role="alert"></div>
+  <div class="admin-layout">
 
-      <form class="login-form" id="login-form" novalidate>
-        <div class="form-group">
-          <label for="email">Email address</label>
-          <input type="email" id="email" name="email"
-                 autocomplete="email" required
-                 placeholder="owner@example.com" />
+    <!-- Sidebar (ONE copy — owned by the shell) -->
+    <aside class="admin-sidebar" id="admin-sidebar">
+      <div class="sidebar-brand">
+        <span class="sidebar-icon">🍕</span>
+        <span class="sidebar-name" id="sidebar-name">Dashboard</span>
+      </div>
+      <nav class="sidebar-nav" aria-label="Admin navigation">
+        <a href="#overview" class="sidebar-link" data-route="overview">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+          Overview
+        </a>
+        <a href="#menu" class="sidebar-link" data-route="menu">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><line x1="9" y1="12" x2="15" y2="12"/><line x1="9" y1="16" x2="13" y2="16"/></svg>
+          Menu Items
+        </a>
+        <a href="#categories" class="sidebar-link" data-route="categories">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><circle cx="3" cy="6" r="1"/><circle cx="3" cy="12" r="1"/><circle cx="3" cy="18" r="1"/></svg>
+          Categories
+        </a>
+        <a href="#settings" class="sidebar-link" data-route="settings">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+          Settings
+        </a>
+      </nav>
+      <div class="sidebar-footer">
+        <button class="btn-logout" data-logout>Sign Out</button>
+      </div>
+    </aside>
+
+    <!-- Mobile topbar (ONE copy) -->
+    <header class="admin-topbar">
+      <button class="topbar-menu-btn" id="topbar-menu-btn" aria-label="Open menu">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+      </button>
+      <span class="topbar-title" id="topbar-title">Overview</span>
+      <button class="topbar-logout-btn" data-logout>Out</button>
+    </header>
+
+    <!-- Shell content: fail-closed banner + narrow Edit|Preview bar + editor | persistent preview -->
+    <div class="admin-shell__main" id="admin-shell-main" data-pane="edit">
+
+      <div class="settings-load-error admin-shell__banner" id="admin-shell-banner" role="alert" hidden>
+        Restaurant settings could not be loaded. Reload the page before making changes.
+      </div>
+
+      <div class="admin-shell__modebar">
+        <div class="lp-seg" role="group" aria-label="Admin view" id="admin-pane-seg">
+          <button type="button" class="lp-seg__btn is-active" data-pane="edit" aria-pressed="true">Edit</button>
+          <button type="button" class="lp-seg__btn" data-pane="preview" aria-pressed="false">Preview</button>
         </div>
-        <div class="form-group">
-          <label for="password">Password</label>
-          <input type="password" id="password" name="password"
-                 autocomplete="current-password" required
-                 placeholder="••••••••" />
+      </div>
+
+      <main class="admin-shell__editor" id="admin-view">
+        <!-- the active editor view mounts here -->
+      </main>
+
+      <aside class="admin-shell__preview">
+        <div class="live-preview" id="live-preview">
+          <div class="live-preview__head">
+            <h2 class="live-preview__title">Live Preview</h2>
+            <span class="live-preview__hint">Shows your saved public site.</span>
+            <button type="button" class="btn btn-ghost btn-sm" id="lp-expand" aria-pressed="false">Expand</button>
+          </div>
+
+          <div class="live-preview__controls">
+            <div class="lp-group">
+              <span class="lp-group__label" id="lp-lbl-page">Page</span>
+              <div class="lp-seg" role="group" aria-labelledby="lp-lbl-page">
+                <button type="button" class="lp-seg__btn is-active" data-page="home" aria-pressed="true">Home</button>
+                <button type="button" class="lp-seg__btn" data-page="menu" aria-pressed="false">Menu</button>
+                <button type="button" class="lp-seg__btn" data-page="location" aria-pressed="false">Location</button>
+                <button type="button" class="lp-seg__btn" data-page="contact" aria-pressed="false">Contact</button>
+              </div>
+            </div>
+            <div class="lp-group">
+              <span class="lp-group__label" id="lp-lbl-device">Device</span>
+              <div class="lp-seg" role="group" aria-labelledby="lp-lbl-device">
+                <button type="button" class="lp-seg__btn is-active" data-device="desktop" aria-pressed="true">Desktop</button>
+                <button type="button" class="lp-seg__btn" data-device="mobile" aria-pressed="false">Mobile</button>
+              </div>
+            </div>
+            <div class="lp-group">
+              <span class="lp-group__label" id="lp-lbl-lang">Language</span>
+              <div class="lp-seg" role="group" aria-labelledby="lp-lbl-lang">
+                <button type="button" class="lp-seg__btn is-active" data-lang="en" aria-pressed="true">English</button>
+                <button type="button" class="lp-seg__btn" data-lang="ar" aria-pressed="false" lang="ar">العربية</button>
+              </div>
+            </div>
+            <div class="lp-group">
+              <span class="lp-group__label" id="lp-lbl-theme">Theme</span>
+              <div class="lp-seg" role="group" aria-labelledby="lp-lbl-theme">
+                <button type="button" class="lp-seg__btn is-active" data-theme="dark" aria-pressed="true">Dark</button>
+                <button type="button" class="lp-seg__btn" data-theme="light" aria-pressed="false">Light</button>
+              </div>
+            </div>
+            <div class="lp-group">
+              <span class="lp-group__label" id="lp-lbl-view">View</span>
+              <div class="lp-seg" role="group" aria-labelledby="lp-lbl-view">
+                <button type="button" class="lp-seg__btn is-active" data-zoom="fit" aria-pressed="true">Fit</button>
+                <button type="button" class="lp-seg__btn" data-zoom="100" aria-pressed="false">100%</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="live-preview__stage" id="lp-stage" data-device="desktop" data-zoom="fit" data-theme="dark">
+            <div class="lp-viewport" id="lp-viewport">
+              <!-- Double-buffered: only the .is-active frame is shown. src values
+                   are set by live-preview.js so every load carries a navigation
+                   generation (?previewNav=N). -->
+              <iframe class="preview-frame" data-slot="a" title="Website preview"
+                      referrerpolicy="same-origin"></iframe>
+              <iframe class="preview-frame" data-slot="b" title="Website preview" aria-hidden="true"
+                      referrerpolicy="same-origin"></iframe>
+            </div>
+          </div>
         </div>
-        <button type="submit" class="btn btn-primary login-btn" id="login-btn">
-          Sign in
-        </button>
-      </form>
-    </div>
-  </main>
+      </aside>
+
+    </div><!-- /.admin-shell__main -->
+
+  </div><!-- /.admin-layout -->
+
+  <div class="toast-container" id="toast-container" aria-live="polite"></div>
+  <div class="admin-loading" id="admin-loading" hidden><div class="spinner"></div></div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
   <script src="../config/supabase.js"></script>
   <script src="js/client.js"></script>
-  <script>
-    (async function () {
-      // If already logged in, go straight to dashboard.
-      const { data: { session } } = await db.auth.getSession();
-      if (session) { window.location.replace('/admin/dashboard.html'); return; }
-
-      const form     = document.getElementById('login-form');
-      const emailEl  = document.getElementById('email');
-      const passEl   = document.getElementById('password');
-      const btn      = document.getElementById('login-btn');
-      const errorEl  = document.getElementById('login-error');
-
-      function setError(msg) {
-        errorEl.textContent = msg;
-        errorEl.hidden = false;
-      }
-      function clearError() { errorEl.hidden = true; }
-
-      form.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        clearError();
-
-        const email    = emailEl.value.trim();
-        const password = passEl.value;
-
-        if (!email || !password) { setError('Please enter your email and password.'); return; }
-
-        btn.disabled = true;
-        btn.innerHTML = '<span class="btn-spinner"></span> Signing in…';
-
-        const { data, error } = await db.auth.signInWithPassword({ email, password });
-
-        if (error) {
-          btn.disabled = false;
-          btn.textContent = 'Sign in';
-          // Show generic message — do not leak whether email exists
-          setError('Invalid email or password. Please try again.');
-          return;
-        }
-
-        window.location.replace('/admin/dashboard.html');
-      });
-    })();
-  </script>
+  <script src="js/auth.js"></script>
+  <script src="js/live-preview.js"></script>
+  <script src="js/views/overview.js"></script>
+  <script src="js/admin-shell.js"></script>
 </body>
 </html>

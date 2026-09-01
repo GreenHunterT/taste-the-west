@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="robots" content="noindex, nofollow" />
+  <title>Admin Login — Taste The West</title>
+  <link rel="stylesheet" href="css/admin.css" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🍕</text></svg>" />
+</head>
+<body>
+
+  <main class="login-page" aria-labelledby="login-title">
+    <div class="login-card">
+      <div class="login-logo" aria-hidden="true">🍕</div>
+      <h1 class="login-title" id="login-title">Taste The West</h1>
+      <p class="login-sub">Owner Dashboard — sign in to continue</p>
+
+      <div class="login-error" id="login-error" hidden role="alert"></div>
+
+      <form class="login-form" id="login-form" novalidate>
+        <div class="form-group">
+          <label for="email">Email address</label>
+          <input type="email" id="email" name="email"
+                 autocomplete="email" required
+                 placeholder="owner@example.com" />
+        </div>
+        <div class="form-group">
+          <label for="password">Password</label>
+          <input type="password" id="password" name="password"
+                 autocomplete="current-password" required
+                 placeholder="••••••••" />
+        </div>
+        <button type="submit" class="btn btn-primary login-btn" id="login-btn">
+          Sign in
+        </button>
+      </form>
+    </div>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+  <script src="../config/supabase.js"></script>
+  <script src="js/client.js"></script>
+  <script>
+    (async function () {
+      // Already signed in → go straight to the persistent Admin shell.
+      const { data: { session } } = await db.auth.getSession();
+      if (session) { window.location.replace('/admin/#overview'); return; }
+
+      const form     = document.getElementById('login-form');
+      const emailEl  = document.getElementById('email');
+      const passEl   = document.getElementById('password');
+      const btn      = document.getElementById('login-btn');
+      const errorEl  = document.getElementById('login-error');
+
+      function setError(msg) {
+        errorEl.textContent = msg;
+        errorEl.hidden = false;
+      }
+      function clearError() { errorEl.hidden = true; }
+
+      form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        clearError();
+
+        const email    = emailEl.value.trim();
+        const password = passEl.value;
+
+        if (!email || !password) { setError('Please enter your email and password.'); return; }
+
+        btn.disabled = true;
+        btn.innerHTML = '<span class="btn-spinner"></span> Signing in…';
+
+        const { data, error } = await db.auth.signInWithPassword({ email, password });
+
+        if (error) {
+          btn.disabled = false;
+          btn.textContent = 'Sign in';
+          // Show generic message — do not leak whether email exists
+          setError('Invalid email or password. Please try again.');
+          return;
+        }
+
+        window.location.replace('/admin/#overview');
+      });
+    })();
+  </script>
+</body>
+</html>

@@ -8,7 +8,7 @@
 async function requireAuth() {
   const { data: { session } } = await db.auth.getSession();
   if (!session) {
-    window.location.replace('/admin/');
+    window.location.replace('/admin/login.html');
     return null;
   }
   return session;
@@ -32,7 +32,7 @@ async function getMyRestaurant(userId) {
 // Sign out and redirect to login.
 async function signOut() {
   await db.auth.signOut();
-  window.location.replace('/admin/');
+  window.location.replace('/admin/login.html');
 }
 
 // Populate the sidebar restaurant name + wire logout buttons.

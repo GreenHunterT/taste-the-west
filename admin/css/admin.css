@@ -427,6 +427,58 @@ body[data-admin-page="settings"] .admin-main {
   .settings-layout[data-admin-mode="preview"] .live-preview { height: calc(100dvh - 120px); }
 }
 
+/* ── ADMIN SHELL (1I-B) ──────────────────────────────────────────────
+   The persistent Admin document: sidebar + (editor | ONE Live Preview).
+   Mirrors the Settings split-layout rules but shell-owned — no dependency
+   on `.settings-layout`. The legacy Settings page keeps its own rules
+   above until 1I-C ports it. Shared `.live-preview` / `.lp-*` /
+   `.preview-frame` styling is reused as-is. */
+.admin-shell__main {
+  grid-column: 2;               /* content column (sidebar is column 1) */
+  padding: 28px 32px;
+  max-width: min(1680px, 100%);
+  overflow-x: clip;              /* not `hidden` — keeps position:sticky working */
+  min-width: 0;
+  display: grid;
+  gap: 24px;
+}
+.admin-shell__editor,
+.admin-shell__preview { min-width: 0; }
+
+.admin-shell__banner { grid-column: 1 / -1; }
+
+.admin-shell__modebar {
+  grid-column: 1 / -1;
+  display: flex; align-items: center; justify-content: flex-start;
+  flex-wrap: wrap; gap: 8px 12px;
+  position: sticky; top: 0; z-index: 5;
+  background: var(--abg); padding: 8px 0;
+}
+
+.admin-legacy-notice .btn { margin-top: 4px; }
+.admin-view-error { color: var(--amuted); }
+
+@media (min-width: 1180px) {
+  .admin-shell__main {
+    grid-template-columns: minmax(0, 1fr) clamp(440px, 43%, 840px);
+    align-items: stretch;
+  }
+  .admin-shell__main.is-preview-expanded { grid-template-columns: minmax(0, 1fr); }
+  .admin-shell__main.is-preview-expanded .admin-shell__editor { display: none; }
+  .admin-shell__modebar { display: none; }        /* both panes already visible */
+}
+
+@media (max-width: 1179px) {
+  .admin-shell__main[data-pane="edit"]    .admin-shell__preview { display: none; }
+  .admin-shell__main[data-pane="preview"] .admin-shell__editor  { display: none; }
+  .admin-shell__main[data-pane="preview"] .admin-shell__preview { width: 100%; }
+  .admin-shell__main[data-pane="preview"] .live-preview { height: calc(100dvh - 120px); }
+}
+
+@media (max-width: 768px) {
+  .admin-shell__main { grid-column: 1; padding: 20px 16px; }
+}
+
 /* ── FORMS ───────────────────────────────────────────────────────── */
 .form-section { margin-bottom: 32px; }
 .form-section-title {
