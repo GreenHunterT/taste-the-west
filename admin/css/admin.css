@@ -533,6 +533,33 @@ body[data-admin-page="settings"] .admin-main {
 .stg-fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
 .stg-fieldset[disabled] { opacity: .6; }
 
+/* ── ADMIN SHELL: Menu view ────────────────────────────────────────
+   The product modal's "View in Preview" jump is only useful on narrow
+   screens, where Edit and Preview are separate panes. On wide screens the
+   Preview is always visible beside the editor, so hide it. */
+@media (min-width: 1180px) {
+  #mn-view-preview { display: none; }
+
+  /* Desktop: the Add/Edit and Delete dialogs are CONFINED to the editor
+     pane — never a viewport-wide overlay. `.menu-view` is the positioning
+     context and fills the editor column, so the dim layer covers only the
+     editor and the Live Preview beside it stays fully bright and usable. */
+  .menu-view { position: relative; min-height: 100%; }
+  .menu-view .modal-backdrop {
+    position: absolute;     /* was: fixed (viewport) */
+    z-index: 30;
+  }
+  .menu-view .modal-backdrop .modal,
+  .menu-view .modal-backdrop .confirm-dialog {
+    position: sticky;       /* stay in view as the editor column scrolls */
+    top: 12px;
+    align-self: flex-start;
+  }
+  .menu-view .modal-backdrop .modal {
+    max-height: calc(100dvh - 120px);   /* header + footer fixed, body scrolls */
+  }
+}
+
 /* ── FORMS ───────────────────────────────────────────────────────── */
 .form-section { margin-bottom: 32px; }
 .form-section-title {

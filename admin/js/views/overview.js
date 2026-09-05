@@ -36,9 +36,10 @@ window.AdminViews.overview = (function () {
       '<div class="acard">',
       '  <div class="acard-title">Quick Actions</div>',
       '  <div class="flex" style="gap:12px;flex-wrap:wrap">',
-      '    <a href="menu.html"       class="btn btn-primary">+ Add Product</a>',
-      '    <a href="categories.html" class="btn btn-secondary">Manage Categories</a>',
-      '    <a href="settings.html"   class="btn btn-secondary">Restaurant Settings</a>',
+      '    <a href="#menu&action=new" class="btn btn-primary">+ Add Product</a>',
+      '    <a href="#menu"            class="btn btn-secondary">Manage Menu</a>',
+      '    <a href="#categories"      class="btn btn-secondary">Manage Categories</a>',
+      '    <a href="#settings"        class="btn btn-secondary">Restaurant Settings</a>',
       '  </div>',
       '</div>',
     ].join('\n');

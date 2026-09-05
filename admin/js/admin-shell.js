@@ -123,6 +123,7 @@
     restaurantLoadState: restaurantLoadState,
     preview: null,          // set just below
     route: null,            // set by renderRoute()
+    pendingAction: null,    // one-shot route action (e.g. #menu&action=new) — a view reads + clears it
     toast: (typeof showToast === 'function') ? showToast : function () {},
   };
 
@@ -235,13 +236,24 @@
   // ── Router (hash) ──────────────────────────────────────────────
   const VIEWS = {
     overview:   { title: 'Overview',   module: 'overview' },
-    menu:       { title: 'Menu Items', legacy: 'menu.html' },
+    menu:       { title: 'Menu Items', module: 'menu' },
     categories: { title: 'Categories', legacy: 'categories.html' },
     settings:   { title: 'Settings',   module: 'settings' },
   };
   function routeFromHash() {
     const h = (window.location.hash || '').replace(/^#\/?/, '').split(/[?&]/)[0].trim().toLowerCase();
     return VIEWS[h] ? h : 'overview';
+  }
+  // Optional one-shot action after the route, e.g. `#menu&action=new`. Sanitised
+  // to [a-z] (max 16). Consumed once by the view, then stripped from the hash so
+  // reload / Back-Forward never replay it.
+  function actionFromHash() {
+    const parts = (window.location.hash || '').replace(/^#\/?/, '').split(/[?&]/).slice(1);
+    for (let i = 0; i < parts.length; i++) {
+      const kv = parts[i].split('=');
+      if (kv[0] === 'action') return (kv[1] || '').toLowerCase().replace(/[^a-z]/g, '').slice(0, 16) || null;
+    }
+    return null;
   }
 
   let mountedView = null;   // { name, api }
@@ -276,6 +288,15 @@
     const name = routeFromHash();
     ctx.route = name;
     writeUi({ route: name });
+
+    // Hand any one-shot action to the view via ctx, then normalise the hash to
+    // the bare route so a reload / Back doesn't fire the action again.
+    const action = actionFromHash();
+    ctx.pendingAction = action;
+    if (action) {
+      try { history.replaceState(null, '', window.location.pathname + window.location.search + '#' + name); }
+      catch (e) { /* keep the hash as-is — the view still gets ctx.pendingAction */ }
+    }
 
     document.querySelectorAll('.sidebar-link').forEach(function (a) {
       a.classList.toggle('active', a.dataset.route === name);

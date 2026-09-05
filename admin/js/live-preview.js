@@ -8,7 +8,9 @@
 //  the Page / Device / Language / Theme / View controls, Expand,
 //  same-origin + known-source + navigation-generation message
 //  validation, PREVIEW_NAVIGATE / FOCUS transport (semantic targets only —
-//  never selectors), and the Location-image direct-edit transport + sequencing.
+//  never selectors), the unsaved catalog-draft overlay transport (whitelisted
+//  public product fields only — never selectors / private rows), and the
+//  Location-image direct-edit transport + sequencing.
 //
 //  It does NOT know how a restaurant draft is built, how branding
 //  object-URLs are produced, or how to focus an editor card. Editors
@@ -66,6 +68,7 @@ window.LivePreview = (function () {
     let _pendingFocus = null;          // { kind, target?, id?, highlight?, behavior? } — fired once the next page is ready
     let _focusRaf = 0;                 // rAF handle: coalesces rapid focus requests to one send per frame
     let _focusQueued = null;
+    let _catalogDraft = null;          // { products:[ { id, isDraft, patch } ] } — unsaved menu overlay; null = none
 
     // ── Double-buffered frames ──────────────────────────────────────────
     let _stage    = root.querySelector ? root.querySelector('#lp-stage')    : document.getElementById('lp-stage');
@@ -228,7 +231,8 @@ window.LivePreview = (function () {
     function _sendNow(frame, navId) {
       if (!_draft || !frame || !frame.contentWindow) return;
       frame.contentWindow.postMessage(
-        { type: 'PREVIEW_DATA', nav: navId, payload: { restaurant: _draft, lang: _lang, theme: _theme } },
+        { type: 'PREVIEW_DATA', nav: navId,
+          payload: { restaurant: _draft, lang: _lang, theme: _theme, catalog: _catalogDraft } },
         ORIGIN);
     }
     // Ordinary draft update → refresh the ACTIVE frame in place (no reload,
@@ -252,6 +256,64 @@ window.LivePreview = (function () {
       _flushActive();
     }
 
+    // ── Unsaved catalog-draft overlay (Menu editor) ───────────────────
+    // Public product fields a patch may carry. Anything else (owner_id,
+    // restaurant_id, timestamps, extra ids) is dropped here so it can never
+    // reach the iframe. The child re-validates against the same list.
+    const CATALOG_FIELDS = ['name_en', 'name_ar', 'description_en', 'description_ar',
+      'price', 'image_url', 'available', 'featured', 'category_id', 'sort_order'];
+    const _RE_UUID  = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    const _RE_DRAFT = /^draft:[A-Za-z0-9_-]{1,64}$/;
+    function _normCatalogDraft(d) {
+      if (!d || typeof d !== 'object' || !Array.isArray(d.products)) return null;
+      const seen = {};
+      const products = [];
+      d.products.forEach(function (row) {
+        if (!row || typeof row !== 'object') return;
+        const id = String(row.id == null ? '' : row.id).trim();
+        const isDraft = _RE_DRAFT.test(id);
+        if (!isDraft && !_RE_UUID.test(id)) return;   // not a real product id nor a draft token
+        if (seen[id]) return;
+        seen[id] = 1;
+        const src = (row.patch && typeof row.patch === 'object') ? row.patch : row;
+        const patch = {};
+        CATALOG_FIELDS.forEach(function (k) {
+          if (!Object.prototype.hasOwnProperty.call(src, k)) return;
+          const v = src[k];
+          if (k === 'available' || k === 'featured') patch[k] = (v === true);
+          else if (k === 'sort_order') { const n = parseInt(v, 10); if (isFinite(n)) patch[k] = n; }
+          else patch[k] = (v == null ? '' : String(v));
+        });
+        products.push({ id: id, isDraft: isDraft, patch: patch });
+      });
+      return { products: products };
+    }
+    // Push / replace the unsaved menu overlay. Coalesced to the ACTIVE frame;
+    // a frame mid-navigation picks it up via its PREVIEW_READY handler.
+    function setCatalogDraft(d) {
+      _catalogDraft = _normCatalogDraft(d);
+      _flushActive();
+      if (pendingNav && _previewReady) _sendNow(pendingNav.frame, pendingNav.id);
+    }
+    function clearCatalogDraft() {
+      if (_catalogDraft == null) return;
+      _catalogDraft = null;
+      _flushActive();
+      if (pendingNav && _previewReady) _sendNow(pendingNav.frame, pendingNav.id);
+    }
+    // After a Save / Delete: tell the ACTIVE preview document to re-pull the
+    // LIVE public catalog from Supabase (never a demo fallback). An optional
+    // focus is applied only AFTER the refreshed grid is in the DOM, so a
+    // just-saved card can be highlighted exactly once.
+    function refreshCatalog(o) {
+      o = o || {};
+      const nd = o.focus ? _normFocus(o.focus) : null;
+      _postToActive({
+        type: 'PREVIEW_REFRESH_CATALOG',
+        focus: nd ? { kind: nd.kind, target: nd.target, id: nd.id, highlight: nd.highlight } : null,
+      });
+    }
+
     // Normalise a focus descriptor. Accepts { type|kind:'section', target } or
     // { type|kind:'stat', id }. The controller only ever transports these two
     // shapes + a boolean `highlight` + an optional scroll `behavior`. It never
@@ -259,11 +321,13 @@ window.LivePreview = (function () {
     // against its own whitelist.
     function _normFocus(d) {
       if (!d || typeof d !== 'object') return null;
-      const kind = (d.type === 'stat' || d.kind === 'stat') ? 'stat' : 'section';
+      const kind = (d.type === 'stat' || d.kind === 'stat') ? 'stat'
+        : (d.type === 'product' || d.kind === 'product') ? 'product'
+        : 'section';
       const hi = d.highlight !== false;
-      if (kind === 'stat') {
+      if (kind === 'stat' || kind === 'product') {
         const id = String(d.id == null ? '' : d.id).trim();
-        return id ? { kind: 'stat', id: id, highlight: hi, behavior: d.behavior } : null;
+        return id ? { kind: kind, id: id, highlight: hi, behavior: d.behavior } : null;
       }
       const t = String(d.target == null ? '' : d.target).trim();
       return t ? { kind: 'section', target: t, highlight: hi, behavior: d.behavior } : null;
@@ -599,6 +663,7 @@ window.LivePreview = (function () {
       if (_ro) { try { _ro.disconnect(); } catch (e) {} _ro = null; }
       if (_focusRaf) { try { cancelAnimationFrame(_focusRaf); } catch (e) {} _focusRaf = 0; }
       _focusQueued = null; _pendingFocus = null;
+      _catalogDraft = null;
       _teardown.splice(0).forEach(function (fn) { try { fn(); } catch (e) {} });
       try { _frames.forEach(function (f) { f.src = 'about:blank'; }); } catch (e) {}
       _handlers = {};
@@ -673,6 +738,9 @@ window.LivePreview = (function () {
       applyScale: applyScale,
       scrollTo: scrollTo,
       focus: focus,
+      setCatalogDraft: setCatalogDraft,
+      clearCatalogDraft: clearCatalogDraft,
+      refreshCatalog: refreshCatalog,
       startLocationImageEdit: startLocationImageEdit,
       updateLocationImageEdit: updateLocationImageEdit,
       stopLocationImageEdit: stopLocationImageEdit,

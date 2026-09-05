@@ -102,6 +102,12 @@
   // in over postMessage.
   var _previewCategories    = null;   // live categories, re-applied after each draft
   var _previewCatalogFailed = false;  // true only if the live catalog fetch errored
+  // Unsaved Menu-editor overlay (Admin only). `_previewCatalogBase` is the
+  // pristine live catalog; `_previewCatalogDraft` is Admin's whitelisted
+  // per-product patches + new draft:<id> products. The base is NEVER mutated —
+  // previewProducts() returns a fresh merged array on demand.
+  var _previewCatalogBase   = null;
+  var _previewCatalogDraft  = null;   // { products:[ { id, isDraft, patch } ] } | null
 
   // ── DB → SHOP SHAPE MAPPING ───────────────────────────────────────
   function mapRestaurant(r) {
@@ -224,6 +230,7 @@
     return {
       products: (prodsRaw || []).map(mapProduct),
       categories: (catsRaw || []).map(c => ({
+        id:     c.id,
         slug:   c.slug,
         nameAr: c.name_ar,
         nameEn: c.name_en,
@@ -236,25 +243,133 @@
   // the Admin parent via postMessage. On any error, degrade to an empty catalog
   // plus a preview-only notice — demo products are never shown as if real.
   async function loadPreviewCatalog() {
+    _previewCatalogFailed = false;
     if (!isSupabaseConfigured()) {
       // No live backend configured: the bundled config IS this site's real
       // content, so keeping the bundled PRODUCTS is accurate, not misleading.
-      _previewCategories = (typeof SHOP !== 'undefined' && Array.isArray(SHOP.categories))
+      _previewCategories  = (typeof SHOP !== 'undefined' && Array.isArray(SHOP.categories))
         ? SHOP.categories : [];
+      _previewCatalogBase = Array.isArray(window.PRODUCTS) ? window.PRODUCTS : [];
       return;
     }
     const base = SUPABASE_URL + '/rest/v1';
     const h = { 'apikey': SUPABASE_ANON_KEY };
     try {
       const catalog = await fetchCatalog(base, h);
-      window.PRODUCTS    = catalog.products;
-      _previewCategories = catalog.categories;
+      window.PRODUCTS     = catalog.products;
+      _previewCatalogBase = catalog.products;
+      _previewCategories  = catalog.categories;
     } catch (e) {
       console.warn('[app.js] preview catalog load failed:', e);
       _previewCatalogFailed = true;
-      window.PRODUCTS    = [];
-      _previewCategories = [];
+      window.PRODUCTS     = [];
+      _previewCatalogBase = [];
+      _previewCategories  = [];
     }
+  }
+
+  // ── ADMIN PREVIEW: unsaved catalog overlay ────────────────────────
+  // Only reached under ?adminPreview=1. Merges Admin's whitelisted per-product
+  // patches (and new draft:<id> products) over the pristine live catalog and
+  // returns a NEW array. Unavailable products are dropped, exactly as the
+  // public catalog query (available=eq.true) already does. Never mutates the
+  // base. A normal visitor never has a draft, so previewProducts() === base.
+  var CATALOG_PATCH_FIELDS = ['name_en', 'name_ar', 'description_en', 'description_ar',
+    'price', 'image_url', 'available', 'featured', 'category_id', 'sort_order'];
+  var RE_DRAFT_ID = /^draft:[A-Za-z0-9_-]{1,64}$/;
+
+  function normChildCatalogDraft(d) {
+    if (!d || typeof d !== 'object' || !Array.isArray(d.products)) return null;
+    var out = [];
+    d.products.forEach(function (row) {
+      if (!row || typeof row !== 'object') return;
+      var id = String(row.id == null ? '' : row.id).trim();
+      if (!id) return;
+      var isDraft = RE_DRAFT_ID.test(id);
+      var src = (row.patch && typeof row.patch === 'object') ? row.patch : {};
+      var patch = {};
+      CATALOG_PATCH_FIELDS.forEach(function (k) {
+        if (!Object.prototype.hasOwnProperty.call(src, k)) return;
+        var v = src[k];
+        if (k === 'available' || k === 'featured') patch[k] = (v === true);
+        else if (k === 'sort_order') { var n = parseInt(v, 10); if (isFinite(n)) patch[k] = n; }
+        else patch[k] = (v == null ? '' : String(v));
+      });
+      out.push({ id: id, isDraft: isDraft, patch: patch });
+    });
+    return out.length ? { products: out } : null;
+  }
+
+  function previewCatById(id) {
+    if (id == null || id === '' || !Array.isArray(_previewCategories)) return null;
+    var want = String(id);
+    for (var i = 0; i < _previewCategories.length; i++) {
+      var c = _previewCategories[i];
+      if (c && String(c.id) === want) return c;
+    }
+    return null;
+  }
+  function blankPreviewProduct(id) {
+    return {
+      id: id, name: '', nameEn: '', description: '', descriptionEn: '',
+      price: '', category: '', image: '', featured: false, available: true,
+      sort_order: 0, _catNameAr: '', _catNameEn: '',
+    };
+  }
+  function mergeProductPatch(baseProduct, patch) {
+    var m = {};
+    for (var k in baseProduct) {
+      if (Object.prototype.hasOwnProperty.call(baseProduct, k)) m[k] = baseProduct[k];
+    }
+    if ('name_en' in patch)        m.nameEn        = patch.name_en;
+    if ('name_ar' in patch)        m.name          = patch.name_ar;
+    if ('description_en' in patch) m.descriptionEn = patch.description_en;
+    if ('description_ar' in patch) m.description   = patch.description_ar;
+    if ('price' in patch)          m.price         = patch.price;
+    if ('image_url' in patch)      m.image         = patch.image_url;
+    if ('available' in patch)      m.available     = patch.available;
+    if ('featured' in patch)       m.featured      = patch.featured;
+    if ('sort_order' in patch)     m.sort_order    = patch.sort_order;
+    if ('category_id' in patch) {
+      var cat = previewCatById(patch.category_id);
+      m.category   = cat ? cat.slug   : '';
+      m._catNameAr = cat ? cat.nameAr : '';
+      m._catNameEn = cat ? cat.nameEn : '';
+    }
+    return m;
+  }
+  function previewProducts() {
+    var baseArr = Array.isArray(_previewCatalogBase) ? _previewCatalogBase
+      : (Array.isArray(window.PRODUCTS) ? window.PRODUCTS : []);
+    var draft = _previewCatalogDraft;
+    if (!draft || !draft.products.length) return baseArr.slice();
+
+    var baseIds = {};
+    baseArr.forEach(function (p) { if (p && p.id != null) baseIds[String(p.id)] = 1; });
+
+    var patchById = {}, adds = [];
+    draft.products.forEach(function (row) {
+      if (row.isDraft && !baseIds[row.id]) adds.push(row);
+      else if (baseIds[row.id]) patchById[row.id] = row.patch;
+      // unknown non-draft id → ignored
+    });
+
+    var out = [];
+    baseArr.forEach(function (p) {
+      var patch = (p && p.id != null) ? patchById[String(p.id)] : null;
+      if (!patch) { out.push(p); return; }
+      var merged = mergeProductPatch(p, patch);
+      if (merged.available === false) return;   // hidden — real public rule
+      out.push(merged);
+    });
+    adds.forEach(function (row) {
+      var np = mergeProductPatch(blankPreviewProduct(row.id), row.patch);
+      if (np.available === false) return;
+      out.push(np);
+    });
+
+    out.sort(function (a, b) { return (a.sort_order || 0) - (b.sort_order || 0); });
+    return out;
   }
 
   // ── LOADING OVERLAY ───────────────────────────────────────────────
@@ -1075,44 +1190,81 @@
   }
 
   // ── PRODUCT CARD RENDERER ─────────────────────────────────────────
+  // Built with DOM APIs + textContent — owner-entered name / description /
+  // price / category never touch innerHTML. In Admin Preview each card carries
+  // data-preview-id so the editor can focus/highlight the exact product.
   function renderProductGrid(products, containerId) {
     const grid = document.getElementById(containerId);
     if (!grid) return;
 
+    grid.textContent = '';
+
     if (!products || !products.length) {
-      grid.innerHTML = '<p style="color:var(--text-muted);text-align:center;padding:40px 0">No items to show.</p>';
+      const empty = document.createElement('p');
+      empty.style.cssText = 'color:var(--text-muted);text-align:center;padding:40px 0';
+      empty.textContent = 'No items to show.';
+      grid.appendChild(empty);
+      if (grid.classList.contains('reveal-grid')) grid.classList.add('visible');
       return;
     }
 
     const lang = getLang();
+    const frag = document.createDocumentFragment();
 
-    grid.innerHTML = products.map(p => {
-      const name    = lang === 'ar' ? p.name : (p.nameEn || p.name);
-      const desc    = lang === 'ar' ? p.description : (p.descriptionEn || p.description);
-      const catName = p._catNameAr || p._catNameEn
+    products.forEach(function (p) {
+      const name = lang === 'ar' ? p.name : (p.nameEn || p.name);
+      const desc = lang === 'ar' ? p.description : (p.descriptionEn || p.description);
+      const catName = (p._catNameAr || p._catNameEn)
         ? (lang === 'ar' ? (p._catNameAr || p._catNameEn) : (p._catNameEn || p._catNameAr))
         : getCatLabel(p.category || '', lang);
-      // Use file placeholder when image is empty; broken src falls back to IMG_BROKEN inline.
-      const imgSrc  = p.image || IMG_DEFAULT;
-      return `
-        <article class="product-card" data-cat="${p.category || ''}">
-          <div class="product-img">
-            <img src="${imgSrc}" alt="${name}" loading="lazy" />
-            ${p.category ? `<span class="product-cat-badge" aria-hidden="true">${catName}</span>` : ''}
-          </div>
-          <div class="product-body">
-            <h3 class="product-name">${name}</h3>
-            ${p.price ? `<div class="product-price">${p.price}</div>` : ''}
-            ${desc    ? `<p class="product-desc">${desc}</p>`         : ''}
-          </div>
-        </article>
-      `;
-    }).join('');
+      const imgSrc = p.image || IMG_DEFAULT;
 
-    grid.querySelectorAll('.product-img img').forEach(function (img) {
+      const card = document.createElement('article');
+      card.className = 'product-card';
+      card.dataset.cat = p.category || '';
+      if (PREVIEW && p.id != null && p.id !== '') card.dataset.previewId = String(p.id);
+
+      const imgWrap = document.createElement('div');
+      imgWrap.className = 'product-img';
+      const img = document.createElement('img');
+      img.src = imgSrc;
+      img.alt = name || '';
+      img.loading = 'lazy';
       img.addEventListener('error', function () { this.src = IMG_BROKEN; }, { once: true });
+      imgWrap.appendChild(img);
+      if (p.category) {
+        const badge = document.createElement('span');
+        badge.className = 'product-cat-badge';
+        badge.setAttribute('aria-hidden', 'true');
+        badge.textContent = catName;
+        imgWrap.appendChild(badge);
+      }
+
+      const body = document.createElement('div');
+      body.className = 'product-body';
+      const h3 = document.createElement('h3');
+      h3.className = 'product-name';
+      h3.textContent = name || '';
+      body.appendChild(h3);
+      if (p.price) {
+        const price = document.createElement('div');
+        price.className = 'product-price';
+        price.textContent = p.price;
+        body.appendChild(price);
+      }
+      if (desc) {
+        const dp = document.createElement('p');
+        dp.className = 'product-desc';
+        dp.textContent = desc;
+        body.appendChild(dp);
+      }
+
+      card.appendChild(imgWrap);
+      card.appendChild(body);
+      frag.appendChild(card);
     });
 
+    grid.appendChild(frag);
     if (grid.classList.contains('reveal-grid')) grid.classList.add('visible');
   }
 
@@ -1272,10 +1424,30 @@
     if (_pvFocusT2) { clearTimeout(_pvFocusT2); _pvFocusT2 = 0; }
     if (_pvFocusEl) { try { _pvFocusEl.classList.remove('pv-focus', 'pv-focus--out'); } catch (e) {} _pvFocusEl = null; }
   }
+  // Centre `el` in THIS document's own viewport. Never Element.scrollIntoView():
+  // that recurses through every ancestor scroll container INCLUDING the parent
+  // <iframe>, so it also scrolls the Admin shell and drags the left editor with
+  // it (the 1I-D Settings/Menu auto-scroll bug). Window.scrollTo() acts only on
+  // this window and cannot reach the embedder.
+  function pvScrollCenter(el, behavior) {
+    try {
+      var doc = document.scrollingElement || document.documentElement || document.body;
+      if (!doc) return;
+      var viewH = window.innerHeight || doc.clientHeight || 0;
+      var rect = el.getBoundingClientRect();
+      var cur = (window.pageYOffset != null) ? window.pageYOffset : doc.scrollTop;
+      var top = cur + rect.top + (rect.height / 2) - (viewH / 2);
+      var max = Math.max(0, (doc.scrollHeight || 0) - viewH);
+      top = top < 0 ? 0 : (top > max ? max : top);
+      window.scrollTo({ top: top, left: (window.pageXOffset || 0), behavior: behavior });
+    } catch (e) {
+      try { window.scrollTo(0, Math.max(0, (el.offsetTop || 0) - 120)); } catch (e2) {}
+    }
+  }
   function pvFocusElement(el, doHighlight, behavior) {
     if (!el) return;
     var reduced = _pvReduced();
-    try { el.scrollIntoView({ behavior: (behavior === 'auto' || reduced) ? 'auto' : 'smooth', block: 'center' }); } catch (e) {}
+    pvScrollCenter(el, (behavior === 'auto' || reduced) ? 'auto' : 'smooth');
     if (doHighlight === false) return;
     if (_pvFocusEl === el) return;                 // already emphasised — don't restart the animation
     pvClearFocus();
@@ -1304,6 +1476,20 @@
       pvFocusElement(target, msg.highlight !== false, msg.behavior);
       return;
     }
+    if (msg.kind === 'product') {
+      var wantP = String(msg.id == null ? '' : msg.id);
+      var tp = null;
+      if (wantP) {
+        var pcards = document.querySelectorAll('.product-card[data-preview-id]');
+        for (var j = 0; j < pcards.length; j++) {
+          if (pcards[j].getAttribute('data-preview-id') === wantP) { tp = pcards[j]; break; }
+        }
+      }
+      // hidden (unavailable) / not-yet-rendered product → the grid region
+      if (!tp) tp = document.getElementById('products-grid') || document.getElementById('featured-grid');
+      pvFocusElement(tp, msg.highlight !== false, msg.behavior);
+      return;
+    }
     // section
     var key = String(msg.target == null ? '' : msg.target);
     if (!Object.prototype.hasOwnProperty.call(PV_FOCUS_TARGETS, key)) return;
@@ -1319,9 +1505,30 @@
       applyPreviewData(msg.payload || {}, msg.nav);
     } else if (msg.type === 'PREVIEW_FOCUS') {
       onPreviewFocus(msg);
+    } else if (msg.type === 'PREVIEW_REFRESH_CATALOG') {
+      onPreviewRefreshCatalog(msg);
     } else if (msg.type === 'PREVIEW_LOCATION_EDIT') {
       if (msg.on) { pvClearFocus(); locEditStart(msg.seed || {}); }
       else        locEditTeardown();
+    }
+  }
+
+  // Admin Save / Delete landed — re-pull the LIVE public catalog so the preview
+  // stops showing the unsaved overlay and reflects persisted data. Optional
+  // msg.focus is applied only after the fresh grid is in the DOM. Never shows a
+  // demo fallback; a failed re-pull keeps the existing "could not be loaded"
+  // notice via renderCurrentPage().
+  async function onPreviewRefreshCatalog(msg) {
+    var page = document.body.dataset.page;
+    _previewCatalogDraft = null;                 // persisted data is the truth now
+    if (page === 'home' || page === 'products') {
+      await loadPreviewCatalog();
+      if (typeof SHOP !== 'undefined' && Array.isArray(_previewCategories)) SHOP.categories = _previewCategories;
+      window.PRODUCTS = previewProducts();
+      renderCurrentPage();
+    }
+    if (msg && msg.focus) {
+      requestAnimationFrame(function () { onPreviewFocus(msg.focus); });
     }
   }
 
@@ -1342,6 +1549,15 @@
       if (Array.isArray(_previewCategories)) window.SHOP.categories = _previewCategories;
       if (typeof SHOP_SETTINGS !== 'undefined' && r.sounds_enabled !== undefined) {
         SHOP_SETTINGS.sounds = r.sounds_enabled !== false;
+      }
+
+      // Unsaved Menu-editor overlay (may be null). Recompute PRODUCTS from the
+      // pristine base + patches only where the page renders products.
+      if (Object.prototype.hasOwnProperty.call(payload, 'catalog')) {
+        _previewCatalogDraft = normChildCatalogDraft(payload.catalog);
+      }
+      if (document.body.dataset.page === 'home' || document.body.dataset.page === 'products') {
+        window.PRODUCTS = previewProducts();
       }
 
       // Language + theme are authoritative Admin state, echoed on EVERY message.
