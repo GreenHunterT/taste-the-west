@@ -1238,6 +1238,78 @@
     parentPost({ type: 'PREVIEW_READY', nav: _previewNav });
   }
 
+  // ── ADMIN PREVIEW: semantic focus / highlight ──────────────────────
+  // The parent sends a KNOWN key (never a CSS selector / DOM path); the child
+  // maps it to a real element on whichever public page is loaded, brings it to
+  // centre, and briefly emphasises it. Unknown keys are ignored. Normal
+  // visitors never reach this — it runs only under ?adminPreview=1, and
+  // `.pv-focus` is only ever added here.
+  var PV_FOCUS_TARGETS = {
+    hero:               function () { return document.getElementById('hero'); },
+    'hero-name':        function () { return document.getElementById('hero-name'); },
+    'hero-tagline':     function () { return document.getElementById('hero-tagline'); },
+    'hero-image':       function () { return document.getElementById('hero-bg') || document.getElementById('hero'); },
+    logo:               function () { return document.querySelector('.nav-logo') || document.getElementById('nav-logo'); },
+    about:              function () { return document.getElementById('about-desc') || document.getElementById('about'); },
+    highlights:         function () { return document.getElementById('hl-grid'); },
+    address:            function () { return document.getElementById('loc-address') || document.querySelector('.location-details'); },
+    'location-visual':  function () { return document.querySelector('.loc-visual'); },
+    hours:              function () { return document.getElementById('loc-weekdays') || document.querySelector('.location-details'); },
+    contact:            function () { return document.querySelector('.contact-grid') || document.querySelector('.contact-info-list'); },
+    'contact-phone':    function () { return document.getElementById('contact-phone'); },
+    'contact-whatsapp': function () { return document.querySelector('[data-wa-link]') || document.querySelector('.contact-grid'); },
+    'contact-instagram':function () { return document.getElementById('contact-insta'); },
+    'contact-email':    function () { return document.getElementById('contact-email'); },
+  };
+
+  var _pvFocusEl = null, _pvFocusT1 = 0, _pvFocusT2 = 0;
+  function _pvReduced() {
+    try { return !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches); }
+    catch (e) { return false; }
+  }
+  function pvClearFocus() {
+    if (_pvFocusT1) { clearTimeout(_pvFocusT1); _pvFocusT1 = 0; }
+    if (_pvFocusT2) { clearTimeout(_pvFocusT2); _pvFocusT2 = 0; }
+    if (_pvFocusEl) { try { _pvFocusEl.classList.remove('pv-focus', 'pv-focus--out'); } catch (e) {} _pvFocusEl = null; }
+  }
+  function pvFocusElement(el, doHighlight, behavior) {
+    if (!el) return;
+    var reduced = _pvReduced();
+    try { el.scrollIntoView({ behavior: (behavior === 'auto' || reduced) ? 'auto' : 'smooth', block: 'center' }); } catch (e) {}
+    if (doHighlight === false) return;
+    if (_pvFocusEl === el) return;                 // already emphasised — don't restart the animation
+    pvClearFocus();
+    _pvFocusEl = el;
+    el.classList.add('pv-focus');
+    _pvFocusT1 = setTimeout(function () {
+      _pvFocusT1 = 0;
+      if (_pvFocusEl === el) el.classList.add('pv-focus--out');   // begin the fade
+      _pvFocusT2 = setTimeout(function () {
+        _pvFocusT2 = 0;
+        if (_pvFocusEl === el) { el.classList.remove('pv-focus', 'pv-focus--out'); _pvFocusEl = null; }
+      }, reduced ? 0 : 480);
+    }, reduced ? 750 : 950);
+  }
+  function onPreviewFocus(msg) {
+    if (msg.kind === 'stat') {
+      var want = String(msg.id == null ? '' : msg.id);
+      var target = null;
+      if (want) {
+        var cards = document.querySelectorAll('.hl-card[data-preview-id]');
+        for (var i = 0; i < cards.length; i++) {
+          if (cards[i].getAttribute('data-preview-id') === want) { target = cards[i]; break; }
+        }
+      }
+      if (!target) target = document.getElementById('hl-grid');   // hidden / not-yet-rendered stat → the region
+      pvFocusElement(target, msg.highlight !== false, msg.behavior);
+      return;
+    }
+    // section
+    var key = String(msg.target == null ? '' : msg.target);
+    if (!Object.prototype.hasOwnProperty.call(PV_FOCUS_TARGETS, key)) return;
+    pvFocusElement(PV_FOCUS_TARGETS[key](), msg.highlight !== false, msg.behavior);
+  }
+
   function onPreviewMessage(e) {
     if (e.origin !== window.location.origin) return;      // same-origin only
     if (e.source !== window.parent) return;               // from our embedder only
@@ -1245,11 +1317,10 @@
     if (!msg || typeof msg !== 'object') return;
     if (msg.type === 'PREVIEW_DATA') {
       applyPreviewData(msg.payload || {}, msg.nav);
-    } else if (msg.type === 'PREVIEW_SCROLL_TO' && msg.target === 'highlights') {
-      const g = document.getElementById('hl-grid');
-      if (g) g.scrollIntoView({ behavior: msg.behavior === 'auto' ? 'auto' : 'smooth', block: 'center' });
+    } else if (msg.type === 'PREVIEW_FOCUS') {
+      onPreviewFocus(msg);
     } else if (msg.type === 'PREVIEW_LOCATION_EDIT') {
-      if (msg.on) locEditStart(msg.seed || {});
+      if (msg.on) { pvClearFocus(); locEditStart(msg.seed || {}); }
       else        locEditTeardown();
     }
   }

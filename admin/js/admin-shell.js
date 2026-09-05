@@ -184,6 +184,16 @@
     writeUi({ page: s.page, device: s.device, lang: s.lang, theme: s.theme, zoom: s.zoom, expanded: s.expanded });
   });
 
+  // Re-seed the shared Preview from the SAVED restaurant row. Editor views call
+  // this after a successful Save (so the baseline reflects persisted data and
+  // other views see fresh ctx.restaurant) and on unmount (to drop any unsaved
+  // draft they pushed). No-op unless the identity load succeeded.
+  ctx.setPreviewToSaved = function () {
+    if (ctx.restaurantLoadState === 'ready' && ctx.restaurant) {
+      ctx.preview.setDraft(buildPublicRestaurantDraft(ctx.restaurant));
+    }
+  };
+
   // ── Narrow-screen Edit | Preview pane (shell-owned) ─────────────
   function syncPaneSeg(p) {
     document.querySelectorAll('#admin-pane-seg .lp-seg__btn[data-pane]').forEach(function (b) {
@@ -206,6 +216,13 @@
     b.addEventListener('click', function () { setPane(b.dataset.pane); });
   });
 
+  // Views may request the narrow-screen pane (e.g. "Edit Image in Preview" →
+  // show the Preview; a Preview stat-click → return to Edit). No-op on desktop,
+  // where both panes are always visible.
+  ctx.showPane = function (p) {
+    if (window.matchMedia && window.matchMedia('(max-width: 1179px)').matches) setPane(p);
+  };
+
   // ── Restore Expanded — AFTER mount so geometry measures correctly ──
   // (the 1I-A ResizeObserver handles the resulting stage resize).
   if (ui.expanded === true) ctx.preview.setExpanded(true);
@@ -220,7 +237,7 @@
     overview:   { title: 'Overview',   module: 'overview' },
     menu:       { title: 'Menu Items', legacy: 'menu.html' },
     categories: { title: 'Categories', legacy: 'categories.html' },
-    settings:   { title: 'Settings',   legacy: 'settings.html' },
+    settings:   { title: 'Settings',   module: 'settings' },
   };
   function routeFromHash() {
     const h = (window.location.hash || '').replace(/^#\/?/, '').split(/[?&]/)[0].trim().toLowerCase();
@@ -273,7 +290,7 @@
 
     const host = document.getElementById('admin-view');
     if (!host) return;
-    host.replaceChildren();
+    host.replaceChildren();   // instant, crisp editor swap — no transition
 
     const def = VIEWS[name];
     if (def.module && window.AdminViews && window.AdminViews[def.module]) {

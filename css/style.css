@@ -1170,3 +1170,21 @@ p { line-height: 1.7; }
   flex-wrap: wrap;
   animation: fadeUp .7s ease .55s both;
 }
+
+/* ── ADMIN PREVIEW: transient "you are editing this" emphasis ──────────
+   Added ONLY by js/app.js under ?adminPreview=1 — never present on the
+   normal public site. Outline + shadow only: no layout shift. */
+.pv-focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
+  border-radius: 5px;
+  box-shadow: 0 0 0 5px rgba(212, 176, 101, .22);
+  transition: outline-color .45s ease, box-shadow .45s ease;
+}
+.pv-focus.pv-focus--out {
+  outline-color: transparent;
+  box-shadow: 0 0 0 5px rgba(212, 176, 101, 0);
+}
+@media (prefers-reduced-motion: reduce) {
+  .pv-focus { transition: none; }
+}

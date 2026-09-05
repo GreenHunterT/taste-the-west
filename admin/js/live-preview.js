@@ -7,8 +7,8 @@
 //  READY / DATA / APPLIED / ERROR handshake, scale-to-fit geometry,
 //  the Page / Device / Language / Theme / View controls, Expand,
 //  same-origin + known-source + navigation-generation message
-//  validation, PREVIEW_NAVIGATE / SCROLL_TO transport, and the
-//  Location-image direct-edit transport + sequencing.
+//  validation, PREVIEW_NAVIGATE / FOCUS transport (semantic targets only —
+//  never selectors), and the Location-image direct-edit transport + sequencing.
 //
 //  It does NOT know how a restaurant draft is built, how branding
 //  object-URLs are produced, or how to focus an editor card. Editors
@@ -63,7 +63,9 @@ window.LivePreview = (function () {
     let _theme  = (opts.initialState && opts.initialState.theme)  || 'dark';    // 'dark' | 'light' — authoritative
     let _zoom   = (opts.initialState && opts.initialState.zoom)   || 'fit';     // 'fit' | '100'
     let _expanded = false;
-    let _pendingScroll = null;         // e.g. 'highlights' — fired once the next page is ready
+    let _pendingFocus = null;          // { kind, target?, id?, highlight?, behavior? } — fired once the next page is ready
+    let _focusRaf = 0;                 // rAF handle: coalesces rapid focus requests to one send per frame
+    let _focusQueued = null;
 
     // ── Double-buffered frames ──────────────────────────────────────────
     let _stage    = root.querySelector ? root.querySelector('#lp-stage')    : document.getElementById('lp-stage');
@@ -250,17 +252,57 @@ window.LivePreview = (function () {
       _flushActive();
     }
 
-    function _scrollNow(target, behavior) {
-      if (_activeFrame && _activeFrame.contentWindow) {
-        _activeFrame.contentWindow.postMessage(
-          { type: 'PREVIEW_SCROLL_TO', target: target, behavior: behavior || 'smooth' },
-          ORIGIN);
+    // Normalise a focus descriptor. Accepts { type|kind:'section', target } or
+    // { type|kind:'stat', id }. The controller only ever transports these two
+    // shapes + a boolean `highlight` + an optional scroll `behavior`. It never
+    // sees or forwards a CSS selector — the child resolves `target`/`id`
+    // against its own whitelist.
+    function _normFocus(d) {
+      if (!d || typeof d !== 'object') return null;
+      const kind = (d.type === 'stat' || d.kind === 'stat') ? 'stat' : 'section';
+      const hi = d.highlight !== false;
+      if (kind === 'stat') {
+        const id = String(d.id == null ? '' : d.id).trim();
+        return id ? { kind: 'stat', id: id, highlight: hi, behavior: d.behavior } : null;
       }
+      const t = String(d.target == null ? '' : d.target).trim();
+      return t ? { kind: 'section', target: t, highlight: hi, behavior: d.behavior } : null;
     }
+    // Send PREVIEW_FOCUS to the ACTIVE frame, coalesced to one per animation
+    // frame so rapid context switches (tab-tab-tab across fields) never fire a
+    // burst of highlight flashes — the last request wins.
+    function _applyFocus(nd) {
+      if (!nd) return;
+      _focusQueued = nd;
+      if (_focusRaf) return;
+      _focusRaf = requestAnimationFrame(function () {
+        _focusRaf = 0;
+        const d = _focusQueued;
+        _focusQueued = null;
+        if (!d || !_activeFrame || !_activeFrame.contentWindow) return;
+        _activeFrame.contentWindow.postMessage({
+          type: 'PREVIEW_FOCUS',
+          kind: d.kind,
+          target: d.target,
+          id: d.id,
+          highlight: d.highlight,
+          behavior: d.behavior,
+        }, ORIGIN);
+      });
+    }
+    // Public: focus/scroll/highlight a known semantic target on the ACTIVE page,
+    // or defer it until the pending navigation applies. Editors call this with
+    // { type:'section', target } or { type:'stat', id } — never a selector.
+    function focus(d) {
+      const nd = _normFocus(d);
+      if (!nd) return;
+      if (pendingNav) { _pendingFocus = nd; return; }
+      _applyFocus(nd);
+    }
+    // Back-compat: scroll only, no highlight.
     function scrollTo(target, o) {
       o = o || {};
-      if (pendingNav) { _pendingScroll = target; return; }
-      _scrollNow(target, o.behavior);
+      focus({ type: 'section', target: target, highlight: false, behavior: o.behavior });
     }
 
     // Change the previewed public page (double-buffered). `page` is validated
@@ -268,17 +310,20 @@ window.LivePreview = (function () {
     // stays visible and interactive; the OTHER slot loads `page` invisibly,
     // runs the full handshake, then crossfades in (completeNavigation). Every
     // preview display setting is untouched.
-    // opts.scrollTo → run that PREVIEW_SCROLL_TO once the page is ready (or now,
-    // if the page is already active).
+    // opts.focus → { type:'section', target } | { type:'stat', id } fired once
+    // the page is ready (or now, if it is already active). opts.scrollTo (str)
+    // is the legacy scroll-only form.
     function showPage(page, o) {
       o = o || {};
+      const nd = o.focus ? _normFocus(o.focus)
+        : (o.scrollTo ? _normFocus({ type: 'section', target: o.scrollTo, highlight: false }) : null);
       if (!PAGES[page] || _frames.length < 2) return;
       if (pendingNav && pendingNav.page === page) {          // already loading it
-        if (o.scrollTo) _pendingScroll = o.scrollTo;
+        if (nd) _pendingFocus = nd;
         return;
       }
       if (!pendingNav && page === _activePage) {             // already showing it
-        if (o.scrollTo) requestAnimationFrame(function () { applyScale(); _scrollNow(o.scrollTo); });
+        if (nd) _applyFocus(nd);
         return;
       }
       // Navigating away from Location ends an open image-edit session — the
@@ -288,7 +333,10 @@ window.LivePreview = (function () {
         _locEditActive = false; _locEditPending = false;
         _emit('locedit-end', { reason: 'nav-away' });
       }
-      if (o.scrollTo) _pendingScroll = o.scrollTo;
+      // A queued immediate focus was for the page we're now leaving — drop it;
+      // the deferred `_pendingFocus` for the new page supersedes it.
+      if (_focusRaf) { try { cancelAnimationFrame(_focusRaf); } catch (e) {} _focusRaf = 0; _focusQueued = null; }
+      _pendingFocus = nd;
       _page = page;                            // requested page — selector reflects it now
       _syncSeg('data-page', _page);
       const incoming = (_activeFrame === _frames[0]) ? _frames[1] : _frames[0];
@@ -318,15 +366,20 @@ window.LivePreview = (function () {
       _activeReady  = true;
       _incomingFrame = null;
       _previewReady  = false;
-      const doScroll = _pendingScroll;
-      _pendingScroll = null;
+      const doFocus = _pendingFocus;
+      _pendingFocus = null;
       pendingNav = null;
 
       incoming.classList.remove('is-leaving');
       incoming.classList.add('is-active');     // opacity 0 → 1 (or instant, reduced motion)
       incoming.removeAttribute('aria-hidden');
 
-      if (doScroll) _scrollNow(doScroll, 'auto');   // frame is active now; position before it settles
+      // Frame is active now; position + highlight after the page settles —
+      // unless a Location image edit is about to take over (its overlay owns
+      // the visual; a contextual highlight would just fight the crop editor).
+      if (doFocus && !(_locEditPending && _activePage === 'location')) {
+        _applyFocus({ kind: doFocus.kind, target: doFocus.target, id: doFocus.id, highlight: doFocus.highlight, behavior: 'auto' });
+      }
 
       // "Edit Image" was pressed while off the Location page — the page is now
       // ready and the draft has been sent; tell the child to enter edit mode.
@@ -375,7 +428,7 @@ window.LivePreview = (function () {
       pendingNav = null;
       _incomingFrame = null;
       _previewReady = false;
-      _pendingScroll = null;
+      _pendingFocus = null;
       _park(dead);
       _page = _activePage;
       _syncSeg('data-page', _page);
@@ -544,6 +597,8 @@ window.LivePreview = (function () {
 
     function destroy() {
       if (_ro) { try { _ro.disconnect(); } catch (e) {} _ro = null; }
+      if (_focusRaf) { try { cancelAnimationFrame(_focusRaf); } catch (e) {} _focusRaf = 0; }
+      _focusQueued = null; _pendingFocus = null;
       _teardown.splice(0).forEach(function (fn) { try { fn(); } catch (e) {} });
       try { _frames.forEach(function (f) { f.src = 'about:blank'; }); } catch (e) {}
       _handlers = {};
@@ -617,6 +672,7 @@ window.LivePreview = (function () {
       refresh: refresh,
       applyScale: applyScale,
       scrollTo: scrollTo,
+      focus: focus,
       startLocationImageEdit: startLocationImageEdit,
       updateLocationImageEdit: updateLocationImageEdit,
       stopLocationImageEdit: stopLocationImageEdit,
