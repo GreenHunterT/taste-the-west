@@ -102,12 +102,13 @@
   // in over postMessage.
   var _previewCategories    = null;   // live categories, re-applied after each draft
   var _previewCatalogFailed = false;  // true only if the live catalog fetch errored
-  // Unsaved Menu-editor overlay (Admin only). `_previewCatalogBase` is the
-  // pristine live catalog; `_previewCatalogDraft` is Admin's whitelisted
-  // per-product patches + new draft:<id> products. The base is NEVER mutated —
-  // previewProducts() returns a fresh merged array on demand.
+  // Unsaved Menu / Categories editor overlay (Admin only). `_previewCatalogBase`
+  // is the pristine live product catalog; `_previewCatalogDraft` is Admin's
+  // whitelisted per-row patches + new draft rows for BOTH products and
+  // categories. The bases are NEVER mutated — previewProducts() /
+  // previewCategoriesMerged() return fresh merged arrays on demand.
   var _previewCatalogBase   = null;
-  var _previewCatalogDraft  = null;   // { products:[ { id, isDraft, patch } ] } | null
+  var _previewCatalogDraft  = null;   // { products:[ {id,isDraft,patch} ], categories:[ {id,isDraft,patch} ] } | null
 
   // ── DB → SHOP SHAPE MAPPING ───────────────────────────────────────
   function mapRestaurant(r) {
@@ -230,10 +231,11 @@
     return {
       products: (prodsRaw || []).map(mapProduct),
       categories: (catsRaw || []).map(c => ({
-        id:     c.id,
-        slug:   c.slug,
-        nameAr: c.name_ar,
-        nameEn: c.name_en,
+        id:         c.id,
+        slug:       c.slug,
+        nameAr:     c.name_ar,
+        nameEn:     c.name_en,
+        sort_order: c.sort_order || 0,
       })),
     };
   }
@@ -269,26 +271,28 @@
   }
 
   // ── ADMIN PREVIEW: unsaved catalog overlay ────────────────────────
-  // Only reached under ?adminPreview=1. Merges Admin's whitelisted per-product
-  // patches (and new draft:<id> products) over the pristine live catalog and
-  // returns a NEW array. Unavailable products are dropped, exactly as the
-  // public catalog query (available=eq.true) already does. Never mutates the
-  // base. A normal visitor never has a draft, so previewProducts() === base.
-  var CATALOG_PATCH_FIELDS = ['name_en', 'name_ar', 'description_en', 'description_ar',
+  // Only reached under ?adminPreview=1. Merges Admin's whitelisted per-row
+  // patches (and new draft rows) over the pristine live catalog and returns
+  // NEW arrays. Unavailable products are dropped, exactly as the public catalog
+  // query (available=eq.true) already does. Never mutates the base. A normal
+  // visitor never has a draft, so the overlay is a pass-through.
+  var PRODUCT_PATCH_FIELDS  = ['name_en', 'name_ar', 'description_en', 'description_ar',
     'price', 'image_url', 'available', 'featured', 'category_id', 'sort_order'];
-  var RE_DRAFT_ID = /^draft:[A-Za-z0-9_-]{1,64}$/;
+  var CATEGORY_PATCH_FIELDS = ['name_en', 'name_ar', 'sort_order'];
+  var RE_DRAFT_ID    = /^draft:[A-Za-z0-9_-]{1,64}$/;
+  var RE_DRAFTCAT_ID = /^draftcat:[A-Za-z0-9_-]{1,64}$/;
 
-  function normChildCatalogDraft(d) {
-    if (!d || typeof d !== 'object' || !Array.isArray(d.products)) return null;
+  function normChildRows(rows, fields, draftRe) {
+    if (!Array.isArray(rows)) return [];
     var out = [];
-    d.products.forEach(function (row) {
+    rows.forEach(function (row) {
       if (!row || typeof row !== 'object') return;
       var id = String(row.id == null ? '' : row.id).trim();
       if (!id) return;
-      var isDraft = RE_DRAFT_ID.test(id);
+      var isDraft = draftRe.test(id);
       var src = (row.patch && typeof row.patch === 'object') ? row.patch : {};
       var patch = {};
-      CATALOG_PATCH_FIELDS.forEach(function (k) {
+      fields.forEach(function (k) {
         if (!Object.prototype.hasOwnProperty.call(src, k)) return;
         var v = src[k];
         if (k === 'available' || k === 'featured') patch[k] = (v === true);
@@ -297,7 +301,14 @@
       });
       out.push({ id: id, isDraft: isDraft, patch: patch });
     });
-    return out.length ? { products: out } : null;
+    return out;
+  }
+  function normChildCatalogDraft(d) {
+    if (!d || typeof d !== 'object') return null;
+    var products   = normChildRows(d.products,   PRODUCT_PATCH_FIELDS,  RE_DRAFT_ID);
+    var categories = normChildRows(d.categories, CATEGORY_PATCH_FIELDS, RE_DRAFTCAT_ID);
+    if (!products.length && !categories.length) return null;
+    return { products: products, categories: categories };
   }
 
   function previewCatById(id) {
@@ -309,6 +320,47 @@
     }
     return null;
   }
+
+  // Live categories + Admin's unsaved category overlay, merged by id and sorted
+  // by sort_order. Draft categories (draftcat:<id>) are appended. Shape matches
+  // fetchCatalog(): { id, slug, nameAr, nameEn, sort_order }. A draft category
+  // carries an empty slug — it never produces a public filter tab on its own
+  // (the tab list is derived from slugs present on available products).
+  function previewCategoriesMerged() {
+    var base = Array.isArray(_previewCategories) ? _previewCategories : [];
+    var draft = _previewCatalogDraft;
+    var rows = draft && draft.categories ? draft.categories : [];
+    if (!rows.length) return base.slice();
+
+    var baseIds = {};
+    base.forEach(function (c) { if (c && c.id != null) baseIds[String(c.id)] = 1; });
+    var patchById = {}, adds = [];
+    rows.forEach(function (row) {
+      if (row.isDraft && !baseIds[row.id]) adds.push(row);
+      else if (baseIds[row.id]) patchById[row.id] = row.patch;
+    });
+
+    var out = base.map(function (c) {
+      var patch = (c && c.id != null) ? patchById[String(c.id)] : null;
+      if (!patch) return c;
+      return {
+        id: c.id, slug: c.slug,
+        nameEn:     ('name_en' in patch)    ? patch.name_en    : c.nameEn,
+        nameAr:     ('name_ar' in patch)    ? patch.name_ar    : c.nameAr,
+        sort_order: ('sort_order' in patch) ? patch.sort_order : (c.sort_order || 0),
+      };
+    });
+    adds.forEach(function (row) {
+      out.push({
+        id: row.id, slug: '',
+        nameEn: row.patch.name_en || '', nameAr: row.patch.name_ar || '',
+        sort_order: ('sort_order' in row.patch) ? row.patch.sort_order : 9999,
+      });
+    });
+    out.sort(function (a, b) { return (a.sort_order || 0) - (b.sort_order || 0); });
+    return out;
+  }
+
   function blankPreviewProduct(id) {
     return {
       id: id, name: '', nameEn: '', description: '', descriptionEn: '',
@@ -342,13 +394,29 @@
     var baseArr = Array.isArray(_previewCatalogBase) ? _previewCatalogBase
       : (Array.isArray(window.PRODUCTS) ? window.PRODUCTS : []);
     var draft = _previewCatalogDraft;
-    if (!draft || !draft.products.length) return baseArr.slice();
+    var pRows = draft && draft.products ? draft.products : [];
+    var cRows = draft && draft.categories ? draft.categories : [];
+    if (!pRows.length && !cRows.length) return baseArr.slice();
+
+    // Category rename/reorder overlay → the product's displayed category name
+    // (badge) must follow, without rewriting any product row.
+    var catBySlug = {};
+    previewCategoriesMerged().forEach(function (c) { if (c && c.slug) catBySlug[c.slug] = c; });
+    function refreshCatNames(p) {
+      var c = (p && p.category) ? catBySlug[p.category] : null;
+      if (!c) return p;
+      var en = c.nameEn || '', ar = c.nameAr || '';
+      if (p._catNameEn === en && p._catNameAr === ar) return p;
+      var m = {};
+      for (var k in p) if (Object.prototype.hasOwnProperty.call(p, k)) m[k] = p[k];
+      m._catNameEn = en; m._catNameAr = ar;
+      return m;
+    }
 
     var baseIds = {};
     baseArr.forEach(function (p) { if (p && p.id != null) baseIds[String(p.id)] = 1; });
-
     var patchById = {}, adds = [];
-    draft.products.forEach(function (row) {
+    pRows.forEach(function (row) {
       if (row.isDraft && !baseIds[row.id]) adds.push(row);
       else if (baseIds[row.id]) patchById[row.id] = row.patch;
       // unknown non-draft id → ignored
@@ -357,15 +425,14 @@
     var out = [];
     baseArr.forEach(function (p) {
       var patch = (p && p.id != null) ? patchById[String(p.id)] : null;
-      if (!patch) { out.push(p); return; }
-      var merged = mergeProductPatch(p, patch);
+      var merged = patch ? mergeProductPatch(p, patch) : p;
       if (merged.available === false) return;   // hidden — real public rule
-      out.push(merged);
+      out.push(refreshCatNames(merged));
     });
     adds.forEach(function (row) {
       var np = mergeProductPatch(blankPreviewProduct(row.id), row.patch);
       if (np.available === false) return;
-      out.push(np);
+      out.push(refreshCatNames(np));
     });
 
     out.sort(function (a, b) { return (a.sort_order || 0) - (b.sort_order || 0); });
@@ -829,28 +896,108 @@
           if (!btn) return;
           filterBar.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
           btn.classList.add('active');
+          const cat = btn.dataset.cat;
+          let shown = 0;
           grid.querySelectorAll('.product-card').forEach(card => {
-            card.style.display =
-              (btn.dataset.cat === 'all' || card.dataset.cat === btn.dataset.cat) ? '' : 'none';
+            const on = (cat === 'all' || card.dataset.cat === cat);
+            card.style.display = on ? '' : 'none';
+            if (on) shown++;
           });
+          // A category with zero (visible) products — real for a brand-new /
+          // empty category in Admin Preview. Show a clear empty state instead of
+          // a blank grid; never silently fall back to All.
+          let note = grid.querySelector('.filter-empty-note');
+          if (shown === 0 && cat !== 'all') {
+            if (!note) {
+              note = document.createElement('p');
+              note.className = 'filter-empty-note';
+              note.style.cssText = 'grid-column:1/-1;color:var(--text-muted);text-align:center;padding:40px 0';
+              grid.appendChild(note);
+            }
+            note.textContent = t('products.emptyCategory') || 'No menu items in this category yet.';
+            note.style.display = '';
+          } else if (note) {
+            note.style.display = 'none';
+          }
         });
       }
     }
   }
 
+  // Internal Preview-only filter identity for a merged category. Saved category
+  // → its real slug. Draft category (no slug) → a synthetic key built ONLY from
+  // the validated draftcat id (never persisted, never a DB value, no arbitrary
+  // user content). Empty → no tab.
+  function previewFilterKey(c) {
+    if (!c) return '';
+    if (c.slug) return c.slug;
+    var id = String(c.id == null ? '' : c.id);
+    if (RE_DRAFTCAT_ID.test(id)) return '__draftcat_' + id.replace(/[^A-Za-z0-9_-]/g, '');
+    return '';
+  }
+
+  // PUBLIC (PREVIEW === false): filter tabs come from the category slugs
+  // actually present on rendered products — a category with no products has no
+  // tab (the real customer-facing rule). Tab order follows category sort_order,
+  // orphan slugs kept in product order at the end.
+  // ADMIN PREVIEW (PREVIEW === true): ONE tab per KNOWN merged category (saved +
+  // overlay + draft), regardless of product count, so the owner can see / edit
+  // every category — including brand-new and empty ones — ordered by sort_order.
+  // Built with DOM APIs + textContent — owner names never touch innerHTML.
   function buildFilterBar(filterBar, lang) {
     if (typeof PRODUCTS === 'undefined') return;
-    const cats = ['all', ...new Set(PRODUCTS.map(p => p.category).filter(Boolean))];
-    filterBar.innerHTML = cats.map(cat => `
-      <button class="filter-btn${cat === 'all' ? ' active' : ''}" data-cat="${cat}">
-        ${cat === 'all' ? (t('products.filterAll') || 'All') : getCatLabel(cat, lang)}
-      </button>
-    `).join('');
+
+    var frag = document.createDocumentFragment();
+    var allBtn = document.createElement('button');
+    allBtn.className = 'filter-btn active';
+    allBtn.dataset.cat = 'all';
+    allBtn.textContent = t('products.filterAll') || 'All';
+    frag.appendChild(allBtn);
+
+    if (PREVIEW) {
+      previewCategoriesMerged().forEach(function (c) {
+        var key = previewFilterKey(c);
+        if (!key) return;
+        var b = document.createElement('button');
+        b.className = 'filter-btn';
+        b.dataset.cat = key;
+        if (c.id != null && c.id !== '') b.dataset.previewCategoryId = String(c.id);
+        var label = (lang === 'ar') ? (c.nameAr || c.nameEn || '') : (c.nameEn || c.nameAr || '');
+        if (!label && key.indexOf('__draftcat_') === 0) label = t('products.newCategory') || 'New category';
+        b.textContent = label;
+        frag.appendChild(b);
+      });
+    } else {
+      var present = {};
+      PRODUCTS.forEach(function (p) { if (p && p.category) present[p.category] = 1; });
+      var ordered = [];
+      var cats = (typeof SHOP !== 'undefined' && Array.isArray(SHOP.categories)) ? SHOP.categories.slice() : [];
+      cats.sort(function (a, b) { return (a.sort_order || 0) - (b.sort_order || 0); });
+      cats.forEach(function (c) {
+        if (c && c.slug && present[c.slug]) { ordered.push(c.slug); delete present[c.slug]; }
+      });
+      PRODUCTS.forEach(function (p) {
+        if (p && p.category && present[p.category]) { ordered.push(p.category); delete present[p.category]; }
+      });
+      ordered.forEach(function (slug) {
+        var b = document.createElement('button');
+        b.className = 'filter-btn';
+        b.dataset.cat = slug;
+        b.textContent = getCatLabel(slug, lang);
+        frag.appendChild(b);
+      });
+    }
+
+    filterBar.textContent = '';
+    filterBar.appendChild(frag);
   }
 
   function refreshFilterLabels(lang) {
     const filterBar = document.getElementById('filter-bar');
     if (!filterBar) return;
+    // Admin Preview labels come from the merged category collection (draft
+    // categories have no slug for getCatLabel to resolve) — rebuild the bar.
+    if (PREVIEW) { buildFilterBar(filterBar, lang); return; }
     filterBar.querySelectorAll('.filter-btn').forEach(btn => {
       const cat = btn.dataset.cat;
       btn.textContent = (cat === 'all')
@@ -1490,6 +1637,22 @@
       pvFocusElement(tp, msg.highlight !== false, msg.behavior);
       return;
     }
+    if (msg.kind === 'category') {
+      var wantC = String(msg.id == null ? '' : msg.id);
+      var tc = null;
+      if (wantC) {
+        var tabs = document.querySelectorAll('.filter-btn[data-preview-category-id]');
+        for (var m = 0; m < tabs.length; m++) {
+          if (tabs[m].getAttribute('data-preview-category-id') === wantC) { tc = tabs[m]; break; }
+        }
+      }
+      // Every known category (saved / renamed / draft, product-less or not) has
+      // a tab in Preview, so this normally resolves. The region is only a
+      // last-resort fallback for an id that isn't rendered yet.
+      if (!tc) tc = document.getElementById('filter-bar');
+      pvFocusElement(tc, msg.highlight !== false, msg.behavior);
+      return;
+    }
     // section
     var key = String(msg.target == null ? '' : msg.target);
     if (!Object.prototype.hasOwnProperty.call(PV_FOCUS_TARGETS, key)) return;
@@ -1523,7 +1686,7 @@
     _previewCatalogDraft = null;                 // persisted data is the truth now
     if (page === 'home' || page === 'products') {
       await loadPreviewCatalog();
-      if (typeof SHOP !== 'undefined' && Array.isArray(_previewCategories)) SHOP.categories = _previewCategories;
+      if (typeof SHOP !== 'undefined') SHOP.categories = previewCategoriesMerged();   // draft is null now → == live base
       window.PRODUCTS = previewProducts();
       renderCurrentPage();
     }
@@ -1551,12 +1714,13 @@
         SHOP_SETTINGS.sounds = r.sounds_enabled !== false;
       }
 
-      // Unsaved Menu-editor overlay (may be null). Recompute PRODUCTS from the
-      // pristine base + patches only where the page renders products.
+      // Unsaved Menu / Categories overlay (may be null). Recompute categories +
+      // PRODUCTS from the pristine bases + patches, only where they're rendered.
       if (Object.prototype.hasOwnProperty.call(payload, 'catalog')) {
         _previewCatalogDraft = normChildCatalogDraft(payload.catalog);
       }
       if (document.body.dataset.page === 'home' || document.body.dataset.page === 'products') {
+        if (typeof window.SHOP !== 'undefined') window.SHOP.categories = previewCategoriesMerged();
         window.PRODUCTS = previewProducts();
       }
 

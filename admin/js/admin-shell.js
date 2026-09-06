@@ -234,10 +234,11 @@
   }
 
   // ── Router (hash) ──────────────────────────────────────────────
+  // All four sections are native shell views (1I-E completed the migration).
   const VIEWS = {
     overview:   { title: 'Overview',   module: 'overview' },
     menu:       { title: 'Menu Items', module: 'menu' },
-    categories: { title: 'Categories', legacy: 'categories.html' },
+    categories: { title: 'Categories', module: 'categories' },
     settings:   { title: 'Settings',   module: 'settings' },
   };
   function routeFromHash() {
@@ -259,23 +260,6 @@
   let mountedView = null;   // { name, api }
   let routeSeq = 0;         // guards against a slow async mount() outliving its route
 
-  function makeLegacyNotice(def) {
-    const card = document.createElement('div');
-    card.className = 'acard admin-legacy-notice';
-    const t = document.createElement('div');
-    t.className = 'acard-title';
-    t.textContent = def.title;
-    const p = document.createElement('p');
-    p.className = 'field-hint';
-    p.style.margin = '0 0 14px';
-    p.textContent = 'This editor has not moved into the new Admin yet — it is still on its own page during the migration. Changes made there save normally.';
-    const a = document.createElement('a');
-    a.className = 'btn btn-primary';
-    a.href = def.legacy;
-    a.textContent = 'Open the ' + def.title + ' editor';
-    card.appendChild(t); card.appendChild(p); card.appendChild(a);
-    return card;
-  }
   function makeViewError() {
     const d = document.createElement('div');
     d.className = 'acard admin-view-error';
@@ -326,9 +310,8 @@
         console.error('[shell] view mount failed:', name, e);
         if (seq === routeSeq) { mountedView = null; host.replaceChildren(makeViewError()); }
       }
-    } else if (def.legacy) {
-      host.replaceChildren(makeLegacyNotice(def));
     } else {
+      // A module is missing / failed to load — never a migration placeholder.
       host.replaceChildren(makeViewError());
     }
   }

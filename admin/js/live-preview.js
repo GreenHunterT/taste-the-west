@@ -8,9 +8,9 @@
 //  the Page / Device / Language / Theme / View controls, Expand,
 //  same-origin + known-source + navigation-generation message
 //  validation, PREVIEW_NAVIGATE / FOCUS transport (semantic targets only —
-//  never selectors), the unsaved catalog-draft overlay transport (whitelisted
-//  public product fields only — never selectors / private rows), and the
-//  Location-image direct-edit transport + sequencing.
+//  never selectors), the unsaved catalog-draft overlay transport ({products,
+//  categories} — whitelisted public fields only, never selectors / private
+//  rows), and the Location-image direct-edit transport + sequencing.
 //
 //  It does NOT know how a restaurant draft is built, how branding
 //  object-URLs are produced, or how to focus an editor card. Editors
@@ -256,37 +256,50 @@ window.LivePreview = (function () {
       _flushActive();
     }
 
-    // ── Unsaved catalog-draft overlay (Menu editor) ───────────────────
-    // Public product fields a patch may carry. Anything else (owner_id,
-    // restaurant_id, timestamps, extra ids) is dropped here so it can never
-    // reach the iframe. The child re-validates against the same list.
-    const CATALOG_FIELDS = ['name_en', 'name_ar', 'description_en', 'description_ar',
+    // ── Unsaved catalog-draft overlay (Menu / Categories editors) ─────
+    // Public fields a patch may carry. Anything else (owner_id, restaurant_id,
+    // timestamps, extra ids) is dropped here so it can never reach the iframe.
+    // The child re-validates against the same lists. The controller stays
+    // business-rule-agnostic — it transports {products, categories}, nothing more.
+    const PRODUCT_FIELDS  = ['name_en', 'name_ar', 'description_en', 'description_ar',
       'price', 'image_url', 'available', 'featured', 'category_id', 'sort_order'];
-    const _RE_UUID  = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-    const _RE_DRAFT = /^draft:[A-Za-z0-9_-]{1,64}$/;
-    function _normCatalogDraft(d) {
-      if (!d || typeof d !== 'object' || !Array.isArray(d.products)) return null;
+    const CATEGORY_FIELDS = ['name_en', 'name_ar', 'sort_order'];
+    const _RE_UUID     = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    const _RE_DRAFT    = /^draft:[A-Za-z0-9_-]{1,64}$/;
+    const _RE_DRAFTCAT = /^draftcat:[A-Za-z0-9_-]{1,64}$/;
+    function _normRows(rows, fields, draftRe) {
+      if (!Array.isArray(rows)) return [];
       const seen = {};
-      const products = [];
-      d.products.forEach(function (row) {
+      const out = [];
+      rows.forEach(function (row) {
         if (!row || typeof row !== 'object') return;
         const id = String(row.id == null ? '' : row.id).trim();
-        const isDraft = _RE_DRAFT.test(id);
-        if (!isDraft && !_RE_UUID.test(id)) return;   // not a real product id nor a draft token
+        const isDraft = draftRe.test(id);
+        if (!isDraft && !_RE_UUID.test(id)) return;   // not a real id nor a valid draft token
         if (seen[id]) return;
         seen[id] = 1;
         const src = (row.patch && typeof row.patch === 'object') ? row.patch : row;
         const patch = {};
-        CATALOG_FIELDS.forEach(function (k) {
+        fields.forEach(function (k) {
           if (!Object.prototype.hasOwnProperty.call(src, k)) return;
           const v = src[k];
           if (k === 'available' || k === 'featured') patch[k] = (v === true);
           else if (k === 'sort_order') { const n = parseInt(v, 10); if (isFinite(n)) patch[k] = n; }
           else patch[k] = (v == null ? '' : String(v));
         });
-        products.push({ id: id, isDraft: isDraft, patch: patch });
+        out.push({ id: id, isDraft: isDraft, patch: patch });
       });
-      return { products: products };
+      return out;
+    }
+    function _normCatalogDraft(d) {
+      if (!d || typeof d !== 'object') return null;
+      const hasP = Array.isArray(d.products);
+      const hasC = Array.isArray(d.categories);
+      if (!hasP && !hasC) return null;
+      return {
+        products:   _normRows(d.products,   PRODUCT_FIELDS,  _RE_DRAFT),
+        categories: _normRows(d.categories, CATEGORY_FIELDS, _RE_DRAFTCAT),
+      };
     }
     // Push / replace the unsaved menu overlay. Coalesced to the ACTIVE frame;
     // a frame mid-navigation picks it up via its PREVIEW_READY handler.
@@ -323,9 +336,10 @@ window.LivePreview = (function () {
       if (!d || typeof d !== 'object') return null;
       const kind = (d.type === 'stat' || d.kind === 'stat') ? 'stat'
         : (d.type === 'product' || d.kind === 'product') ? 'product'
+        : (d.type === 'category' || d.kind === 'category') ? 'category'
         : 'section';
       const hi = d.highlight !== false;
-      if (kind === 'stat' || kind === 'product') {
+      if (kind === 'stat' || kind === 'product' || kind === 'category') {
         const id = String(d.id == null ? '' : d.id).trim();
         return id ? { kind: kind, id: id, highlight: hi, behavior: d.behavior } : null;
       }

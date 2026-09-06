@@ -39,7 +39,14 @@
   --admin-danger-text:  #f0938d;
 }
 
-html { font-size: 16px; }
+html {
+  font-size: 16px;
+  /* Admin-only: always reserve the vertical scrollbar gutter so the shell grid
+     width — and therefore the Live Preview's X position / column width — stays
+     identical whether the active editor view is short (no scrollbar) or long
+     (scrollbar). No JS width math, no resize listeners. */
+  scrollbar-gutter: stable;
+}
 body {
   font-family: var(--f);
   background: var(--abg);
@@ -415,8 +422,10 @@ body[data-admin-page="settings"] .admin-main {
     align-items: stretch;
   }
   /* Sticky preview uses almost the whole viewport height; compact chrome means
-     the real website frame gets the rest. The iframe scrolls independently. */
-  .live-preview {
+     the real website frame gets the rest. The iframe scrolls independently.
+     Scoped to the legacy standalone Settings page — the persistent shell owns
+     its own preview position (see .admin-shell__preview below). */
+  .settings-layout .live-preview {
     position: sticky;
     top: 44px;                              /* clears the sticky mode bar */
     height: calc(100dvh - 56px);
@@ -464,7 +473,6 @@ body[data-admin-page="settings"] .admin-main {
   background: var(--abg); padding: 8px 0;
 }
 
-.admin-legacy-notice .btn { margin-top: 4px; }
 .admin-view-error { color: var(--amuted); }
 
 @media (min-width: 1180px) {
@@ -475,6 +483,18 @@ body[data-admin-page="settings"] .admin-main {
   .admin-shell__main.is-preview-expanded { grid-template-columns: minmax(0, 1fr); }
   .admin-shell__main.is-preview-expanded .admin-shell__editor { display: none; }
   .admin-shell__modebar { display: none; }        /* both panes already visible */
+
+  /* The Live Preview is ONE persistent shell surface. Its vertical position is
+     identical on #overview / #menu / #categories / #settings: the cell does NOT
+     stretch to the (variably tall) editor — it sticks at a single shared shell
+     offset (== .admin-shell__main padding-top) and the iframe scrolls itself. */
+  .admin-shell__preview {
+    position: sticky;
+    top: 28px;
+    align-self: start;
+    height: calc(100dvh - 56px);
+  }
+  .admin-shell__preview .live-preview { height: 100%; }
 }
 
 @media (max-width: 1179px) {
@@ -533,24 +553,29 @@ body[data-admin-page="settings"] .admin-main {
 .stg-fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
 .stg-fieldset[disabled] { opacity: .6; }
 
-/* ── ADMIN SHELL: Menu view ────────────────────────────────────────
-   The product modal's "View in Preview" jump is only useful on narrow
+/* ── ADMIN SHELL: Menu / Categories views ──────────────────────────
+   The Menu modal's "View in Preview" jump is only useful on narrow
    screens, where Edit and Preview are separate panes. On wide screens the
    Preview is always visible beside the editor, so hide it. */
 @media (min-width: 1180px) {
   #mn-view-preview { display: none; }
 
   /* Desktop: the Add/Edit and Delete dialogs are CONFINED to the editor
-     pane — never a viewport-wide overlay. `.menu-view` is the positioning
-     context and fills the editor column, so the dim layer covers only the
-     editor and the Live Preview beside it stays fully bright and usable. */
-  .menu-view { position: relative; min-height: 100%; }
-  .menu-view .modal-backdrop {
+     pane — never a viewport-wide overlay. The `*-view` wrapper is the
+     positioning context and fills the editor column, so the dim layer
+     covers only the editor and the Live Preview beside it stays fully
+     bright and usable. */
+  .menu-view,
+  .categories-view { position: relative; min-height: 100%; }
+  .menu-view .modal-backdrop,
+  .categories-view .modal-backdrop {
     position: absolute;     /* was: fixed (viewport) */
     z-index: 30;
   }
   .menu-view .modal-backdrop .modal,
-  .menu-view .modal-backdrop .confirm-dialog {
+  .menu-view .modal-backdrop .confirm-dialog,
+  .categories-view .modal-backdrop .modal,
+  .categories-view .modal-backdrop .confirm-dialog {
     position: sticky;       /* stay in view as the editor column scrolls */
     top: 12px;
     align-self: flex-start;
@@ -559,6 +584,15 @@ body[data-admin-page="settings"] .admin-main {
     max-height: calc(100dvh - 120px);   /* header + footer fixed, body scrolls */
   }
 }
+
+/* Categories: inline rename row — two name inputs + Save/Cancel, in flow
+   (no overlay). The editing <li> stacks its fields above the actions. */
+.cat-item.is-editing {
+  flex-wrap: wrap;
+  align-items: stretch;
+}
+.cat-item.is-editing .cat-info { width: 100%; }
+.cat-item.is-editing .row-actions { margin-left: auto; }
 
 /* ── FORMS ───────────────────────────────────────────────────────── */
 .form-section { margin-bottom: 32px; }
