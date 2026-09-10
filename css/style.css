@@ -1022,6 +1022,18 @@ p { line-height: 1.7; }
 .footer-nav a:hover { color: var(--gold-light); }
 .footer-copy { font-size: 12px; color: rgba(255,255,255,.25); }
 
+/* Discreet staff/owner access to the Admin — fine print, not a customer CTA. */
+.footer-staff {
+  font-size: 11px;
+  letter-spacing: .04em;
+  color: rgba(255,255,255,.28);
+  text-decoration: none;
+  transition: color var(--t-fast);
+}
+.footer-staff:hover,
+.footer-staff:focus-visible { color: var(--gold-light); }
+.footer-staff:focus-visible { outline: 1px solid var(--gold-light); outline-offset: 3px; }
+
 /* ── FLOATING WHATSAPP ───────────────────────────────────────────── */
 .wa-float {
   position: fixed;

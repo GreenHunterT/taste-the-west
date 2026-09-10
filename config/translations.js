@@ -65,6 +65,7 @@ const TRANSLATIONS = {
     },
     footer: {
       rights: 'All rights reserved.',
+      staffLogin: 'Staff Login',
     },
     wa: {
       message: "Hi! I'd like to place an order from Taste The West.",
@@ -132,6 +133,7 @@ const TRANSLATIONS = {
     },
     footer: {
       rights: 'جميع الحقوق محفوظة.',
+      staffLogin: 'دخول الموظفين',
     },
     wa: {
       message: 'مرحباً! أريد طلب من تيست ذا ويست.',

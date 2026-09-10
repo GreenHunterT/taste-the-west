@@ -96,16 +96,20 @@ img { max-width: 100%; display: block; }
   border-bottom: 1px solid var(--aborder);
 }
 
+/* Brand = identity, NOT navigation: no box, no hover, no pointer. Kept a touch
+   smaller / lighter than the nav controls so it doesn't read as a third link. */
 .admin-appbar__brand {
   display: flex;
   align-items: center;
   gap: 9px;
   min-width: 0;                  /* let the name truncate before the nav is squeezed */
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 600;
   color: var(--atext);
+  cursor: default;
+  user-select: none;
 }
-.admin-appbar__mark { font-size: 19px; line-height: 1; }
+.admin-appbar__mark { font-size: 18px; line-height: 1; }
 .admin-appbar__name {
   max-width: 34vw;
   white-space: nowrap;
@@ -113,41 +117,67 @@ img { max-width: 100%; display: block; }
   text-overflow: ellipsis;
 }
 
+/* Primary navigation = real controls: bordered box, pointer, distinct hover /
+   focus / active. Active uses a restrained gold-tinted surface + border, never
+   a solid gold block. Deliberately NOT styled like the Preview .lp-seg toggles. */
 .admin-appbar__nav {
   display: flex;
-  align-self: stretch;
-  gap: 2px;
+  align-items: center;
+  gap: 8px;
 }
 .admin-navlink {
   display: inline-flex;
   align-items: center;
-  padding: 0 15px;
-  font-size: 13.5px;
+  height: 36px;
+  padding: 0 14px;
+  border: 1px solid var(--aborder);
+  border-radius: var(--radius-sm);
+  font-size: 13px;
   font-weight: 600;
+  white-space: nowrap;
   color: var(--amuted);
-  border-bottom: 2px solid transparent;
-  transition: color .15s, border-color .15s;
+  cursor: pointer;
+  transition: color .15s, border-color .15s, background .15s;
 }
-.admin-navlink:hover { color: var(--atext); text-decoration: none; }
-.admin-navlink:focus-visible { outline: 2px solid var(--aaccent); outline-offset: -2px; }
-.admin-navlink.active { color: var(--aaccent); border-bottom-color: var(--aaccent); }
+.admin-navlink:hover {
+  color: var(--atext);
+  background: var(--acard);
+  border-color: var(--ainput-bd);
+  text-decoration: none;
+}
+.admin-navlink:focus-visible { outline: 2px solid var(--aaccent); outline-offset: 2px; }
+.admin-navlink.active {
+  color: var(--aaccent);
+  background: var(--aaccent-dim);
+  border-color: rgba(201, 168, 76, .45);
+}
 
+/* Utility actions = tertiary: borderless muted text, must not compete with the
+   Menu / Settings controls. */
 .admin-appbar__actions {
   margin-left: auto;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   flex: none;
 }
-.admin-appbar__actions .btn { white-space: nowrap; }
+.admin-appbar__actions .btn {
+  white-space: nowrap;
+  border-color: transparent;
+  background: none;
+  color: var(--amuted);
+  font-weight: 500;
+}
+.admin-appbar__actions .btn:hover { color: var(--atext); opacity: 1; }
 
-/* Very narrow: drop the brand text (keep the mark) and tighten padding so the
-   two nav items + two actions still fit one fixed-height row — no drawer. */
+/* Very narrow: drop the brand text (keep the mark) and tighten so the two nav
+   controls + two text actions still fit one fixed-height row — no drawer. */
 @media (max-width: 560px) {
-  .admin-appbar { padding: 0 12px; gap: 4px 8px; }
+  .admin-appbar { padding: 0 12px; gap: 4px 10px; }
   .admin-appbar__name { display: none; }
-  .admin-navlink { padding: 0 10px; }
-  .admin-appbar__actions { gap: 6px; }
+  .admin-navlink { height: 32px; padding: 0 10px; }
+  .admin-appbar__actions { gap: 2px; }
+  .admin-appbar__actions .btn { padding: 4px 6px; font-size: 12px; }
 }
 
 /* ── MAIN CONTENT ────────────────────────────────────────────────── */
@@ -369,8 +399,11 @@ img { max-width: 100%; display: block; }
 .admin-view-error { color: var(--amuted); }
 
 @media (min-width: 1180px) {
+  /* The Live Preview is the DOMINANT desktop surface — it should read like the
+     real customer site. Editor ≈ 45% (never below 440px so the Menu table /
+     Settings forms stay comfortable); Preview takes the rest (≈ 55%). */
   .admin-shell__main {
-    grid-template-columns: minmax(0, 1fr) clamp(460px, 42%, 900px);
+    grid-template-columns: minmax(440px, 45%) minmax(0, 1fr);
     align-items: stretch;
   }
   .admin-shell__main.is-preview-expanded { grid-template-columns: minmax(0, 1fr); }

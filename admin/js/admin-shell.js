@@ -389,7 +389,10 @@
     commitHistory();
 
     document.querySelectorAll('.admin-navlink').forEach(function (a) {
-      a.classList.toggle('active', a.dataset.route === name);
+      const on = a.dataset.route === name;
+      a.classList.toggle('active', on);
+      if (on) a.setAttribute('aria-current', 'page');
+      else a.removeAttribute('aria-current');
     });
 
     if (mountedView && mountedView.api && typeof mountedView.api.unmount === 'function') {
