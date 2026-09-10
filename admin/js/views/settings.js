@@ -1,16 +1,13 @@
 // =================================================================
 //  Admin Shell — Settings view  (milestone 1I-C)
 //
-//  The real Restaurant Settings editor, ported from admin/settings.html +
-//  admin/js/settings.js to run as a shell view. Lifecycle: mount(ctx, root)
-//  / unmount(). It renders ONLY the left-side editing UI — the shared Live
-//  Preview belongs to the shell (ctx.preview), mounted once for the shell's
-//  life. This view never mounts a preview, never auths, never loads the
-//  restaurant identity: it consumes ctx.restaurant / ctx.restaurantLoadState.
-//
-//  Legacy admin/settings.html + admin/js/settings.js are FROZEN as a
-//  rollback until this reaches runtime parity, then settings.html becomes a
-//  redirect. This module is the authoritative Settings editor going forward.
+//  The real Restaurant Settings editor. Lifecycle: mount(ctx, root) /
+//  unmount() / isDirty(). It renders ONLY the left-side editing UI — the
+//  shared Live Preview belongs to the shell (ctx.preview), mounted once for
+//  the shell's life. This view never mounts a preview, never auths, never
+//  loads the restaurant identity: it consumes ctx.restaurant /
+//  ctx.restaurantLoadState. It is the authoritative Settings editor; the old
+//  standalone admin/settings.html is now a redirect to /admin/#settings.
 // =================================================================
 
 window.AdminViews = window.AdminViews || {};
@@ -407,11 +404,6 @@ window.AdminViews.settings = (function () {
     if (removed) return '';
     return savedUrl || '';
   }
-  function releasePreviewObjectUrls() {
-    ['hero', 'logo', 'location'].forEach(function (k) {
-      if (_brandObj[k].url) { try { URL.revokeObjectURL(_brandObj[k].url); } catch (e) {} _brandObj[k].url = null; }
-    });
-  }
 
   // Draft "restaurants row" from the current UNSAVED form values + statistics
   // + branding selection. Only public-facing fields — no owner_id / id /
@@ -634,7 +626,7 @@ window.AdminViews.settings = (function () {
   function summaryText(stat) {
     return TYPE_LABELS[stat.type] + ' · ' + (normText(stat.value) || '—') + (stat.visible === false ? ' · hidden' : '');
   }
-  function isDirty() { return JSON.stringify(normStats(statisticsState)) !== savedBaseline; }
+  function statsChanged() { return JSON.stringify(normStats(statisticsState)) !== savedBaseline; }
   function recomputeDirty() {
     var dirty = isDirty();
     root.querySelectorAll('.stats-dirty').forEach(function (el2) {
@@ -642,6 +634,53 @@ window.AdminViews.settings = (function () {
       el2.classList.toggle('is-dirty', dirty);
       el2.classList.toggle('is-clean', !dirty);
     });
+  }
+
+  // Every persisted scalar field: current (trimmed) editor value vs the SAVED
+  // restaurant. `editedFields` is NOT consulted — it is add-only (patch-save
+  // semantics), so a value manually restored to its saved state must still read
+  // as clean here.
+  function scalarFieldsDirty() {
+    var r = ctx && ctx.restaurant;
+    if (!r) return false;
+    var norm = function (v) { return String(v == null ? '' : v).trim(); };
+    var FIELDS = ['name_ar', 'name_en', 'tagline_ar', 'tagline_en', 'description_ar', 'description_en',
+      'phone', 'instagram', 'email', 'wa_message_ar', 'wa_message_en',
+      'address_ar', 'address_en', 'map_directions', 'map_embed',
+      'hours_weekdays_en', 'hours_weekdays_ar', 'hours_weekends_en', 'hours_weekends_ar'];
+    for (var i = 0; i < FIELDS.length; i++) {
+      if (norm(val(FIELDS[i])) !== norm(r[FIELDS[i]])) return true;
+    }
+    if (val('whatsapp').replace(/\D/g, '') !== norm(r.whatsapp).replace(/\D/g, '')) return true;  // Save stores digits only
+    var soundsEl = $('sounds_enabled');
+    if ((soundsEl ? soundsEl.checked : true) !== (r.sounds_enabled !== false)) return true;
+    return false;
+  }
+
+  // "Does the editor hold ANY value that differs from the current saved
+  // restaurant?" — used by both the shell navigation guard and the badge.
+  // Preview UI state (page / language / theme / device / zoom) is NEVER counted.
+  function isDirty() {
+    if (!settingsReady || !ctx || ctx.restaurantLoadState !== 'ready') return false;
+    var r = ctx.restaurant;
+    if (scalarFieldsDirty()) return true;
+    if (statsChanged()) return true;
+    // Branding: a File pending upload, or the removal of an image that actually
+    // exists in the saved state (removing a nonexistent image is a no-op).
+    if (heroFile     || (removeHero     && String((r && r.hero_image_url)     || '').trim())) return true;
+    if (logoFile     || (removeLogo     && String((r && r.logo_url)          || '').trim())) return true;
+    if (locationFile || (removeLocation && String((r && r.location_image_url) || '').trim())) return true;
+    // Location visual mode / composition vs saved.
+    if (r) {
+      if (locVisualMode !== (r.location_visual_mode === 'image' ? 'image' : 'map')) return true;
+      if (locFit !== (r.location_image_fit === 'contain' ? 'contain' : 'cover')) return true;
+      var savedH = (r.location_image_height === 'short' || r.location_image_height === 'tall') ? r.location_image_height : 'standard';
+      if (locHeight !== savedH) return true;
+      if (locPosX !== numOr(r.location_image_position_x, 0, 100, 50)) return true;
+      if (locPosY !== numOr(r.location_image_position_y, 0, 100, 50)) return true;
+      if (locZoom !== numOr(r.location_image_zoom, 1, 1.6, 1)) return true;
+    }
+    return false;
   }
   function pushHistory() {
     statsHistory.push(deepCopyState(statisticsState));
@@ -993,6 +1032,7 @@ window.AdminViews.settings = (function () {
     if (locVisualMode !== 'image' && (locEditActive || locEditPending)) endLocImageEdit(false);
     refreshLocCompose();
     postPreviewData();
+    recomputeDirty();
   }
   function startLocImageEdit() {
     if (!ctx || ctx.restaurantLoadState !== 'ready' || locVisualMode !== 'image' || locFit !== 'cover') return;
@@ -1020,6 +1060,7 @@ window.AdminViews.settings = (function () {
     syncSeg('data-loc-height', locHeight);
     if (wasActive && ctx && ctx.preview) ctx.preview.stopLocationImageEdit();
     postPreviewData();
+    recomputeDirty();
   }
 
   // =================================================================
@@ -1188,6 +1229,7 @@ window.AdminViews.settings = (function () {
       updateBrandingRemoveBtns();
       if (btnId === 'location-remove') refreshLocCompose();
       postPreviewData();
+      recomputeDirty();
     });
   }
   function updateBrandingRemoveBtns() {
@@ -1265,9 +1307,9 @@ window.AdminViews.settings = (function () {
     if (locField) locField.hidden = locVisualMode !== 'image';
 
     // File pickers (listeners live on the injected elements — removed with them)
-    initImageInput('hero-file', 'hero-preview', function (f) { heroFile = f; removeHero = false; updateBrandingRemoveBtns(); postPreviewData(); });
-    initImageInput('logo-file', 'logo-preview', function (f) { logoFile = f; removeLogo = false; updateBrandingRemoveBtns(); postPreviewData(); });
-    initImageInput('location-file', 'location-preview', function (f) { locationFile = f; removeLocation = false; updateBrandingRemoveBtns(); refreshLocCompose(); postPreviewData(); });
+    initImageInput('hero-file', 'hero-preview', function (f) { heroFile = f; removeHero = false; updateBrandingRemoveBtns(); postPreviewData(); recomputeDirty(); });
+    initImageInput('logo-file', 'logo-preview', function (f) { logoFile = f; removeLogo = false; updateBrandingRemoveBtns(); postPreviewData(); recomputeDirty(); });
+    initImageInput('location-file', 'location-preview', function (f) { locationFile = f; removeLocation = false; updateBrandingRemoveBtns(); refreshLocCompose(); postPreviewData(); recomputeDirty(); });
 
     wireRemoveBtn('hero-remove', 'hero-file', 'hero-preview', function () { heroFile = null; removeHero = true; });
     wireRemoveBtn('logo-remove', 'logo-file', 'logo-preview', function () { logoFile = null; removeLogo = true; });
@@ -1282,7 +1324,7 @@ window.AdminViews.settings = (function () {
       on(btn, 'click', function () {
         locFit = btn.dataset.locFit === 'contain' ? 'contain' : 'cover';
         if (locFit !== 'cover' && (locEditActive || locEditPending)) endLocImageEdit(false);
-        refreshLocCompose(); postPreviewData();
+        refreshLocCompose(); postPreviewData(); recomputeDirty();
       });
     });
     root.querySelectorAll('.lp-seg__btn[data-loc-height]').forEach(function (btn) {
@@ -1291,7 +1333,7 @@ window.AdminViews.settings = (function () {
         locHeight = (h === 'short' || h === 'tall') ? h : 'standard';
         syncSeg('data-loc-height', locHeight);
         if (locEditActive) ctx.preview.updateLocationImageEdit({ position_x: locPosX, position_y: locPosY, zoom: locZoom, height: locHeight });
-        postPreviewData();
+        postPreviewData(); recomputeDirty();
       });
     });
     var locEditBtn = $('loc-edit-btn');
@@ -1319,8 +1361,8 @@ window.AdminViews.settings = (function () {
       if (e.target && SAVED_FIELD_IDS.indexOf(e.target.id) !== -1) editedFields.add(e.target.id);
     };
     if (form) {
-      on(form, 'input', function (e) { enterContext(e); noteEdit(e); postPreviewData(); });
-      on(form, 'change', function (e) { enterContext(e); noteEdit(e); postPreviewData(); });
+      on(form, 'input', function (e) { enterContext(e); noteEdit(e); postPreviewData(); recomputeDirty(); });
+      on(form, 'change', function (e) { enterContext(e); noteEdit(e); postPreviewData(); recomputeDirty(); });
       on(form, 'submit', handleSave);
       on(form, 'focusin', enterContext);   // context-aware Preview (§9–16)
     }
@@ -1333,14 +1375,17 @@ window.AdminViews.settings = (function () {
       if (typeof c.position_y === 'number') locPosY = c.position_y;
       if (typeof c.zoom === 'number') locZoom = c.zoom;
       if (c.height) { locHeight = c.height; syncSeg('data-loc-height', locHeight); }
+      recomputeDirty();
     });
     onPreview('locedit-done', function () { endLocImageEdit(false); });
     onPreview('locedit-cancel', function () { endLocImageEdit(true); });
     onPreview('locedit-ready', function () { locEditPending = false; updateLocEditUi(); });
     onPreview('locedit-end', function () { locEditActive = false; locEditPending = false; updateLocEditUi(); });
-
-    // Tab close while Settings is mounted → don't leak blob: URLs
-    on(window, 'beforeunload', releasePreviewObjectUrls);
+    // No beforeunload blob revoke: the browser releases object URLs on a real
+    // unload, and revoking speculatively would blank a Preview <img> if the
+    // owner CANCELS the unload. Blobs are revoked on file replace
+    // (brandingPreviewUrl), branding remove (postPreviewData), Save, and
+    // unmount (below). The shell owns the ONE beforeunload warning.
 
     populateForm(r);
 
@@ -1358,16 +1403,18 @@ window.AdminViews.settings = (function () {
     previewOffs = [];
 
     // Restore the shared Preview to the SAVED restaurant (drops the unsaved
-    // draft this view pushed), THEN revoke its blob: URLs — but one frame
-    // later, so the saved PREVIEW_DATA reaches the iframe before the blob a
-    // preview <img> may still point at is freed.
+    // draft this view pushed), THEN revoke its blob: URLs — but TWO frames
+    // later, so the saved PREVIEW_DATA has reached the iframe and it has
+    // re-rendered off the blob a preview <img> may still point at.
     try { if (ctx && ctx.setPreviewToSaved) ctx.setPreviewToSaved(); } catch (e) {}
     var staleUrls = ['hero', 'logo', 'location']
       .map(function (k) { var u = _brandObj[k].url; _brandObj[k].url = null; _brandObj[k].file = null; return u; })
       .filter(Boolean);
     if (staleUrls.length) {
       requestAnimationFrame(function () {
-        staleUrls.forEach(function (u) { try { URL.revokeObjectURL(u); } catch (e) {} });
+        requestAnimationFrame(function () {
+          staleUrls.forEach(function (u) { try { URL.revokeObjectURL(u); } catch (e) {} });
+        });
       });
     }
 
@@ -1377,5 +1424,5 @@ window.AdminViews.settings = (function () {
     root = null;
   }
 
-  return { mount: mount, unmount: unmount };
+  return { mount: mount, unmount: unmount, isDirty: isDirty };
 })();

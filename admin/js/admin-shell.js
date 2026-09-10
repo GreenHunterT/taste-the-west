@@ -259,6 +259,35 @@
 
   let mountedView = null;   // { name, api }
   let routeSeq = 0;         // guards against a slow async mount() outliving its route
+  let currentRoute = null;  // the route whose view is mounted RIGHT NOW
+
+  // Every ACCEPTED navigation stamps its history entry with a monotonic index.
+  // On a guard "Stay" we read the incoming entry's stamp to compute the exact
+  // history delta that undoes the move (Back, Forward, or a fresh sidebar push)
+  // — restoring the pointer WITHOUT overwriting any entry's URL. The hashchange
+  // the restoration itself fires is swallowed by `suppressHash`.
+  let histIdx = 0;          // stamp on the entry we are currently on
+  let histNext = 0;         // next stamp to assign
+  let suppressHash = false;
+
+  // ── Shared unsaved-changes contract ─────────────────────────────
+  // A view MAY expose `isDirty(): boolean` on its module API. Views with no
+  // unsaved state omit it. The shell owns the navigation decision — one
+  // confirmation, no stacked prompts, no per-view unload warnings.
+  function viewIsDirty() {
+    if (!mountedView || !mountedView.api || typeof mountedView.api.isDirty !== 'function') return false;
+    try { return !!mountedView.api.isDirty(); } catch (e) { return false; }
+  }
+  function hashFor(route) {
+    return window.location.pathname + window.location.search + '#' + route;
+  }
+  // Stamp + normalise the CURRENT history entry: replaces its URL with the bare
+  // route (drops any `&action=…`) and records this entry's monotonic index.
+  // replaceState never fires hashchange, so this is safe to call every route.
+  function commitHistory() {
+    histIdx = ++histNext;
+    try { history.replaceState({ ttwIdx: histIdx }, '', hashFor(currentRoute)); } catch (e) {}
+  }
 
   function makeViewError() {
     const d = document.createElement('div');
@@ -270,17 +299,14 @@
   async function renderRoute() {
     const seq = ++routeSeq;
     const name = routeFromHash();
+    currentRoute = name;             // the view about to mount owns navigation from here
     ctx.route = name;
     writeUi({ route: name });
 
-    // Hand any one-shot action to the view via ctx, then normalise the hash to
-    // the bare route so a reload / Back doesn't fire the action again.
-    const action = actionFromHash();
-    ctx.pendingAction = action;
-    if (action) {
-      try { history.replaceState(null, '', window.location.pathname + window.location.search + '#' + name); }
-      catch (e) { /* keep the hash as-is — the view still gets ctx.pendingAction */ }
-    }
+    // Hand any one-shot action to the view via ctx, then stamp + normalise the
+    // history entry (drops `&action=…` so a reload / Back doesn't replay it).
+    ctx.pendingAction = actionFromHash();
+    commitHistory();
 
     document.querySelectorAll('.sidebar-link').forEach(function (a) {
       a.classList.toggle('active', a.dataset.route === name);
@@ -326,7 +352,38 @@
     if (sess) ctx.session = sess;   // TOKEN_REFRESHED / SIGNED_IN / USER_UPDATED / INITIAL_SESSION
   });
 
-  window.addEventListener('hashchange', function () { renderRoute(); });
+  // Hash-based routing: `hashchange` fires AFTER the URL already changed (sidebar
+  // link, Back/Forward, or a programmatic hash set).
+  function onHashChange() {
+    if (suppressHash) { suppressHash = false; return; }   // our own "Stay" restoration
+    const target = routeFromHash();
+    if (target !== currentRoute && viewIsDirty()) {
+      if (!window.confirm('You have unsaved changes. Leave without saving?')) {
+        // STAY: undo the move without corrupting any history entry. A stamped
+        // incoming entry (Back/Forward) → go by the stamp delta; an unstamped
+        // one (fresh sidebar push) → go back one. The restoration hashchange is
+        // swallowed by suppressHash.
+        const s = history.state;
+        const incoming = (s && typeof s.ttwIdx === 'number') ? s.ttwIdx : null;
+        const delta = (incoming === null) ? -1 : (histIdx - incoming);
+        if (delta !== 0) {
+          suppressHash = true;
+          try { history.go(delta); } catch (e) { suppressHash = false; }
+        }
+        return;
+      }
+    }
+    renderRoute();
+  }
+  window.addEventListener('hashchange', onHashChange);
+
+  // The ONLY beforeunload listener with behavioural significance. Views expose
+  // isDirty() and never install their own beforeunload handlers (object URLs
+  // are released by the browser on a real unload; the views revoke explicitly
+  // on file replace / modal close / Save / unmount).
+  window.addEventListener('beforeunload', function (e) {
+    if (viewIsDirty()) { e.preventDefault(); e.returnValue = ''; }
+  });
 
   // Empty / bare hash on cold load → last route (or Overview). replaceState
   // does NOT fire hashchange, so render explicitly.

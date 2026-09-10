@@ -254,20 +254,10 @@ img { max-width: 100%; display: block; }
 .stat-value { font-size: 32px; font-weight: 700; color: var(--aaccent); line-height: 1.1; }
 .stat-label { font-size: 12.5px; color: var(--amuted); margin-top: 4px; text-transform: uppercase; letter-spacing: .6px; }
 
-/* ── SETTINGS: two-column editor + sticky full-page Live Preview ───
-   Single column by default (also the narrow-admin / phone layout);
-   splits into editor + sticky preview only on wide admin screens.
-   Settings-only: widen the content area and use `overflow: clip` (NOT
-   `hidden`) so .admin-main does not become a scroll container that would
-   break `position: sticky` on .live-preview. */
-body[data-admin-page="settings"] .admin-main {
-  max-width: min(1680px, 100%);
-  overflow-x: clip;
-}
-.settings-layout { display: grid; gap: 24px; }
-.settings-layout__editor,
-.settings-layout__preview { min-width: 0; }
-
+/* ── LIVE PREVIEW (shared) + STATISTICS BUILDER ──────────────────
+   The `.live-preview` / `.lp-*` / `.preview-frame` block below is shared:
+   the persistent Admin shell reuses it verbatim (its own layout /
+   sticky / geometry rules live under `.admin-shell__*` further down). */
 .live-preview {
   display: flex;
   flex-direction: column;
@@ -275,7 +265,7 @@ body[data-admin-page="settings"] .admin-main {
   border: 1px solid var(--aborder);
   border-radius: var(--radius);
   padding: 14px;
-  position: static;               /* sticky only enabled on wide screens */
+  position: static;               /* the shell enables sticky on .admin-shell__preview */
 }
 .live-preview__head {
   display: flex; align-items: baseline; flex-wrap: wrap;
@@ -359,22 +349,7 @@ body[data-admin-page="settings"] .admin-main {
   .preview-frame { transition: none; }
 }
 
-/* ── SETTINGS: mode bar (narrow-screen Edit | Preview + dirty state) ── */
-.settings-modebar {
-  grid-column: 1 / -1;
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  flex-wrap: wrap;              /* stack seg + status on very narrow admin */
-  gap: 8px 12px;
-  position: sticky;
-  top: 0;
-  z-index: 5;
-  background: var(--abg);
-  padding: 8px 0;
-}
-#admin-mode-seg { margin-right: auto; }
-
+/* Settings view: unsaved-state badge (rendered by views/settings.js). */
 .stats-dirty { font-size: 12px; font-weight: 600; white-space: nowrap; }
 .stats-dirty.is-dirty { color: var(--awarning); }
 .stats-dirty.is-clean { color: var(--asuccess); }
@@ -414,43 +389,10 @@ body[data-admin-page="settings"] .admin-main {
   .stat-card-ed.is-flash { animation: none; outline: 2px solid var(--aaccent); }
 }
 
-@media (min-width: 1180px) {
-  /* Editor ~57% / Preview ~43% (adaptive: preview grows on wide screens,
-     never past ~840px, never below 440px). */
-  .settings-layout {
-    grid-template-columns: minmax(0, 1fr) clamp(440px, 43%, 840px);
-    align-items: stretch;
-  }
-  /* Sticky preview uses almost the whole viewport height; compact chrome means
-     the real website frame gets the rest. The iframe scrolls independently.
-     Scoped to the legacy standalone Settings page — the persistent shell owns
-     its own preview position (see .admin-shell__preview below). */
-  .settings-layout .live-preview {
-    position: sticky;
-    top: 44px;                              /* clears the sticky mode bar */
-    height: calc(100dvh - 56px);
-  }
-  #admin-mode-seg { display: none; }        /* both columns already visible */
-
-  /* Expand Preview: preview takes the whole content area for close inspection. */
-  .settings-layout.is-preview-expanded { grid-template-columns: minmax(0, 1fr); }
-  .settings-layout.is-preview-expanded .settings-layout__editor { display: none; }
-}
-
-/* Narrow admin: one pane at a time, switched by the mode bar */
-@media (max-width: 1179px) {
-  .settings-layout[data-admin-mode="edit"]    .settings-layout__preview { display: none; }
-  .settings-layout[data-admin-mode="preview"] .settings-layout__editor  { display: none; }
-  .settings-layout[data-admin-mode="preview"] .settings-layout__preview { width: 100%; }
-  .settings-layout[data-admin-mode="preview"] .live-preview { height: calc(100dvh - 120px); }
-}
-
-/* ── ADMIN SHELL (1I-B) ──────────────────────────────────────────────
+/* ── ADMIN SHELL ────────────────────────────────────────────────────
    The persistent Admin document: sidebar + (editor | ONE Live Preview).
-   Mirrors the Settings split-layout rules but shell-owned — no dependency
-   on `.settings-layout`. The legacy Settings page keeps its own rules
-   above until 1I-C ports it. Shared `.live-preview` / `.lp-*` /
-   `.preview-frame` styling is reused as-is. */
+   Shell-owned layout / sticky / geometry — the shared `.live-preview` /
+   `.lp-*` / `.preview-frame` styling above is reused as-is. */
 .admin-shell__main {
   grid-column: 2;               /* content column (sidebar is column 1) */
   padding: 28px 32px;

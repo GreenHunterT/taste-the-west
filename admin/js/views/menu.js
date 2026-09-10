@@ -1,18 +1,16 @@
 // =================================================================
 //  Admin Shell — Menu Items view  (milestone 1I-D)
 //
-//  The real Menu editor, ported from admin/menu.html + admin/js/menu.js to
-//  run as a shell view. Lifecycle: mount(ctx, root) / unmount(). It renders
-//  ONLY the left-side editing UI (list + Add/Edit modal + Delete confirm);
-//  the shared Live Preview belongs to the shell (ctx.preview), mounted once
-//  for the shell's life. This view never auths, never loads the restaurant
-//  identity, never mounts a preview — it consumes ctx.restaurant /
+//  The real Menu editor. Lifecycle: mount(ctx, root) / unmount() / isDirty().
+//  It renders ONLY the left-side editing UI (list + Add/Edit modal + Delete
+//  confirm); the shared Live Preview belongs to the shell (ctx.preview),
+//  mounted once for the shell's life. This view never auths, never loads the
+//  restaurant identity, never mounts a preview — it consumes ctx.restaurant /
 //  ctx.restaurantLoadState / ctx.db / ctx.preview / ctx.showPane.
 //
 //  Unsaved product edits reach the Preview through ctx.preview.setCatalogDraft
-//  (a whitelisted overlay — never a DB write). Legacy admin/menu.html +
-//  admin/js/menu.js stay FROZEN as a rollback until this reaches runtime
-//  parity, then menu.html becomes a redirect. This module is authoritative.
+//  (a whitelisted overlay — never a DB write). This module is authoritative;
+//  the old standalone admin/menu.html is now a redirect to /admin/#menu.
 // =================================================================
 
 window.AdminViews = window.AdminViews || {};
@@ -739,10 +737,11 @@ window.AdminViews.menu = (function () {
     var cOk = q('#confirm-ok'); if (cOk) on(cOk, 'click', doDelete);
     var cBack = q('#confirm-modal');
     if (cBack) on(cBack, 'click', function (e) { if (e.target === e.currentTarget) closeConfirm(); });
-
-    on(window, 'beforeunload', function () {
-      if (editImageObjUrl) { try { URL.revokeObjectURL(editImageObjUrl); } catch (e) {} }
-    });
+    // No beforeunload blob revoke here: the browser releases object URLs on a
+    // real unload, and revoking speculatively would break the Preview image if
+    // the owner CANCELS the unload. Explicit revoke happens on file replace /
+    // modal close / Save transition / unmount (clearEditObjUrl + the unmount
+    // double-rAF revoke below). The shell owns the ONE beforeunload warning.
   }
 
   // =================================================================
@@ -784,6 +783,33 @@ window.AdminViews.menu = (function () {
     if (pending === 'new') openAddModal();
   }
 
+  // Unsaved-changes contract for the shell's navigation guard (§4). Dirty only
+  // while an Add/Edit modal is open with real unsaved content — a new draft with
+  // any field filled, or an edit whose form differs from the saved row. Row
+  // actions (toggle available, delete) persist immediately and are never dirty.
+  function isDirty() {
+    if (!menuReady || !editingId) return false;
+    if (editingRow) {
+      if (fv('p-name-en') !== (editingRow.name_en || '')) return true;
+      if (fv('p-name-ar') !== (editingRow.name_ar || '')) return true;
+      if (fv('p-desc-en') !== (editingRow.description_en || '')) return true;
+      if (fv('p-desc-ar') !== (editingRow.description_ar || '')) return true;
+      if (fv('p-price') !== (editingRow.price || '')) return true;
+      if (((q('#p-category') || {}).value || '') !== (editingRow.category_id || '')) return true;
+      if ((parseInt(fv('p-sort'), 10) || 0) !== (editingRow.sort_order || 0)) return true;
+      if (!!(q('#p-featured') || {}).checked !== !!editingRow.featured) return true;
+      if (!!(q('#p-available') || {}).checked !== (editingRow.available !== false)) return true;
+      return !!(editImageFile || removeImage);
+    }
+    // new product draft
+    if (fv('p-name-en') || fv('p-name-ar') || fv('p-desc-en') || fv('p-desc-ar') || fv('p-price')) return true;
+    if ((q('#p-category') || {}).value) return true;
+    if (editImageFile) return true;
+    if ((q('#p-featured') || {}).checked) return true;         // default is unchecked
+    if (!(q('#p-available') || {}).checked) return true;       // default is checked
+    return false;
+  }
+
   function unmount() {
     mountToken++;                               // invalidate any still-in-flight mount()
     if (loadAbort) { try { loadAbort.abort(); } catch (e) {} loadAbort = null; }
@@ -812,5 +838,5 @@ window.AdminViews.menu = (function () {
     root = null;
   }
 
-  return { mount: mount, unmount: unmount };
+  return { mount: mount, unmount: unmount, isDirty: isDirty };
 })();

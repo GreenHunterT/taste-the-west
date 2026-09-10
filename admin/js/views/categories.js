@@ -1,21 +1,19 @@
 // =================================================================
 //  Admin Shell — Categories view  (milestone 1I-E)
 //
-//  The real Categories editor, ported from admin/categories.html +
-//  admin/js/categories.js to run as a shell view. Lifecycle:
-//  mount(ctx, root) / unmount(). Renders ONLY the left-side editing UI
-//  (Add form + list with inline rename / reorder / delete); the shared
-//  Live Preview belongs to the shell (ctx.preview). This view never auths,
-//  never loads the restaurant identity, never mounts a preview — it
-//  consumes ctx.restaurant / ctx.restaurantLoadState / ctx.db / ctx.preview.
+//  The real Categories editor. Lifecycle: mount(ctx, root) / unmount() /
+//  isDirty(). Renders ONLY the left-side editing UI (Add form + list with
+//  inline rename / reorder / delete); the shared Live Preview belongs to the
+//  shell (ctx.preview). This view never auths, never loads the restaurant
+//  identity, never mounts a preview — it consumes ctx.restaurant /
+//  ctx.restaurantLoadState / ctx.db / ctx.preview.
 //
-//  New in the port: real RENAME (UPDATE by id — slug + id preserved, product
-//  relationships untouched). Unsaved name edits reach the Preview through
+//  RENAME is an UPDATE by id — slug + id preserved, product relationships
+//  untouched. Unsaved name edits reach the Preview through
 //  ctx.preview.setCatalogDraft({ categories: [...] }) — a whitelisted overlay,
-//  never a DB write. Legacy admin/categories.html + admin/js/categories.js
-//  stay FROZEN as a rollback until this reaches runtime parity, then
-//  categories.html becomes a redirect. This completes the shell migration:
-//  Overview / Menu Items / Categories / Settings are all native views.
+//  never a DB write. This module is authoritative; the old standalone
+//  admin/categories.html is now a redirect to /admin/#categories. With this,
+//  Overview / Menu Items / Categories / Settings are all native shell views.
 // =================================================================
 
 window.AdminViews = window.AdminViews || {};
@@ -571,6 +569,21 @@ window.AdminViews.categories = (function () {
     catsReady = true;
   }
 
+  // Unsaved-changes contract for the shell's navigation guard (§5). Dirty while
+  // an inline rename holds values that differ from the saved row, or the Add
+  // form has any name typed. Reorder persists immediately and is never dirty.
+  function isDirty() {
+    if (!catsReady) return false;
+    if (editingCatId) {
+      var row = categories.find(function (c) { return c.id === editingCatId; });
+      if (!row) return true;
+      if (fvRole('edit-en') !== (row.name_en || '')) return true;
+      if (fvRole('edit-ar') !== (row.name_ar || '')) return true;
+    }
+    if (fv('cat-name-en') || fv('cat-name-ar')) return true;   // unsaved Add draft
+    return false;
+  }
+
   function unmount() {
     mountToken++;
     if (loadAbort) { try { loadAbort.abort(); } catch (e) {} loadAbort = null; }
@@ -590,5 +603,5 @@ window.AdminViews.categories = (function () {
     root = null;
   }
 
-  return { mount: mount, unmount: unmount };
+  return { mount: mount, unmount: unmount, isDirty: isDirty };
 })();

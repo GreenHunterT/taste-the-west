@@ -1,8 +1,8 @@
 // =================================================================
 //  Admin — Live Preview Controller  (generic, editor-agnostic)
 //
-//  Extracted verbatim from admin/js/settings.js (milestone 1I-A) with
-//  NO behaviour change. Owns the double-buffered public-page <iframe>
+//  The one shared preview engine, mounted once by the Admin shell and used by
+//  every editor view. Owns the double-buffered public-page <iframe>
 //  preview: frame lifecycle, navigation generations, the
 //  READY / DATA / APPLIED / ERROR handshake, scale-to-fit geometry,
 //  the Page / Device / Language / Theme / View controls, Expand,
@@ -22,7 +22,7 @@
 //  Usage:
 //    const preview = window.LivePreview.mount({
 //      root:         document.getElementById('live-preview'),
-//      expandTarget: document.querySelector('.settings-layout'),
+//      expandTarget: document.getElementById('admin-shell-main'),
 //      expandClass:  'is-preview-expanded',
 //    });
 //    preview.on('stat-click', ({ previewId }) => ...);
