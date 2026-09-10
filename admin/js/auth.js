@@ -35,39 +35,6 @@ async function signOut() {
   window.location.replace('/admin/login.html');
 }
 
-// Populate the sidebar restaurant name + wire logout buttons.
-function initAdminShell(restaurantName) {
-  // Sidebar name
-  const nameEl = document.getElementById('sidebar-name');
-  if (nameEl && restaurantName) nameEl.textContent = restaurantName;
-
-  // Active nav link
-  const page = document.body.dataset.adminPage;
-  document.querySelectorAll('.sidebar-link').forEach(el => {
-    el.classList.toggle('active', el.dataset.page === page);
-  });
-
-  // Logout buttons
-  document.querySelectorAll('[data-logout]').forEach(btn => {
-    btn.addEventListener('click', signOut);
-  });
-
-  // Mobile sidebar toggle
-  const sidebar  = document.getElementById('admin-sidebar');
-  const overlay  = document.getElementById('sidebar-overlay');
-  const menuBtn  = document.getElementById('topbar-menu-btn');
-
-  if (menuBtn && sidebar && overlay) {
-    menuBtn.addEventListener('click', () => {
-      sidebar.classList.toggle('open');
-      overlay.classList.toggle('open');
-    });
-    overlay.addEventListener('click', () => {
-      sidebar.classList.remove('open');
-      overlay.classList.remove('open');
-    });
-  }
-}
 
 // ── TOAST SYSTEM ─────────────────────────────────────────────────
 function showToast(message, type = 'success', duration = 3500) {

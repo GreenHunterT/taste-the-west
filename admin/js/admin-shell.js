@@ -123,34 +123,30 @@
     restaurantLoadState: restaurantLoadState,
     preview: null,          // set just below
     route: null,            // set by renderRoute()
+    menuSection: null,      // 'items' | 'categories' — set by renderRoute() for the #menu workspace
     pendingAction: null,    // one-shot route action (e.g. #menu&action=new) — a view reads + clears it
     toast: (typeof showToast === 'function') ? showToast : function () {},
   };
 
-  // ── Sidebar / topbar (ONE copy, owned here) ──────────────────────
-  const nameEl = document.getElementById('sidebar-name');
-  if (nameEl) nameEl.textContent = restaurant ? (restaurant.name_en || restaurant.name_ar || 'My Restaurant') : 'My Restaurant';
+  // ── Top app bar (ONE copy, owned here) ──────────────────────────
+  const nameEl = document.getElementById('admin-brand-name');
+  if (nameEl && restaurant) nameEl.textContent = restaurant.name_en || restaurant.name_ar || 'Taste The West';
 
+  // Sign Out discards any unsaved work — route it through the same in-app
+  // unsaved-changes dialog as navigation. `allowUnload` then tells the ONE
+  // beforeunload listener to stand down for this deliberate, already-confirmed
+  // exit (so the owner is not prompted twice).
+  let allowUnload = false;
   document.querySelectorAll('[data-logout]').forEach(function (b) {
-    b.addEventListener('click', signOut);
-  });
-
-  const sidebar = document.getElementById('admin-sidebar');
-  const overlay = document.getElementById('sidebar-overlay');
-  const menuBtn = document.getElementById('topbar-menu-btn');
-  function closeSidebar() {
-    if (sidebar) sidebar.classList.remove('open');
-    if (overlay) overlay.classList.remove('open');
-  }
-  if (menuBtn && sidebar && overlay) {
-    menuBtn.addEventListener('click', function () {
-      sidebar.classList.toggle('open');
-      overlay.classList.toggle('open');
+    b.addEventListener('click', async function (e) {
+      if (e && e.preventDefault) e.preventDefault();
+      if (viewIsDirty()) {
+        const discard = await confirmDiscardChanges();
+        if (!discard) return;                 // Stay — remain signed in, draft kept
+      }
+      allowUnload = true;
+      signOut();
     });
-    overlay.addEventListener('click', closeSidebar);
-  }
-  document.querySelectorAll('.sidebar-link').forEach(function (a) {
-    a.addEventListener('click', closeSidebar);   // close the drawer after a mobile tap
   });
 
   // ── Fail-closed banner ──────────────────────────────────────────
@@ -234,16 +230,38 @@
   }
 
   // ── Router (hash) ──────────────────────────────────────────────
-  // All four sections are native shell views (1I-E completed the migration).
+  // TWO top-level destinations (milestone 1J): Menu + Settings. "Menu" is a
+  // workspace that hosts the Menu Items and Categories editors behind one
+  // segmented control; its subsection lives in the hash as `&section=`.
   const VIEWS = {
-    overview:   { title: 'Overview',   module: 'overview' },
-    menu:       { title: 'Menu Items', module: 'menu' },
-    categories: { title: 'Categories', module: 'categories' },
-    settings:   { title: 'Settings',   module: 'settings' },
+    menu:     { title: 'Menu',     module: 'menu-workspace' },
+    settings: { title: 'Settings', module: 'settings' },
   };
+  // Legacy hashes are canonicalised, never dead: #overview → #menu,
+  // #categories → #menu (Categories subsection, resolved by sectionFromHash).
   function routeFromHash() {
     const h = (window.location.hash || '').replace(/^#\/?/, '').split(/[?&]/)[0].trim().toLowerCase();
-    return VIEWS[h] ? h : 'overview';
+    if (h === 'overview' || h === 'categories') return 'menu';
+    return VIEWS[h] ? h : 'menu';
+  }
+  // Menu subsection: `#menu&section=items|categories`, or the legacy bare
+  // `#categories`. Returns null when unspecified (caller falls back to the
+  // persisted preference, then 'items'). Only meaningful on the #menu route.
+  function sectionFromHash() {
+    const raw = (window.location.hash || '').replace(/^#\/?/, '');
+    const head = raw.split(/[?&]/)[0].trim().toLowerCase();
+    if (head === 'categories') return 'categories';
+    const parts = raw.split(/[?&]/).slice(1);
+    for (let i = 0; i < parts.length; i++) {
+      const kv = parts[i].split('=');
+      if (kv[0] === 'section') {
+        const v = (kv[1] || '').toLowerCase().replace(/[^a-z]/g, '');
+        if (v === 'categories') return 'categories';
+        if (v === 'items') return 'items';
+        return null;
+      }
+    }
+    return null;
   }
   // Optional one-shot action after the route, e.g. `#menu&action=new`. Sanitised
   // to [a-z] (max 16). Consumed once by the view, then stripped from the hash so
@@ -256,10 +274,16 @@
     }
     return null;
   }
+  function normSection(s) { return (s === 'categories') ? 'categories' : 'items'; }
+  function restoredSection() {
+    const s = readUi().menuSection;
+    return (s === 'items' || s === 'categories') ? s : 'items';
+  }
 
   let mountedView = null;   // { name, api }
   let routeSeq = 0;         // guards against a slow async mount() outliving its route
   let currentRoute = null;  // the route whose view is mounted RIGHT NOW
+  let currentSection = null; // the #menu subsection mounted RIGHT NOW ('items' | 'categories' | null)
 
   // Every ACCEPTED navigation stamps its history entry with a monotonic index.
   // On a guard "Stay" we read the incoming entry's stamp to compute the exact
@@ -278,15 +302,68 @@
     if (!mountedView || !mountedView.api || typeof mountedView.api.isDirty !== 'function') return false;
     try { return !!mountedView.api.isDirty(); } catch (e) { return false; }
   }
-  function hashFor(route) {
-    return window.location.pathname + window.location.search + '#' + route;
+
+  // ── Shell-owned "Unsaved changes" dialog ───────────────────────
+  // Replaces window.confirm() for IN-APP navigation (route change, Menu
+  // subsection change, Back/Forward, Sign Out). ONE native <dialog>, one
+  // in-flight promise. Reload / close-tab keep the browser's own
+  // beforeunload prompt — that one cannot be restyled.
+  //   resolve(true)  → Discard changes (proceed)
+  //   resolve(false) → Stay (Esc / backdrop / Stay button)
+  const dirtyDialog = document.getElementById('admin-dirty-dialog');
+  let dirtyPending = null;      // Promise<boolean> while the dialog is open — dedupes
+  function confirmDiscardChanges() {
+    if (dirtyPending) return dirtyPending;
+    const canDialog = dirtyDialog && typeof dirtyDialog.showModal === 'function';
+    if (!canDialog) {
+      return Promise.resolve(window.confirm('You have unsaved changes. If you leave now, they will be discarded.'));
+    }
+    const opener = document.activeElement;
+    dirtyPending = new Promise(function (resolve) {
+      let settled = false;
+      function finish(discard) {
+        if (settled) return;
+        settled = true;
+        dirtyDialog.removeEventListener('close', onClose);
+        dirtyDialog.removeEventListener('cancel', onCancel);
+        dirtyPending = null;
+        try { if (dirtyDialog.open) dirtyDialog.close(); } catch (e) {}
+        // Return focus to whatever started the navigation (nav link, tab, …).
+        try { if (opener && typeof opener.focus === 'function') opener.focus(); } catch (e) {}
+        resolve(discard);
+      }
+      function onClose() { finish(dirtyDialog.returnValue === 'discard'); }
+      function onCancel(e) { e.preventDefault(); finish(false); }   // Esc → Stay
+      dirtyDialog.addEventListener('close', onClose);
+      dirtyDialog.addEventListener('cancel', onCancel);
+      dirtyDialog.returnValue = 'stay';
+      try { dirtyDialog.showModal(); }
+      catch (e) { finish(window.confirm('You have unsaved changes. If you leave now, they will be discarded.')); return; }
+      const stayBtn = dirtyDialog.querySelector('[data-dirty-stay]');
+      if (stayBtn) { try { stayBtn.focus(); } catch (e) {} }
+    });
+    return dirtyPending;
   }
-  // Stamp + normalise the CURRENT history entry: replaces its URL with the bare
-  // route (drops any `&action=…`) and records this entry's monotonic index.
-  // replaceState never fires hashchange, so this is safe to call every route.
+  // The canonical URL for the current shell state: `#settings`, or
+  // `#menu&section=items|categories`. Legacy / bare / `&action=…` hashes all
+  // collapse to this form, so a reload or a shared link is always well-formed.
+  function canonicalHash() {
+    let frag = currentRoute;
+    if (currentRoute === 'menu') frag = 'menu&section=' + normSection(currentSection);
+    return window.location.pathname + window.location.search + '#' + frag;
+  }
+  // Stamp + normalise the CURRENT history entry: rewrites its URL to the
+  // canonical form and records this entry's monotonic index. replaceState never
+  // fires hashchange, so this is safe to call on every accepted navigation.
   function commitHistory() {
     histIdx = ++histNext;
-    try { history.replaceState({ ttwIdx: histIdx }, '', hashFor(currentRoute)); } catch (e) {}
+    try { history.replaceState({ ttwIdx: histIdx }, '', canonicalHash()); } catch (e) {}
+  }
+  // Rewrite the URL to canonical form WITHOUT touching the history stamp — for
+  // a stray hashchange that did not change route or subsection (a hand-typed
+  // bare `#menu`, a `&action=` that was already consumed).
+  function normalizeUrl() {
+    try { history.replaceState(history.state, '', canonicalHash()); } catch (e) {}
   }
 
   function makeViewError() {
@@ -300,19 +377,20 @@
     const seq = ++routeSeq;
     const name = routeFromHash();
     currentRoute = name;             // the view about to mount owns navigation from here
+    currentSection = (name === 'menu') ? (sectionFromHash() || restoredSection()) : null;
     ctx.route = name;
+    ctx.menuSection = currentSection;   // the Menu workspace reads this on mount()
     writeUi({ route: name });
+    if (currentSection) writeUi({ menuSection: currentSection });
 
     // Hand any one-shot action to the view via ctx, then stamp + normalise the
     // history entry (drops `&action=…` so a reload / Back doesn't replay it).
     ctx.pendingAction = actionFromHash();
     commitHistory();
 
-    document.querySelectorAll('.sidebar-link').forEach(function (a) {
+    document.querySelectorAll('.admin-navlink').forEach(function (a) {
       a.classList.toggle('active', a.dataset.route === name);
     });
-    const tt = document.getElementById('topbar-title');
-    if (tt) tt.textContent = VIEWS[name].title;
 
     if (mountedView && mountedView.api && typeof mountedView.api.unmount === 'function') {
       try { mountedView.api.unmount(); } catch (e) { console.error('[shell] view unmount error:', e); }
@@ -352,46 +430,105 @@
     if (sess) ctx.session = sess;   // TOKEN_REFRESHED / SIGNED_IN / USER_UPDATED / INITIAL_SESSION
   });
 
-  // Hash-based routing: `hashchange` fires AFTER the URL already changed (sidebar
-  // link, Back/Forward, or a programmatic hash set).
-  function onHashChange() {
-    if (suppressHash) { suppressHash = false; return; }   // our own "Stay" restoration
+  // Apply a target that is already reflected in the URL (route change or Menu
+  // subsection change). No dirty check here — the caller has cleared it.
+  function applyNavigation() {
     const target = routeFromHash();
-    if (target !== currentRoute && viewIsDirty()) {
-      if (!window.confirm('You have unsaved changes. Leave without saving?')) {
-        // STAY: undo the move without corrupting any history entry. A stamped
-        // incoming entry (Back/Forward) → go by the stamp delta; an unstamped
-        // one (fresh sidebar push) → go back one. The restoration hashchange is
-        // swallowed by suppressHash.
-        const s = history.state;
-        const incoming = (s && typeof s.ttwIdx === 'number') ? s.ttwIdx : null;
-        const delta = (incoming === null) ? -1 : (histIdx - incoming);
-        if (delta !== 0) {
-          suppressHash = true;
-          try { history.go(delta); } catch (e) { suppressHash = false; }
+    if (target !== currentRoute) { renderRoute(); return; }
+    if (target === 'menu') {
+      const targetSection = sectionFromHash() || currentSection || restoredSection();
+      if (targetSection !== currentSection) {
+        currentSection = targetSection;
+        ctx.menuSection = targetSection;
+        writeUi({ menuSection: targetSection });
+        if (mountedView && mountedView.api && typeof mountedView.api.setSection === 'function') {
+          try { mountedView.api.setSection(targetSection); }
+          catch (e) { console.error('[shell] setSection error:', e); }
         }
+        commitHistory();   // stamp + normalise this entry to #menu&section=<targetSection>
         return;
       }
     }
-    renderRoute();
+    normalizeUrl();        // route + subsection unchanged — just canonicalise the URL
+  }
+
+  // STAY: undo a move without corrupting any history entry. A stamped incoming
+  // entry (Back/Forward) → go by the stamp delta; an unstamped one (fresh nav
+  // push) → go back one. The restoration hashchange is swallowed by suppressHash.
+  function revertNavigation() {
+    const s = history.state;
+    const incoming = (s && typeof s.ttwIdx === 'number') ? s.ttwIdx : null;
+    const delta = (incoming === null) ? -1 : (histIdx - incoming);
+    if (delta !== 0) {
+      suppressHash = true;
+      try { history.go(delta); } catch (e) { suppressHash = false; }
+    }
+  }
+
+  // Hash-based routing: `hashchange` fires AFTER the URL already changed (nav
+  // link, Menu tab, Back/Forward, or a programmatic hash set). The unsaved-
+  // changes confirmation is now an async shell dialog, so navigation is
+  // serialised: while the dialog is open, further hashchange events are ignored
+  // and reconciled once it resolves (§20 — one modal, one decision, no double
+  // mount, no history corruption).
+  let navBusy = false;
+  async function onHashChange() {
+    if (suppressHash) { suppressHash = false; return; }   // our own "Stay" restoration
+    if (navBusy) return;                                   // a confirmation is resolving
+
+    const target = routeFromHash();
+    const targetSection = (target === 'menu')
+      ? (sectionFromHash() || currentSection || restoredSection())
+      : null;
+    const routeChanged = (target !== currentRoute);
+    // A #menu → #menu move that only flips the subsection: same top-level view,
+    // but it still crosses the SAME unsaved-changes guard (§13, §19) — one
+    // dialog, one mechanism, shared with top-level route changes.
+    const sectionChanged = (!routeChanged && target === 'menu' && targetSection !== currentSection);
+
+    if (!routeChanged && !sectionChanged) { normalizeUrl(); return; }
+
+    if (viewIsDirty()) {
+      navBusy = true;
+      let discard = false;
+      try { discard = await confirmDiscardChanges(); }
+      finally { navBusy = false; }
+      if (!discard) { revertNavigation(); return; }        // STAY
+      // DISCARD → fall through; the URL may have moved while the dialog was open,
+      // so applyNavigation() re-reads it.
+    }
+
+    applyNavigation();
   }
   window.addEventListener('hashchange', onHashChange);
 
-  // The ONLY beforeunload listener with behavioural significance. Views expose
-  // isDirty() and never install their own beforeunload handlers (object URLs
-  // are released by the browser on a real unload; the views revoke explicitly
-  // on file replace / modal close / Save / unmount).
+  // The ONLY beforeunload listener with behavioural significance. Reload /
+  // close-tab / leave-Admin stay on the browser's native prompt (which cannot
+  // be styled). `allowUnload` lets a deliberate, already-confirmed Sign Out
+  // through without a second prompt. Views expose isDirty() and never install
+  // their own beforeunload handlers (object URLs are released by the browser on
+  // a real unload; the views revoke explicitly on file replace / modal close /
+  // Save / unmount).
   window.addEventListener('beforeunload', function (e) {
+    if (allowUnload) return;
     if (viewIsDirty()) { e.preventDefault(); e.returnValue = ''; }
   });
 
-  // Empty / bare hash on cold load → last route (or Overview). replaceState
-  // does NOT fire hashchange, so render explicitly.
+  // Empty / bare hash on cold load → the persisted route + subsection (default
+  // #menu / Menu Items). Legacy persisted values (overview / categories, from
+  // before 1J) are migrated here so stale storage never lands on a dead route.
+  // replaceState does NOT fire hashchange, so render explicitly afterwards.
   const rawHash = (window.location.hash || '').replace(/^#\/?/, '').trim();
   if (!rawHash) {
-    const initRoute = VIEWS[ui.route] ? ui.route : 'overview';
-    try { history.replaceState(null, '', window.location.pathname + window.location.search + '#' + initRoute); }
-    catch (e) { /* keep bare hash — routeFromHash() falls back to overview */ }
+    let initRoute = ui.route;
+    let initSection = ui.menuSection;
+    if (initRoute === 'overview') initRoute = 'menu';
+    if (initRoute === 'categories') { initRoute = 'menu'; if (!initSection) initSection = 'categories'; }
+    if (!VIEWS[initRoute]) initRoute = 'menu';
+    let frag = initRoute;
+    if (initRoute === 'menu') frag = 'menu&section=' + normSection(initSection);
+    try { history.replaceState(null, '', window.location.pathname + window.location.search + '#' + frag); }
+    catch (e) { /* keep bare hash — routeFromHash() / sectionFromHash() fall back sanely */ }
   }
   await renderRoute();
 

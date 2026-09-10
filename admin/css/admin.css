@@ -22,8 +22,13 @@
   --awarning:     #f59e0b;
   --ainput:       #1e2230;
   --ainput-bd:    #313650;
-  --aside-w:      240px;
-  --topbar-h:     56px;
+
+  /* Shell geometry — the sticky top app bar height and the gap below it. The
+     desktop Live Preview derives its sticky offset from these, so there is no
+     duplicated magic number to keep in sync. */
+  --admin-header-h:   52px;
+  --admin-content-gap: 20px;
+
   --radius:       10px;
   --radius-sm:    6px;
   --shadow:       0 4px 20px rgba(0,0,0,.4);
@@ -61,129 +66,89 @@ a:hover { text-decoration: underline; }
 img { max-width: 100%; display: block; }
 
 /* ── LAYOUT ──────────────────────────────────────────────────────── */
+/* Flex column: a sticky top app bar over the shell content. (The former
+   full-height sidebar is gone — only Menu + Settings remain, so the width it
+   held now goes to the editor + Live Preview.) A flex column, not a grid, so
+   the sticky app bar's containing block is the whole document height and it
+   stays pinned for the full scroll. */
 .admin-layout {
-  display: grid;
-  grid-template-columns: var(--aside-w) 1fr;
-  grid-template-rows: auto 1fr;
-  min-height: 100dvh;
-}
-
-/* ── SIDEBAR ─────────────────────────────────────────────────────── */
-.admin-sidebar {
-  grid-row: 1 / -1;
-  background: var(--asidebar);
-  border-right: 1px solid var(--aborder);
   display: flex;
   flex-direction: column;
-  height: 100dvh;
-  position: sticky;
-  top: 0;
-  overflow-y: auto;
-  padding: 20px 0;
+  min-height: 100dvh;
+  min-width: 0;
 }
 
-.sidebar-brand {
+/* ── TOP APP BAR ─────────────────────────────────────────────────────
+   Brand · primary navigation (Menu / Settings) · utility actions.
+   Fixed height at every width so the derived Preview sticky offset stays
+   correct; the short two-item nav never needs a drawer. */
+.admin-appbar {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  flex: none;
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 0 20px 20px;
+  gap: 6px 22px;
+  height: var(--admin-header-h);
+  padding: 0 22px;
+  background: var(--asidebar);
   border-bottom: 1px solid var(--aborder);
-  margin-bottom: 8px;
 }
-.sidebar-icon { font-size: 24px; line-height: 1; }
-.sidebar-name {
-  font-size: 13.5px;
+
+.admin-appbar__brand {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;                  /* let the name truncate before the nav is squeezed */
+  font-size: 14px;
   font-weight: 600;
   color: var(--atext);
+}
+.admin-appbar__mark { font-size: 19px; line-height: 1; }
+.admin-appbar__name {
+  max-width: 34vw;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.sidebar-nav { flex: 1; padding: 8px 10px; }
-
-.sidebar-link {
+.admin-appbar__nav {
   display: flex;
+  align-self: stretch;
+  gap: 2px;
+}
+.admin-navlink {
+  display: inline-flex;
   align-items: center;
-  gap: 10px;
-  padding: 9px 12px;
-  border-radius: var(--radius-sm);
-  color: var(--amuted);
+  padding: 0 15px;
   font-size: 13.5px;
-  font-weight: 500;
-  transition: background .15s, color .15s;
-  white-space: nowrap;
-}
-.sidebar-link:hover { background: var(--acard); color: var(--atext); text-decoration: none; }
-.sidebar-link.active { background: var(--aaccent-dim); color: var(--aaccent); }
-.sidebar-link svg { flex-shrink: 0; opacity: .7; }
-.sidebar-link.active svg { opacity: 1; }
-
-.sidebar-footer {
-  padding: 16px 18px;
-  border-top: 1px solid var(--aborder);
-}
-
-.btn-logout {
-  width: 100%;
-  background: none;
-  border: 1px solid var(--aborder);
+  font-weight: 600;
   color: var(--amuted);
-  padding: 8px 14px;
-  border-radius: var(--radius-sm);
-  font-size: 13px;
-  cursor: pointer;
-  transition: border-color .15s, color .15s;
+  border-bottom: 2px solid transparent;
+  transition: color .15s, border-color .15s;
 }
-.btn-logout:hover { border-color: var(--aerror); color: var(--aerror); }
+.admin-navlink:hover { color: var(--atext); text-decoration: none; }
+.admin-navlink:focus-visible { outline: 2px solid var(--aaccent); outline-offset: -2px; }
+.admin-navlink.active { color: var(--aaccent); border-bottom-color: var(--aaccent); }
 
-/* ── MOBILE TOPBAR ───────────────────────────────────────────────── */
-.admin-topbar {
-  display: none;
-  grid-column: 1 / -1;
-  height: var(--topbar-h);
-  background: var(--asidebar);
-  border-bottom: 1px solid var(--aborder);
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 16px;
-  gap: 12px;
-  position: sticky;
-  top: 0;
-  z-index: 100;
-}
-.topbar-menu-btn {
-  background: none;
-  border: none;
-  color: var(--amuted);
-  cursor: pointer;
-  padding: 6px;
-  border-radius: var(--radius-sm);
+.admin-appbar__actions {
+  margin-left: auto;
   display: flex;
   align-items: center;
+  gap: 8px;
+  flex: none;
 }
-.topbar-menu-btn:hover { color: var(--atext); background: var(--acard); }
-.topbar-title { font-size: 15px; font-weight: 600; flex: 1; text-align: center; }
-.topbar-logout-btn {
-  background: none;
-  border: none;
-  color: var(--amuted);
-  cursor: pointer;
-  font-size: 12px;
-  padding: 6px 10px;
-  border-radius: var(--radius-sm);
-}
-.topbar-logout-btn:hover { color: var(--aerror); }
+.admin-appbar__actions .btn { white-space: nowrap; }
 
-/* Mobile sidebar overlay */
-.sidebar-overlay {
-  display: none;
-  position: fixed;
-  inset: 0;
-  background: rgba(0,0,0,.6);
-  z-index: 200;
+/* Very narrow: drop the brand text (keep the mark) and tighten padding so the
+   two nav items + two actions still fit one fixed-height row — no drawer. */
+@media (max-width: 560px) {
+  .admin-appbar { padding: 0 12px; gap: 4px 8px; }
+  .admin-appbar__name { display: none; }
+  .admin-navlink { padding: 0 10px; }
+  .admin-appbar__actions { gap: 6px; }
 }
-.sidebar-overlay.open { display: block; }
 
 /* ── MAIN CONTENT ────────────────────────────────────────────────── */
 .admin-main {
@@ -237,22 +202,6 @@ img { max-width: 100%; display: block; }
   letter-spacing: .8px;
   margin-bottom: 18px;
 }
-
-/* ── STAT CARDS (dashboard) ──────────────────────────────────────── */
-.stats-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-  gap: 16px;
-  margin-bottom: 28px;
-}
-.stat-card {
-  background: var(--acard);
-  border: 1px solid var(--aborder);
-  border-radius: var(--radius);
-  padding: 20px 22px;
-}
-.stat-value { font-size: 32px; font-weight: 700; color: var(--aaccent); line-height: 1.1; }
-.stat-label { font-size: 12.5px; color: var(--amuted); margin-top: 4px; text-transform: uppercase; letter-spacing: .6px; }
 
 /* ── LIVE PREVIEW (shared) + STATISTICS BUILDER ──────────────────
    The `.live-preview` / `.lp-*` / `.preview-frame` block below is shared:
@@ -390,13 +339,15 @@ img { max-width: 100%; display: block; }
 }
 
 /* ── ADMIN SHELL ────────────────────────────────────────────────────
-   The persistent Admin document: sidebar + (editor | ONE Live Preview).
-   Shell-owned layout / sticky / geometry — the shared `.live-preview` /
-   `.lp-*` / `.preview-frame` styling above is reused as-is. */
+   The persistent Admin document: sticky top app bar + (editor | ONE Live
+   Preview). Shell-owned layout / sticky / geometry — the shared
+   `.live-preview` / `.lp-*` / `.preview-frame` styling above is reused as-is. */
 .admin-shell__main {
-  grid-column: 2;               /* content column (sidebar is column 1) */
-  padding: 28px 32px;
-  max-width: min(1680px, 100%);
+  flex: 1 1 auto;               /* fill the column below the app bar */
+  width: 100%;
+  padding: var(--admin-content-gap) 32px 28px;
+  max-width: min(1880px, 100%);
+  margin-inline: auto;          /* centre once the reclaimed sidebar width pushes past the cap */
   overflow-x: clip;              /* not `hidden` — keeps position:sticky working */
   min-width: 0;
   display: grid;
@@ -411,7 +362,7 @@ img { max-width: 100%; display: block; }
   grid-column: 1 / -1;
   display: flex; align-items: center; justify-content: flex-start;
   flex-wrap: wrap; gap: 8px 12px;
-  position: sticky; top: 0; z-index: 5;
+  position: sticky; top: var(--admin-header-h); z-index: 5;
   background: var(--abg); padding: 8px 0;
 }
 
@@ -419,7 +370,7 @@ img { max-width: 100%; display: block; }
 
 @media (min-width: 1180px) {
   .admin-shell__main {
-    grid-template-columns: minmax(0, 1fr) clamp(440px, 43%, 840px);
+    grid-template-columns: minmax(0, 1fr) clamp(460px, 42%, 900px);
     align-items: stretch;
   }
   .admin-shell__main.is-preview-expanded { grid-template-columns: minmax(0, 1fr); }
@@ -427,14 +378,14 @@ img { max-width: 100%; display: block; }
   .admin-shell__modebar { display: none; }        /* both panes already visible */
 
   /* The Live Preview is ONE persistent shell surface. Its vertical position is
-     identical on #overview / #menu / #categories / #settings: the cell does NOT
-     stretch to the (variably tall) editor — it sticks at a single shared shell
-     offset (== .admin-shell__main padding-top) and the iframe scrolls itself. */
+     identical on #menu (both subsections) and #settings: the cell does NOT
+     stretch to the (variably tall) editor — it sticks just below the sticky
+     top app bar (header height + content gap) and the iframe scrolls itself. */
   .admin-shell__preview {
     position: sticky;
-    top: 28px;
+    top: calc(var(--admin-header-h) + var(--admin-content-gap));
     align-self: start;
-    height: calc(100dvh - 56px);
+    height: calc(100dvh - var(--admin-header-h) - (var(--admin-content-gap) * 2));
   }
   .admin-shell__preview .live-preview { height: 100%; }
 }
@@ -443,11 +394,13 @@ img { max-width: 100%; display: block; }
   .admin-shell__main[data-pane="edit"]    .admin-shell__preview { display: none; }
   .admin-shell__main[data-pane="preview"] .admin-shell__editor  { display: none; }
   .admin-shell__main[data-pane="preview"] .admin-shell__preview { width: 100%; }
-  .admin-shell__main[data-pane="preview"] .live-preview { height: calc(100dvh - 120px); }
+  .admin-shell__main[data-pane="preview"] .live-preview {
+    height: calc(100dvh - var(--admin-header-h) - 64px);
+  }
 }
 
 @media (max-width: 768px) {
-  .admin-shell__main { grid-column: 1; padding: 20px 16px; }
+  .admin-shell__main { padding: 16px 16px 20px; }
 }
 
 /* Restrained per-section accent on the ported editor cards (§23). */
@@ -475,11 +428,12 @@ img { max-width: 100%; display: block; }
   margin-bottom: 4px;
 }
 /* Sticky save/dirty bar only where the editor column scrolls on its own —
-   wide screens, where the shell topbar is hidden. */
+   wide screens, where the shell modebar is hidden. Sits flush under the
+   sticky top app bar. */
 @media (min-width: 1180px) {
   .settings-view__bar {
     position: sticky;
-    top: 0;
+    top: var(--admin-header-h);
     z-index: 4;
     background: var(--abg);
     padding: 8px 0;
@@ -494,6 +448,67 @@ img { max-width: 100%; display: block; }
 }
 .stg-fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
 .stg-fieldset[disabled] { opacity: .6; }
+
+/* ── ADMIN SHELL: Menu workspace (Menu Items + Categories) ─────────
+   #menu is ONE shell route hosting two editors. The workspace header
+   (title + description + tabs) is the editor's own header; the tabs are
+   structural navigation, not a Preview-style utility toggle. The workspace
+   is a flex column so its body — and the `*-view` wrapper mounted inside
+   it — fills the editor cell, keeping the desktop dialog-confinement
+   geometry below intact. */
+.menu-workspace {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+}
+.menu-workspace__head { margin-bottom: 14px; }
+.menu-workspace__title { font-size: 22px; font-weight: 600; letter-spacing: -.2px; }
+.menu-workspace__desc { color: var(--amuted); font-size: 13.5px; margin-top: 3px; }
+
+.menu-tabs {
+  display: flex;
+  gap: 2px;
+  border-bottom: 1px solid var(--aborder);
+  margin-bottom: 22px;
+}
+.menu-tab {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  background: none;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;               /* overlap the container rule */
+  padding: 11px 20px;
+  min-height: 46px;
+  font-family: var(--f);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--amuted);
+  cursor: pointer;
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  transition: color .15s, border-color .15s, background .15s;
+}
+.menu-tab:hover { color: var(--atext); background: var(--acard); }
+.menu-tab:focus-visible { outline: 2px solid var(--aaccent); outline-offset: -2px; }
+.menu-tab.is-active { color: var(--aaccent); border-bottom-color: var(--aaccent); }
+
+.menu-workspace__body {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.menu-workspace__body > .menu-view,
+.menu-workspace__body > .categories-view { flex: 1 1 auto; }
+/* The child keeps its own contextual heading + primary action, sized to sit
+   below the workspace title as a panel sub-header rather than compete with it. */
+.menu-workspace__body .admin-page-title { font-size: 17px; }
+.menu-workspace__body .admin-page-header { margin-bottom: 20px; }
+
+@media (max-width: 560px) {
+  .menu-tab { flex: 1; padding: 11px 12px; justify-content: center; }
+}
 
 /* ── ADMIN SHELL: Menu / Categories views ──────────────────────────
    The Menu modal's "View in Preview" jump is only useful on narrow
@@ -919,6 +934,26 @@ select option { background: var(--acard); }
 .confirm-msg { font-size: 13.5px; color: var(--amuted); line-height: 1.65; margin-bottom: 22px; }
 .confirm-actions { display: flex; gap: 10px; justify-content: flex-end; }
 
+/* ── SHELL DIALOG (native <dialog> — unsaved-changes confirmation) ───
+   Shell-level navigation UI: centred over the whole Admin, distinct from the
+   editor-confined product/category modals. Styled to match the Admin, but
+   the browser's own beforeunload prompt (reload / close tab) is untouched. */
+.admin-dialog {
+  border: 1px solid var(--aborder);
+  border-radius: var(--radius);
+  padding: 0;
+  width: min(420px, calc(100vw - 32px));
+  background: var(--acard);
+  color: var(--atext);
+  box-shadow: var(--shadow);
+}
+.admin-dialog::backdrop { background: rgba(0, 0, 0, .6); }
+.admin-dialog__inner { padding: 24px; margin: 0; }
+.admin-dialog__title { font-size: 16px; font-weight: 600; margin-bottom: 10px; }
+.admin-dialog__msg { font-size: 13.5px; color: var(--amuted); line-height: 1.65; margin-bottom: 22px; }
+.admin-dialog__actions { display: flex; gap: 10px; justify-content: flex-end; flex-wrap: wrap; }
+.admin-dialog__actions .btn { flex: 0 1 auto; }
+
 /* ── CATEGORIES LIST ─────────────────────────────────────────────── */
 .cat-list { list-style: none; }
 .cat-item {
@@ -1080,31 +1115,10 @@ select option { background: var(--acard); }
 
 /* ── RESPONSIVE ──────────────────────────────────────────────────── */
 @media (max-width: 768px) {
-  .admin-layout {
-    grid-template-columns: 1fr;
-    grid-template-rows: var(--topbar-h) 1fr;
-  }
-
-  .admin-sidebar {
-    position: fixed;
-    left: -100%;
-    top: 0;
-    bottom: 0;
-    width: var(--aside-w);
-    z-index: 300;
-    transition: left .25s ease;
-    height: 100dvh;
-  }
-  .admin-sidebar.open { left: 0; }
-
-  .admin-topbar { display: flex; }
-
   .admin-main { padding: 20px 16px; }
 
   .form-row { grid-template-columns: 1fr; }
   .form-row.triple { grid-template-columns: 1fr; }
-
-  .stats-grid { grid-template-columns: 1fr 1fr; }
 
   .data-table { font-size: 12.5px; }
   .data-table th, .data-table td { padding: 9px 10px; }
@@ -1120,6 +1134,3 @@ select option { background: var(--acard); }
   .login-card { padding: 28px 22px; }
 }
 
-@media (max-width: 400px) {
-  .stats-grid { grid-template-columns: 1fr; }
-}

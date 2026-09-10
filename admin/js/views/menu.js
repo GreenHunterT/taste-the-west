@@ -773,7 +773,7 @@ window.AdminViews.menu = (function () {
 
     wireStaticEvents();
 
-    var pending = ctx.pendingAction || null;   // shell route action (e.g. Overview → Add Item)
+    var pending = ctx.pendingAction || null;   // one-shot shell route action (e.g. #menu&action=new)
     ctx.pendingAction = null;
 
     await loadAll();

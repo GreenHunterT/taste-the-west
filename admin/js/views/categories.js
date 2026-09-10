@@ -12,8 +12,8 @@
 //  untouched. Unsaved name edits reach the Preview through
 //  ctx.preview.setCatalogDraft({ categories: [...] }) — a whitelisted overlay,
 //  never a DB write. This module is authoritative; the old standalone
-//  admin/categories.html is now a redirect to /admin/#categories. With this,
-//  Overview / Menu Items / Categories / Settings are all native shell views.
+//  admin/categories.html now redirects into the Menu workspace at
+//  /admin/#menu&section=categories, where this view is the Categories tab.
 // =================================================================
 
 window.AdminViews = window.AdminViews || {};
