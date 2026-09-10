@@ -5,7 +5,7 @@
 //  every editor view. Owns the double-buffered public-page <iframe>
 //  preview: frame lifecycle, navigation generations, the
 //  READY / DATA / APPLIED / ERROR handshake, scale-to-fit geometry,
-//  the Page / Device / Language / Theme / View controls, Expand,
+//  the Page / Device / Language / Theme / View controls,
 //  same-origin + known-source + navigation-generation message
 //  validation, PREVIEW_NAVIGATE / FOCUS transport (semantic targets only —
 //  never selectors), the unsaved catalog-draft overlay transport ({products,
@@ -21,9 +21,7 @@
 //
 //  Usage:
 //    const preview = window.LivePreview.mount({
-//      root:         document.getElementById('live-preview'),
-//      expandTarget: document.getElementById('admin-shell-main'),
-//      expandClass:  'is-preview-expanded',
+//      root: document.getElementById('live-preview'),
 //    });
 //    preview.on('stat-click', ({ previewId }) => ...);
 //    preview.setDraft(restaurantDraftObject);
@@ -64,7 +62,6 @@ window.LivePreview = (function () {
     let _lang   = (opts.initialState && opts.initialState.lang)   || 'en';      // 'en' | 'ar' — authoritative
     let _theme  = (opts.initialState && opts.initialState.theme)  || 'dark';    // 'dark' | 'light' — authoritative
     let _zoom   = (opts.initialState && opts.initialState.zoom)   || 'fit';     // 'fit' | '100'
-    let _expanded = false;
     let _pendingFocus = null;          // { kind, target?, id?, highlight?, behavior? } — fired once the next page is ready
     let _focusRaf = 0;                 // rAF handle: coalesces rapid focus requests to one send per frame
     let _focusQueued = null;
@@ -91,11 +88,11 @@ window.LivePreview = (function () {
     let _activeReady  = false;           // the active frame has rendered a draft at least once
     let _sendQueued   = false;
 
-    // Layout-driven re-scale. The Preview stage width can change WITHOUT a
-    // window resize: Expand hides the editor column, the narrow Edit|Preview
-    // switch, a future shell resizing the editor pane. A ResizeObserver on the
-    // stage catches every one AFTER layout has settled, so applyScale() never
-    // runs against a stale pre-reflow width (the Expand geometry bug).
+    // Layout-driven re-scale. The Preview stage size can change WITHOUT a
+    // window resize: the narrow Edit|Preview pane switch, Desktop/Mobile, a
+    // future shell resizing the editor pane. A ResizeObserver on the stage
+    // catches every one AFTER layout has settled, so applyScale() never runs
+    // against a stale pre-reflow width.
     let _ro          = null;
     let _scalePending = false;
     let _seenStageW  = -1;
@@ -182,12 +179,23 @@ window.LivePreview = (function () {
     //     boundary.
     // Both frames get identical width/height/transform → an exact crossfade
     // stack. Reads _device, _zoom and the live stage size, so it is correct
-    // after resize, Expand, mode switch and page navigation.
+    // after resize, pane switch, Device/View change and page navigation.
+    // The stage's OWN padding is subtracted from the available box — Mobile
+    // mode pads #lp-stage to seat the device frame, and that padding must not
+    // be counted as space the scaled page can occupy.
     function applyScale() {
       if (!_stage || !_viewport || !_frames.length) return;
       const targetW = VP[_device] || 1024;
-      const availW  = Math.max(_stage.clientWidth  || targetW, 1);
-      const availH  = Math.max(_stage.clientHeight || Math.round(availW * 1.4), 240);
+      let padX = 0, padY = 0;
+      try {
+        const cs = getComputedStyle(_stage);
+        padX = (parseFloat(cs.paddingLeft) || 0) + (parseFloat(cs.paddingRight) || 0);
+        padY = (parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.paddingBottom) || 0);
+      } catch (e) {}
+      const rawW = _stage.clientWidth  || targetW;
+      const rawH = _stage.clientHeight || Math.round(rawW * 1.4);
+      const availW = Math.max(rawW - padX, 1);
+      const availH = Math.max(rawH - padY, 240);
 
       const scale = (_zoom === '100')
         ? 1
@@ -210,9 +218,10 @@ window.LivePreview = (function () {
       _seenStageH = _stage.clientHeight;
     }
 
-    // Deferred re-scale for size changes that aren't a window resize (Expand,
-    // narrow pane switch, shell editor resize). rAF-coalesced; a no-op when the
-    // stage size is unchanged, so a scrollbar toggle can never oscillate.
+    // Deferred re-scale for size changes that aren't a window resize (narrow
+    // Edit|Preview pane switch, shell editor resize, Device/View change).
+    // rAF-coalesced; a no-op when the stage size is unchanged, so a scrollbar
+    // toggle can never oscillate.
     function _scheduleScale() {
       if (_scalePending) return;
       _scalePending = true;
@@ -594,8 +603,8 @@ window.LivePreview = (function () {
       }
     }
 
-    // Announce the current display state (page/device/lang/theme/zoom/expanded)
-    // so a host can persist it. UI-only — no restaurant data, no navigation.
+    // Announce the current display state (page/device/lang/theme/zoom) so a
+    // host can persist it. UI-only — no restaurant data, no navigation.
     function _notifyState() { _emit('state', getState()); }
 
     // ── Display-control setters (also driven by the in-panel buttons) ──
@@ -616,25 +625,6 @@ window.LivePreview = (function () {
     function setViewMode(v) {
       if (v !== 'fit' && v !== '100') return;
       _zoom = v; _syncControls(); applyScale(); _flushActive(); _notifyState();
-    }
-
-    function setExpanded(on2) {
-      _expanded = !!on2;
-      if (opts.expandTarget && opts.expandClass) {
-        opts.expandTarget.classList.toggle(opts.expandClass, _expanded);
-      }
-      if (_expandBtn) {
-        _expandBtn.textContent = _expanded ? 'Back to editor' : 'Expand';
-        _expandBtn.setAttribute('aria-pressed', String(_expanded));
-      }
-      // The editor column appears/disappears → the stage reflows to a new
-      // width. The ResizeObserver catches the settled size; this is just the
-      // snappy first pass. Without a ResizeObserver, wait two frames so the
-      // grid has fully reflowed before measuring.
-      if (_ro) _scheduleScale();
-      else requestAnimationFrame(function () { requestAnimationFrame(applyScale); });
-      _emit('expand', { expanded: _expanded });
-      _notifyState();
     }
 
     // ── Location-image direct-edit capability (explicitly named) ───────
@@ -669,7 +659,7 @@ window.LivePreview = (function () {
     function getState() {
       return {
         page: _page, activePage: _activePage, navigating: !!pendingNav,
-        device: _device, lang: _lang, theme: _theme, zoom: _zoom, expanded: _expanded,
+        device: _device, lang: _lang, theme: _theme, zoom: _zoom,
       };
     }
 
@@ -685,7 +675,6 @@ window.LivePreview = (function () {
     }
 
     // ── Wire the in-panel controls (scoped to root) ───────────────────
-    let _expandBtn = null;
     function _wireControls() {
       const scope = root.querySelectorAll ? root : document;
       scope.querySelectorAll('.lp-seg__btn[data-page]').forEach(function (b) {
@@ -703,8 +692,6 @@ window.LivePreview = (function () {
       scope.querySelectorAll('.lp-seg__btn[data-zoom]').forEach(function (b) {
         _bind(b, 'click', function () { setViewMode(b.dataset.zoom); });
       });
-      _expandBtn = (root.querySelector ? root : document).querySelector('#lp-expand');
-      if (_expandBtn) _bind(_expandBtn, 'click', function () { setExpanded(!_expanded); });
     }
 
     // ── Boot ─────────────────────────────────────────────────────────
@@ -721,11 +708,11 @@ window.LivePreview = (function () {
     _bind(window, 'message', _onMessage);
     _bind(window, 'resize', _scheduleScale);
 
-    // Re-scale whenever the stage itself changes size — Expand toggling the
-    // editor column, the narrow Edit|Preview switch, or (later) the shell
-    // resizing the editor pane never fire `window resize`, so a plain rAF
-    // after the class change can measure a stale width. The observer fires
-    // AFTER layout has settled. One per controller; disconnected in destroy().
+    // Re-scale whenever the stage itself changes size — the narrow Edit|Preview
+    // switch, the Device/View controls, or (later) the shell resizing the editor
+    // pane never fire `window resize`, so a plain rAF after the change can
+    // measure a stale width. The observer fires AFTER layout has settled. One
+    // per controller; disconnected in destroy().
     if (typeof ResizeObserver === 'function' && _stage) {
       _ro = new ResizeObserver(function () { _scheduleScale(); });
       _ro.observe(_stage);
@@ -746,8 +733,6 @@ window.LivePreview = (function () {
       setLanguage: setLanguage,
       setTheme: setTheme,
       setViewMode: setViewMode,
-      setExpanded: setExpanded,
-      expand: setExpanded,
       refresh: refresh,
       applyScale: applyScale,
       scrollTo: scrollTo,

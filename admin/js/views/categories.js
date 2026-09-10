@@ -559,7 +559,7 @@ window.AdminViews.categories = (function () {
     RID = ctx.restaurant.id;
 
     // Drive the shared Preview to Menu ONCE — page context only. Device /
-    // language / theme / view / expanded stay as the owner left them.
+    // language / theme / view stay as the owner left them.
     try { ctx.preview.showPage('menu'); } catch (e) {}
 
     wireStaticEvents();
@@ -592,7 +592,7 @@ window.AdminViews.categories = (function () {
     teardownFns = [];
 
     // Drop the unsaved category overlay so the Preview shows the saved catalog
-    // again. Do NOT touch Preview page / device / lang / theme / view / expanded.
+    // again. Do NOT touch Preview page / device / lang / theme / view.
     try { if (ctx && ctx.preview) ctx.preview.clearCatalogDraft(); } catch (e) {}
 
     catsReady = false;

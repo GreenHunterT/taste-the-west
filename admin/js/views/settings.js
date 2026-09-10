@@ -146,7 +146,7 @@ window.AdminViews.settings = (function () {
 
   // =================================================================
   //  Editor markup  (left side only — no preview, no page/device/…/
-  //  view/expand controls, no Edit|Preview toggle)
+  //  view controls, no Edit|Preview toggle)
   // =================================================================
   function editorMarkup() {
     return [

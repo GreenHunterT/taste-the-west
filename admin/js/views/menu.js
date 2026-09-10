@@ -767,7 +767,7 @@ window.AdminViews.menu = (function () {
     RID = ctx.restaurant.id;
 
     // Drive the shared Preview to Menu ONCE — page context only. Device /
-    // language / theme / view / expanded are the owner's and stay untouched;
+    // language / theme / view are the owner's and stay untouched;
     // showPage() is a no-op if Menu is already active.
     try { ctx.preview.showPage('menu'); } catch (e) {}
 
@@ -818,8 +818,8 @@ window.AdminViews.menu = (function () {
     teardownFns = [];
 
     // Drop the unsaved product overlay so the shared Preview shows the saved
-    // catalog again. Do NOT touch Preview page / device / lang / theme / view /
-    // expanded — those persist across shell routes by design.
+    // catalog again. Do NOT touch Preview page / device / lang / theme / view —
+    // those persist across shell routes by design.
     try { if (ctx && ctx.preview) ctx.preview.clearCatalogDraft(); } catch (e) {}
 
     if (editImageObjUrl) {

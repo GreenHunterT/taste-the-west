@@ -27,6 +27,16 @@
     try { localStorage.setItem(UI_KEY, JSON.stringify(Object.assign(readUi(), patch))); }
     catch (e) { /* private mode / storage disabled — persistence is best-effort */ }
   }
+  // One-time cleanup: the removed Preview "Expand" feature (1L) may have left an
+  // `expanded` key behind. Nothing reads it any more, but strip it so the blob
+  // stays honest.
+  (function dropStaleUiKeys() {
+    const o = readUi();
+    if (Object.prototype.hasOwnProperty.call(o, 'expanded')) {
+      delete o.expanded;
+      try { localStorage.setItem(UI_KEY, JSON.stringify(o)); } catch (e) {}
+    }
+  })();
 
   // ── Public field whitelist for the Preview draft (SAVED state in 1I-B) ──
   // Explicit map — never spread the row, so owner_id / id / timestamps /
@@ -169,16 +179,14 @@
 
   ctx.preview = window.LivePreview.mount({
     root:         document.getElementById('live-preview'),
-    expandTarget: shellMain,
-    expandClass:  'is-preview-expanded',
     toast:        ctx.toast,
     initialState: initialState,
   });
 
   // Persist any shared Preview UI-state change (page / device / lang / theme /
-  // zoom / expanded). UI-only — never restaurant data.
+  // zoom). UI-only — never restaurant data.
   ctx.preview.on('state', function (s) {
-    writeUi({ page: s.page, device: s.device, lang: s.lang, theme: s.theme, zoom: s.zoom, expanded: s.expanded });
+    writeUi({ page: s.page, device: s.device, lang: s.lang, theme: s.theme, zoom: s.zoom });
   });
 
   // Re-seed the shared Preview from the SAVED restaurant row. Editor views call
@@ -219,10 +227,6 @@
   ctx.showPane = function (p) {
     if (window.matchMedia && window.matchMedia('(max-width: 1179px)').matches) setPane(p);
   };
-
-  // ── Restore Expanded — AFTER mount so geometry measures correctly ──
-  // (the 1I-A ResizeObserver handles the resulting stage resize).
-  if (ui.expanded === true) ctx.preview.setExpanded(true);
 
   // ── Seed the Preview with the SAVED public restaurant (ready only) ──
   if (restaurantLoadState === 'ready') {
