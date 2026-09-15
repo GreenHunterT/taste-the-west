@@ -623,6 +623,7 @@ window.AdminViews.menu = (function () {
       else if (removeImage && oldUrl) await deleteFromStorage(oldUrl);
 
       showToast(editId ? 'Item updated.' : 'Item added.', 'success');
+      if (ctx && typeof ctx.sound === 'function') ctx.sound('success');
 
       // Tear the editor down, drop the overlay, re-pull the real catalog, then
       // highlight the persisted card exactly once.
@@ -668,6 +669,7 @@ window.AdminViews.menu = (function () {
     var msg = q('#confirm-msg');
     if (msg) msg.textContent = '"' + (name || 'This item') + '" will be permanently removed from your menu. This cannot be undone.';
     var m = q('#confirm-modal'); if (m) m.classList.add('open');
+    if (ctx && typeof ctx.sound === 'function') ctx.sound('warning');
   }
   function closeConfirm() {
     pendingDeleteId = null;

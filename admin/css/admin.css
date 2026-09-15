@@ -170,14 +170,37 @@ img { max-width: 100%; display: block; }
 }
 .admin-appbar__actions .btn:hover { color: var(--atext); opacity: 1; }
 
-/* Very narrow: drop the brand text (keep the mark) and tighten so the two nav
-   controls + two text actions still fit one fixed-height row — no drawer. */
+/* Admin-sound speaker toggle — a small icon control, quieter than the nav. */
+.admin-appbar__sound {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--amuted);
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  transition: color .15s, background .15s;
+}
+.admin-appbar__sound:hover { color: var(--atext); background: var(--acard); }
+.admin-appbar__sound:focus-visible { outline: 2px solid var(--aaccent); outline-offset: 2px; }
+.admin-appbar__sound svg { width: 17px; height: 17px; display: block; }
+.admin-appbar__sound .i-off { display: none; }
+.admin-appbar__sound[aria-pressed="false"] .i-on  { display: none; }
+.admin-appbar__sound[aria-pressed="false"] .i-off { display: block; }
+
+/* Very narrow: drop the brand text (keep the mark) and tighten so the nav
+   controls + the actions still fit one fixed-height row — no drawer. */
 @media (max-width: 560px) {
   .admin-appbar { padding: 0 12px; gap: 4px 10px; }
   .admin-appbar__name { display: none; }
   .admin-navlink { height: 32px; padding: 0 10px; }
   .admin-appbar__actions { gap: 2px; }
   .admin-appbar__actions .btn { padding: 4px 6px; font-size: 12px; }
+  .admin-appbar__sound { width: 26px; height: 26px; }
 }
 
 /* ── MAIN CONTENT ────────────────────────────────────────────────── */

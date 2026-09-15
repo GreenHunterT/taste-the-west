@@ -136,6 +136,7 @@
     menuSection: null,      // 'items' | 'categories' — set by renderRoute() for the #menu workspace
     pendingAction: null,    // one-shot route action (e.g. #menu&action=new) — a view reads + clears it
     toast: (typeof showToast === 'function') ? showToast : function () {},
+    sound: function () {},  // set below once the Admin sound engine exists (1M)
   };
 
   // ── Top app bar (ONE copy, owned here) ──────────────────────────
@@ -167,6 +168,75 @@
 
   // ── Restore persisted UI state, then mount the ONE Live Preview ──
   const ui = readUi();
+
+  // ── Admin interaction sounds (1M) ──────────────────────────────
+  // Local per-device preference in ttw_admin_ui.adminSounds (default ON).
+  // Completely separate from the restaurant's public `sounds_enabled`.
+  const adminSound = (window.AdminSound && typeof window.AdminSound.create === 'function')
+    ? window.AdminSound.create({
+        enabled: ui.adminSounds !== false,
+        onEnabledChange: function (v) { writeUi({ adminSounds: v }); },
+      })
+    : { play: function () {}, isEnabled: function () { return false; }, toggle: function () { return false; }, setEnabled: function () {} };
+
+  ctx.sound = function (kind) { try { adminSound.play(kind); } catch (e) {} };
+
+  // App-bar speaker toggle. It self-reports (data-sound-skip keeps the generic
+  // click delegation off it) and confirms audibly per §19.
+  const soundBtn = document.getElementById('admin-sound-toggle');
+  function syncSoundBtn() {
+    if (!soundBtn) return;
+    const on = adminSound.isEnabled();
+    soundBtn.setAttribute('aria-pressed', on ? 'true' : 'false');
+    soundBtn.setAttribute('aria-label', on ? 'Admin sounds on' : 'Admin sounds off');
+    soundBtn.title = on ? 'Admin sounds on' : 'Admin sounds off';
+  }
+  syncSoundBtn();
+  if (soundBtn) {
+    soundBtn.addEventListener('click', function () {
+      const wasOn = adminSound.isEnabled();
+      if (wasOn) adminSound.play('tap');   // confirm BEFORE going silent
+      adminSound.toggle();
+      syncSoundBtn();
+      if (!wasOn) adminSound.play('tap');  // confirm AFTER enabling
+    });
+  }
+
+  // ── ONE delegated interaction path for generic sounds (§22) ─────
+  // capture-phase click flag: distinguishes a focus change the owner caused by
+  // clicking a button/label (→ suppress the focus cue, the tap covers it) from
+  // clicking straight into a field (→ focus cue) or Tab navigation (→ focus cue).
+  const EDITABLE_SEL = 'input:not([type]), input[type="text"], input[type="email"], input[type="tel"], input[type="number"], input[type="search"], input[type="url"], input[type="password"], textarea, [contenteditable=""], [contenteditable="true"]';
+  const TAP_SEL = 'button, [role="button"], a[href], .admin-navlink, .menu-tab, .lp-seg__btn, label.toggle, input[type="checkbox"], input[type="radio"], select, summary, .img-upload-area';
+  function soundEditable(el) { return !!(el && el.closest && el.closest(EDITABLE_SEL)); }
+  function soundDisabled(el) { return !!(el && (el.disabled || (el.closest && el.closest('[disabled], [aria-disabled="true"]')))); }
+
+  let _inClick = false, _clickOnEditable = false, _lastTapAt = 0;
+  document.addEventListener('click', function (e) {
+    _inClick = true;
+    _clickOnEditable = soundEditable(e.target);
+    setTimeout(function () { _inClick = false; _clickOnEditable = false; }, 0);
+  }, true);
+  document.addEventListener('focusin', function (e) {
+    if (!soundEditable(e.target)) return;
+    if (_inClick && !_clickOnEditable) return;   // focus moved by a button/label click — tap covers it
+    adminSound.play('focus');
+  });
+  document.addEventListener('click', function (e) {
+    const t = e.target;
+    if (!t || soundEditable(t)) return;          // a field click resolves to `focus` only (§11)
+    const hit = t.closest ? t.closest(TAP_SEL) : null;
+    if (!hit || hit.hasAttribute('data-sound-skip') || soundDisabled(hit)) return;
+    const n = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+    if (n - _lastTapAt < 60) return;             // label + synthetic-input, nested targets
+    _lastTapAt = n;
+    adminSound.play('tap');
+  });
+  document.addEventListener('input', function (e) {
+    const t = e.target;
+    if (t && t.tagName === 'INPUT' && t.type === 'range') adminSound.play('tick');
+  });
+
   const initialState = {
     page:   (['home', 'menu', 'location', 'contact'].indexOf(ui.page) !== -1) ? ui.page : 'home',
     device: (ui.device === 'mobile') ? 'mobile' : 'desktop',
@@ -343,6 +413,7 @@
       dirtyDialog.returnValue = 'stay';
       try { dirtyDialog.showModal(); }
       catch (e) { finish(window.confirm('You have unsaved changes. If you leave now, they will be discarded.')); return; }
+      adminSound.play('warning');   // §18 — once, when the dialog opens
       const stayBtn = dirtyDialog.querySelector('[data-dirty-stay]');
       if (stayBtn) { try { stayBtn.focus(); } catch (e) {} }
     });

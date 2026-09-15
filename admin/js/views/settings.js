@@ -370,8 +370,8 @@ window.AdminViews.settings = (function () {
       '    <div class="acard-title">App Settings</div>',
       '    <div class="toggle-row">',
       '      <div class="toggle-info">',
-      '        <strong>UI Click Sounds</strong>',
-      '        <span>Subtle audio feedback when buttons are pressed</span>',
+      '        <strong>Customer Site Sounds</strong>',
+      '        <span>Play subtle interaction sounds for customers using the website.</span>',
       '      </div>',
       '      <label class="toggle">',
       '        <input type="checkbox" id="sounds_enabled" name="sounds_enabled" />',
@@ -1201,6 +1201,7 @@ window.AdminViews.settings = (function () {
       postPreviewData();
 
       showToast('Settings saved successfully.', 'success');
+      if (ctx && typeof ctx.sound === 'function') ctx.sound('success');
     } catch (err) {
       if (!persisted) {
         if (uploadedHeroUrl && uploadedHeroUrl !== oldHeroUrl) { await deleteFromStorage(uploadedHeroUrl); }
@@ -1376,6 +1377,9 @@ window.AdminViews.settings = (function () {
       if (typeof c.zoom === 'number') locZoom = c.zoom;
       if (c.height) { locHeight = c.height; syncSeg('data-loc-height', locHeight); }
       recomputeDirty();
+      // Owner is dragging/zooming the Location image in the Preview — a
+      // restrained tick (the engine rate-limits, so this can't become noise).
+      if (ctx && typeof ctx.sound === 'function') ctx.sound('tick');
     });
     onPreview('locedit-done', function () { endLocImageEdit(false); });
     onPreview('locedit-cancel', function () { endLocImageEdit(true); });

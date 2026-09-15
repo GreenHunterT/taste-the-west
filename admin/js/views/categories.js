@@ -365,6 +365,7 @@ window.AdminViews.categories = (function () {
       var row = categories.find(function (c) { return c.id === id; });
       if (row) { row.name_en = nameEn; row.name_ar = nameAr; }
       showToast('Category renamed.', 'success');
+      if (ctx && typeof ctx.sound === 'function') ctx.sound('success');
       editingCatId = null;
       contextKey = '';
       render();
@@ -416,6 +417,7 @@ window.AdminViews.categories = (function () {
       var newId = (res.data && res.data[0] && res.data[0].id) || null;
 
       showToast('Category added.', 'success');
+      if (ctx && typeof ctx.sound === 'function') ctx.sound('success');
       var f = q('#add-cat-form'); if (f) f.reset();
       addDraftId = null;
       contextKey = '';
@@ -480,6 +482,7 @@ window.AdminViews.categories = (function () {
         '" will be deleted. Products in this category will have their category cleared but will NOT be deleted.';
     }
     var m = q('#confirm-modal'); if (m) m.classList.add('open');
+    if (ctx && typeof ctx.sound === 'function') ctx.sound('warning');
   }
   function closeConfirm() {
     pendingDeleteId = null;

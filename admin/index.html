@@ -30,6 +30,11 @@
         <a href="#settings" class="admin-navlink" data-route="settings">Settings</a>
       </nav>
       <div class="admin-appbar__actions">
+        <button type="button" id="admin-sound-toggle" class="admin-appbar__sound" data-sound-skip
+                aria-pressed="true" aria-label="Admin sounds on" title="Admin sounds on">
+          <svg class="i-on" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
+          <svg class="i-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>
+        </button>
         <a href="../index.html" target="_blank" rel="noopener noreferrer" class="btn btn-ghost btn-sm">View Site</a>
         <button type="button" class="btn btn-ghost btn-sm" data-logout>Sign Out</button>
       </div>
@@ -141,6 +146,7 @@
   <script src="js/client.js"></script>
   <script src="js/auth.js"></script>
   <script src="js/live-preview.js"></script>
+  <script src="js/admin-sound.js"></script>
   <script src="js/views/menu.js"></script>
   <script src="js/views/categories.js"></script>
   <script src="js/views/menu-workspace.js"></script>
