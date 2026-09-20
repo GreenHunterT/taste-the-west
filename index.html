@@ -3,11 +3,14 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta name="description" content="" />
+  <!-- Static fallback so a crawler/link-preview bot that does not execute
+       JS (e.g. WhatsApp's own unfurler) never sees an empty description —
+       js/app.js overwrites these at runtime with the live DB description. -->
+  <meta name="description" content="A western-inspired pizza experience with a unique taste, bringing a different style of pizza to Madinah." />
   <meta name="theme-color" content="#0e0d0b" />
   <meta property="og:type"        content="website" />
-  <meta property="og:title"       content="" />
-  <meta property="og:description" content="" />
+  <meta property="og:title"       content="Taste The West — A Different Kind of Pizza" />
+  <meta property="og:description" content="A western-inspired pizza experience with a unique taste, bringing a different style of pizza to Madinah." />
   <meta property="og:image"       content="" />
   <meta property="og:url"         content="" />
   <meta name="twitter:card"       content="summary_large_image" />

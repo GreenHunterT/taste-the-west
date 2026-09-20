@@ -1102,13 +1102,23 @@ window.AdminViews.settings = (function () {
 
       var heroUrl = oldHeroUrl, logoUrl = oldLogoUrl, locationUrl = oldLocationUrl;
 
+      // Unique key per upload (1O hardening) — a fixed 'branding/<uid>-hero'
+      // key with upsert:true (the previous behaviour) overwrites the LIVE
+      // object in place the instant the upload lands, before the DB write
+      // below is even attempted. If that DB write then failed, the
+      // restaurant row still pointed at the same URL, but the bytes at that
+      // URL were already the new (unsaved) image — a failed Save could
+      // silently replace the live hero/logo. A fresh unique key per upload
+      // (matching the location image's existing pattern) makes the two
+      // storage objects genuinely distinct, so oldHeroUrl/oldLogoUrl stay
+      // valid and untouched until the DB update actually succeeds below.
       if (heroFile) {
-        heroUrl = await uploadToStorage(heroFile, 'branding/' + session.user.id + '-hero');
+        heroUrl = await uploadToStorage(heroFile, 'branding/' + session.user.id + '-hero-' + uniqueToken());
         uploadedHeroUrl = heroUrl;
       } else if (removeHero) { heroUrl = ''; }
 
       if (logoFile) {
-        logoUrl = await uploadToStorage(logoFile, 'branding/' + session.user.id + '-logo');
+        logoUrl = await uploadToStorage(logoFile, 'branding/' + session.user.id + '-logo-' + uniqueToken());
         uploadedLogoUrl = logoUrl;
       } else if (removeLogo) { logoUrl = ''; }
 
@@ -1146,8 +1156,27 @@ window.AdminViews.settings = (function () {
           : (restaurant.sounds_enabled !== false),
       };
 
-      var result = await ctx.db.from('restaurants').update(payload).eq('id', restaurant.id);
+      // Lightweight optimistic concurrency (1O §10/§11): if a second
+      // browser/device saved Settings after THIS session loaded the
+      // restaurant row, a blind `update().eq('id', ...)` would silently
+      // overwrite that other save with this session's own — stale — copy
+      // of every field it didn't touch (fieldVal() above falls back to
+      // `restaurant[f]`, captured at load time). Folding the row's
+      // `updated_at` (already present on the schema, no migration needed)
+      // into the WHERE clause makes the write a no-op — 0 rows matched,
+      // not a Postgres error — the instant someone else has saved in the
+      // meantime, so it is caught below instead of applied. Not
+      // realtime collaboration: this only detects a conflict that already
+      // happened; it never merges or locks.
+      var expectedUpdatedAt = restaurant.updated_at || null;
+      var updateQuery = ctx.db.from('restaurants').update(payload).eq('id', restaurant.id);
+      if (expectedUpdatedAt) updateQuery = updateQuery.eq('updated_at', expectedUpdatedAt);
+      var result = await updateQuery.select('updated_at');
       if (result.error) throw new Error(result.error.message);
+      if (expectedUpdatedAt && (!result.data || !result.data.length)) {
+        throw ownerError('Someone else saved Settings changes after this page loaded. Reload the page to see the latest version, then make your changes again.');
+      }
+      if (result.data && result.data[0]) restaurant.updated_at = result.data[0].updated_at;
       persisted = true;
 
       if (uploadedHeroUrl && oldHeroUrl && oldHeroUrl !== uploadedHeroUrl) { await deleteFromStorage(oldHeroUrl); }
@@ -1209,7 +1238,7 @@ window.AdminViews.settings = (function () {
         if (uploadedLocationUrl && uploadedLocationUrl !== oldLocationUrl) { await deleteFromStorage(uploadedLocationUrl); }
       }
       console.error(err);
-      showToast('Save failed: ' + (err && err.message ? err.message : err), 'error');
+      showToast(friendlyDbError(err, 'Save failed. Please try again.'), 'error', 5500);
       recomputeDirty();
     } finally {
       if (btnBottom) { btnBottom.disabled = false; btnBottom.textContent = 'Save Changes'; }

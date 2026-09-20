@@ -642,7 +642,7 @@ window.AdminViews.menu = (function () {
       // Roll back ONLY the object this op uploaded, and ONLY if never persisted.
       if (uploadedThisOp && !persisted) { try { await deleteFromStorage(uploadedThisOp); } catch (e2) {} }
       console.error('[menu view] save failed:', err);
-      showToast('Error: ' + (err && err.message ? err.message : err), 'error');
+      showToast(friendlyDbError(err, 'Save failed. Please try again.'), 'error', 5500);
     } finally {
       if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Save Item'; }
     }
@@ -653,7 +653,7 @@ window.AdminViews.menu = (function () {
   // =================================================================
   async function toggleAvailable(id, currentlyAvailable) {
     var res = await ctx.db.from('products').update({ available: !currentlyAvailable }).eq('id', id);
-    if (res.error) { showToast('Update failed: ' + res.error.message, 'error'); return; }
+    if (res.error) { console.error('[menu view] availability toggle failed:', res.error); showToast(friendlyDbError(res.error, 'Update failed. Please try again.'), 'error', 5500); return; }
     showToast(currentlyAvailable ? 'Item hidden from menu.' : 'Item is now visible.', 'success');
     await loadAll();
     if (ctx && ctx.preview) ctx.preview.refreshCatalog();
@@ -682,7 +682,7 @@ window.AdminViews.menu = (function () {
     closeConfirm();
 
     var res = await ctx.db.from('products').delete().eq('id', id);
-    if (res.error) { showToast('Delete failed: ' + res.error.message, 'error'); return; }
+    if (res.error) { console.error('[menu view] delete failed:', res.error); showToast(friendlyDbError(res.error, 'Delete failed. Please try again.'), 'error', 5500); return; }
 
     // Row is gone — best-effort remove its image. A Storage failure here must
     // not undo the delete.

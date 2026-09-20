@@ -127,7 +127,10 @@
     </form>
   </dialog>
 
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+  <!-- Pinned to the exact version resolved today (1O hardening) — a floating
+       @2 tag means "today's tested code" is not guaranteed to be "tomorrow's
+       deployed code." Bump deliberately, re-test, then update this pin. -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.116.0/dist/umd/supabase.min.js"></script>
   <script src="../config/supabase.js"></script>
   <script src="js/client.js"></script>
   <script src="js/auth.js"></script>

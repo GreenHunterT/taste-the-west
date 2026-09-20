@@ -53,6 +53,38 @@ function showToast(message, type = 'success', duration = 3500) {
   }, duration);
 }
 
+// ── OWNER-SAFE ERROR MESSAGES (1O hardening) ────────────────────────
+// Every Settings/Menu/Categories save-or-delete catch block used to do
+// `showToast('X failed: ' + err.message, 'error')` — for a genuine
+// PostgREST/Postgres error, `.message` IS the raw backend explanation
+// (constraint names, column names, "row-level security policy" wording),
+// shown to the owner and passed straight into showToast()'s innerHTML.
+// friendlyDbError() replaces that: it NEVER returns the raw message
+// verbatim — only one of the hardcoded strings below, or `fallback`. The
+// raw error still goes to console.error() at each call site for
+// debugging; it just never reaches the toast.
+function ownerError(message) {
+  return new Error('OWNER_MSG:' + message);
+}
+function friendlyDbError(err, fallback) {
+  const raw = (err && err.message) ? String(err.message) : String(err || '');
+  if (raw.indexOf('OWNER_MSG:') === 0) return raw.slice('OWNER_MSG:'.length);
+  const low = raw.toLowerCase();
+  if (low.indexOf('duplicate key') !== -1 || low.indexOf('already exists') !== -1) {
+    return 'That name is already in use. Please choose a different one.';
+  }
+  if (low.indexOf('failed to fetch') !== -1 || low.indexOf('networkerror') !== -1 || low.indexOf('load failed') !== -1) {
+    return 'Network error. Please check your connection and try again.';
+  }
+  if (low.indexOf('row-level security') !== -1 || low.indexOf('permission denied') !== -1) {
+    return 'You do not have permission to make this change.';
+  }
+  if (low.indexOf('foreign key') !== -1 || low.indexOf('violates') !== -1) {
+    return 'This item is still in use elsewhere and cannot be changed right now.';
+  }
+  return fallback || 'Something went wrong. Please try again.';
+}
+
 // ── LOADING OVERLAY ───────────────────────────────────────────────
 function showLoading()  { const el = document.getElementById('admin-loading'); if (el) el.removeAttribute('hidden'); }
 function hideLoading()  { const el = document.getElementById('admin-loading'); if (el) el.setAttribute('hidden', ''); }

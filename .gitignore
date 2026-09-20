@@ -1,0 +1,27 @@
+# Environment / secrets — never commit real credentials
+.env
+.env.*
+!.env.example
+
+# OS artifacts
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editor/IDE
+.vscode/
+.idea/
+
+# Logs
+*.log
+npm-debug.log*
+
+# Local dependency/test scaffolding — this project ships with no build step
+# and no dependencies of its own; anything here came from ad-hoc local
+# tooling, not the deployed site.
+node_modules/
+
+# Large local media that shouldn't round-trip through git
+*.mp4
+*.mov
+*.zip

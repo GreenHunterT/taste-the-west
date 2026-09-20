@@ -1,0 +1,32 @@
+-- =================================================================
+--  Migration 002 — Close direct anonymous restaurants access (CONTRACT phase)
+--  Milestone 1O.2 — zero-downtime rollout, phase 2 of 2
+--
+--  RUN ONLY AFTER:
+--    1. 001_restaurants_public_view.sql has been run, AND
+--    2. the 1O application code (which queries `restaurants_public`
+--       instead of `restaurants`) has been deployed and CONFIRMED
+--       working against the live public site.
+--
+--  Running this before the new code is live and verified would break the
+--  still-deployed old code, which reads the base `restaurants` table
+--  directly — that is the exact temporary-outage bug this staged rollout
+--  exists to avoid. See 001's header comment and README.md for the full
+--  step-by-step order.
+--
+--  WHAT THIS DOES:
+--  The smallest possible security change — revoke the anonymous role's
+--  ability to read the `restaurants` base table directly. After this,
+--  anonymous reads can only ever go through `restaurants_public` (001),
+--  which exposes a fixed, explicit, owner_id-free column list for
+--  TasteTheWest's one restaurant row only. This is what actually stops
+--  `GET /rest/v1/restaurants?select=owner_id` and any other arbitrary
+--  column/row request against the base table.
+--
+--  Idempotent — safe to re-run (REVOKE on an already-revoked grant is a
+--  no-op, not an error). Does not touch INSERT/UPDATE/DELETE policies,
+--  the authenticated (owner) role's grant, categories/products, or
+--  Storage policies.
+-- =================================================================
+
+REVOKE SELECT ON public.restaurants FROM anon;

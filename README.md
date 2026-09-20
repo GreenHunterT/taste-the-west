@@ -1,161 +1,121 @@
-# SouqSite
+# Taste The West
 
-A production-quality, reusable website template for small physical shops in Makkah.  
-Fully static — no server, no database, no build step required.
+A bilingual restaurant website (public site + a private owner Admin) built on
+the SouqSite template lineage. **Not fully static** — the public pages and
+Admin both read/write a real Supabase project (Postgres + Auth + Storage).
+`config/shop.js` / `config/products.js` remain in the repo only as bundled
+placeholder/seed data and an emergency fallback shape — see "Data model"
+below.
 
 ---
 
 ## Features
 
 - Bilingual (Arabic / English) with live toggle, no page reload
-- Dark mode default, premium light mode — persisted in localStorage
-- Mobile-first, tested at 375px → 1440px
+- One canonical dark visual design — no theme switch
+- Mobile-first, tested at 320px → 1440px
 - RTL-ready (Arabic activates automatic layout mirroring)
 - WhatsApp-first contact (pre-filled message, floating button)
-- All shop data in two config files — zero app logic changes needed per client
+- Cinematic "Portal" page transitions with an automatic low-motion fallback
+  (`prefers-reduced-motion`) — no user-facing setting, the browser/OS decides
+- Optional customer-facing UI sound, owner-controlled, independent of the
+  Admin's own interaction sounds
+- A private Admin (`/admin`) for the owner to edit Settings, Menu Items, and
+  Categories, with a live Preview of the real public site (Page / Device /
+  Language controls; Preview always scales to fit — there is no separate
+  "100%" mode)
 
 ---
 
 ## File Structure
 
 ```
-SouqSite/
+taste-the-west/
 ├── index.html            Homepage
 ├── products.html         Full product catalog with category filter
 ├── location.html         Google Maps embed + address / hours
 ├── contact.html          WhatsApp block + contact details
+├── 404.html
+│
+├── admin/                Private owner dashboard (Supabase Auth-gated)
+│   ├── index.html         The persistent Admin shell (Menu + Settings)
+│   ├── login.html         Sign-in
+│   └── js/                Shell, auth, Live Preview, and the 3 admin views
 │
 ├── config/
-│   ├── shop.js           ← EDIT THIS for each new shop
-│   ├── products.js       ← EDIT THIS with real products
-│   ├── products.json     Reference JSON format (for future API)
+│   ├── shop.js           Bundled placeholder restaurant + emergency fallback
+│   ├── products.js       Bundled placeholder menu + emergency fallback
+│   ├── products.json     Reference JSON format
 │   └── translations.js   UI strings in Arabic + English
 │
 ├── css/
 │   └── style.css         All styles (CSS variables, single canonical design)
 │
 ├── js/
-│   └── app.js            Runtime — renders config, handles language
+│   └── app.js            Public runtime — Supabase fetch, rendering, i18n
+│
+├── supabase/
+│   ├── schema.sql         Full schema + RLS policies + Storage policies
+│   └── migrations/        Follow-up SQL, applied by hand in the SQL Editor
 │
 └── assets/
-    └── images/           Place shop hero + product photos here
+    └── images/           Placeholder art (real media lives in Supabase Storage)
 ```
+
+---
+
+## Data model
+
+The **database is the source of truth** for everything the owner can edit —
+restaurant identity/contact/hours/images, menu items, and categories — via
+Admin → Settings / Menu. `config/shop.js` and `config/products.js` are used
+only in two situations: (1) as the shape the Admin Preview warms up with
+before the real draft arrives, and (2) as an emergency, non-catalog fallback
+if `RESTAURANT_ID`/Supabase are not configured at all. **Editing these files
+does not change the live site once Supabase is configured** — always use
+Admin. See `supabase/schema.sql` for the schema and Row Level Security
+policies, and `supabase/migrations/` for anything applied afterward.
+
+Migrations in `supabase/migrations/` are numbered and must be run **in
+order, with an application deploy in between where a migration's own
+comment says so** — this is a staged expand/deploy/contract rollout, not a
+batch of independent scripts. Running a later-phase migration before the
+matching app code is live and confirmed working will temporarily break the
+public site. Each file's own header states exactly when it is safe to run.
 
 ---
 
 ## Local Usage
 
-Open `index.html` directly in any browser — no server needed.  
-For Google Maps to embed, an internet connection is required.
+This is no longer a pure `file://`-safe static site — Admin's routing and
+the public pages' same-origin Supabase calls expect a real HTTP origin. Serve
+the repo root with any static file server, e.g.:
 
-> **Tip:** Use VS Code Live Server for the best local experience.
+```
+python -m http.server 8080
+```
+
+or the VS Code Live Server extension, then open `http://localhost:8080/`.
+`config/supabase.js` must point at a real Supabase project for anything
+beyond the bundled placeholder content to appear.
 
 ---
 
 ## Deployment
 
-### GitHub Pages
-
-1. Push the folder contents to a GitHub repo (root or `/docs` folder).
-2. Settings → Pages → Source: `main` branch, `/ (root)`.
-3. Site is live at `https://username.github.io/repo-name/`.
-
-All paths are relative — no changes needed.
-
-### Vercel
+### Vercel (primary target — see `vercel.json`)
 
 1. Connect the GitHub repo to Vercel.
 2. Framework preset: **Other** (no build command, no output directory).
-3. Deploy — done. Vercel auto-detects static files.
+3. Deploy. `vercel.json` rewrites `/admin` → `/admin/index.html` and adds
+   `noindex`/frame/content-type headers to every `/admin/*` route.
 
----
+### GitHub Pages
 
-## Customizing for a New Shop (5 steps)
-
-### 1. Duplicate the folder
-Copy `SouqSite/` and rename it — e.g. `AlNoor/`.
-
-### 2. Edit `config/shop.js`
-
-```js
-const SHOP_SETTINGS = {
-  defaultLanguage: 'ar',   // 'ar' | 'en'
-};
-
-const SHOP = {
-  name:        "اسم المتجر",       // Arabic name
-  nameEn:      "Shop Name",         // English name
-  tagline:     "الشعار بالعربي",
-  taglineEn:   "English tagline",
-  description: "وصف المتجر ...",
-  descriptionEn: "Shop description ...",
-
-  phone:     "+966 5X XXX XXXX",
-  whatsapp:  "9665XXXXXXXX",       // digits only, no + or spaces
-  instagram: "@handle",
-  email:     "",                   // leave empty to hide
-
-  address: {
-    en: "Street, District, Makkah",
-    ar: "الشارع، الحي، مكة المكرمة"
-  },
-  mapEmbed:      "https://maps.google.com/maps?q=LAT,LNG&z=16&output=embed",
-  mapDirections: "https://maps.google.com/maps?q=LAT,LNG",
-
-  hours: {
-    weekdays: "9:00 AM – 10:00 PM",
-    weekends: "Open All Day"
-  },
-
-  highlights: [
-    { value: "15+",  label: "Years of Experience", labelAr: "سنة من الخبرة" },
-    { value: "200+", label: "Products",             labelAr: "منتج"          },
-    { value: "★5.0", label: "Customer Rating",     labelAr: "تقييم العملاء"  }
-  ],
-
-  hero: {
-    image: "assets/images/hero.jpg"   // replace with real shop photo
-  },
-
-  social: {
-    whatsappMessage: "Hello! I'd like to know more."
-  }
-};
-```
-
-### 3. Edit `config/products.js`
-
-Add the shop's real products. Set `featured: true` on up to 3 to appear on the homepage.
-
-```js
-const PRODUCTS = [
-  {
-    id: 1,
-    name:          "اسم المنتج",
-    nameEn:        "Product Name",
-    price:         "45 SAR",
-    category:      "category-slug",
-    image:         "assets/images/products/item1.jpg",
-    description:   "وصف قصير",
-    descriptionEn: "Short description",
-    featured:      true
-  },
-  // ...
-];
-```
-
-### 4. Replace images
-
-| File | Purpose |
-|------|---------|
-| `assets/images/hero.jpg` | Homepage hero background |
-| `assets/images/products/item1.jpg` | Product photos (match `image` in products.js) |
-
-Recommended sizes: hero `1920×1080`, products `600×450`.
-
-### 5. Deploy
-
-Push to GitHub → Vercel or GitHub Pages picks it up automatically.
+Works for the public pages, but GitHub Pages has no equivalent to
+`vercel.json`'s rewrites/headers — visiting `/admin` (without `index.html`)
+will 404, and the Admin will not get the `noindex`/frame-protection headers.
+Vercel is the supported target for the full site including Admin.
 
 ---
 
@@ -184,31 +144,41 @@ To add a language (e.g. Urdu):
 
 | Version | Features |
 |---------|----------|
-| **V1** ✓ | Static site, WhatsApp contact, products catalog, location map |
-| **V1.1** ✓ | Bilingual, dark/light theme, GitHub/Vercel deploy-ready |
-| V2 | Owner dashboard, login, live product editing (replace config/*.js with API) |
-| V3 | QR code generation, order request form |
-| V4 | Delivery network integration |
-
-**V2 upgrade path:** `app.js` already separates data-loading from rendering. Replace the `<script src="config/shop.js">` tag with a `fetch('/api/shop')` call in `js/app.js` — the render functions (`initHome`, `initProducts`, etc.) stay unchanged.
+| Early static prototype ✓ | Public site, WhatsApp contact, products catalog, location map, bilingual |
+| **V1 (current)** ✓ | Supabase-backed data, private owner Admin (Settings / Menu / Categories, live Preview), Portal page transitions, customer + Admin sound |
+| V2+ (explicitly out of scope for now) | Ordering, payments, delivery, staff roles/accounts, analytics, multi-tenant "SouqSite" platform |
 
 ---
 
 ## Manual Testing Checklist
 
+**Customer site**
 - [ ] Homepage hero image loads, shop name and tagline appear correctly
 - [ ] Hero WhatsApp button opens correct wa.me link
 - [ ] Scroll past hero — nav transitions from transparent to solid dark
-- [ ] Language toggle (EN · عربية) switches all UI text without reload
+- [ ] Language toggle (EN · عربية) switches all UI text without reload; Arabic never briefly shows English
 - [ ] Arabic mode: layout shifts to RTL, no broken alignment
 - [ ] Language choice persists after page refresh (localStorage)
 - [ ] Products page: all cards render, category filter shows/hides correctly
-- [ ] "All" filter button text switches language with the toggle
 - [ ] Location page: map iframe loads, address shows in current language
 - [ ] "Get Directions" button opens Google Maps
 - [ ] Contact page: WhatsApp block opens wa.me, phone link works, Instagram/email hidden if empty
 - [ ] Floating WhatsApp button visible on all pages, moves to left side in RTL
 - [ ] Footer copyright year is current
-- [ ] Mobile 375px: no horizontal scroll, hamburger menu opens cleanly
-- [ ] Mobile 768px: nav links visible, no overflow issues
+- [ ] Mobile 320–430px: no horizontal scroll, hamburger menu opens cleanly
 - [ ] Keyboard navigation: gold focus ring visible on all interactive elements
+- [ ] Page-to-page navigation shows the Portal transition (or its low-motion
+      fallback under `prefers-reduced-motion`) with no loading dots and no
+      flash of the wrong language
+- [ ] Turning off a browser/OS internet connection mid-navigation shows a
+      plain "temporarily unavailable" state — never the bundled demo menu
+      prices/contact details presented as if real
+
+**Admin**
+- [ ] `/admin` while signed out redirects to `/admin/login.html`
+- [ ] Wrong password shows a generic error (never reveals whether the email exists)
+- [ ] Sign in → Menu / Settings load; Sign Out returns to a signed-out state
+- [ ] Save a Settings field → Admin Preview and the public site both reflect it
+- [ ] Add / edit / delete a product and a category; Preview and public Menu match
+- [ ] Replace the hero, logo, and a product image; the previous image keeps
+      working if you reload before saving (nothing is deleted early)

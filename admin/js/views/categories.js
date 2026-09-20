@@ -375,7 +375,7 @@ window.AdminViews.categories = (function () {
       }
     } catch (err) {
       console.error('[categories view] rename failed:', err);
-      showToast('Rename failed: ' + (err && err.message ? err.message : err), 'error');
+      showToast(friendlyDbError(err, 'Rename failed. Please try again.'), 'error', 5500);
     } finally {
       savingEdit = false;
       var b2 = q('#cat-list [data-role="cat-save"]');
@@ -428,7 +428,7 @@ window.AdminViews.categories = (function () {
       else ctx.preview.refreshCatalog();
     } catch (err) {
       console.error('[categories view] add failed:', err);
-      showToast('Error: ' + (err && err.message ? err.message : err), 'error');
+      showToast(friendlyDbError(err, 'Could not add category. Please try again.'), 'error', 5500);
     } finally {
       savingAdd = false;
       var b2 = q('#add-cat-btn');
@@ -458,13 +458,13 @@ window.AdminViews.categories = (function () {
         ctx.db.from('categories').update({ sort_order: newIdx }).eq('id', a.id),
       ]);
       var bad = results.find(function (r) { return r.error; });
-      if (bad) { showToast('Reorder failed: ' + bad.error.message, 'error'); await loadAll(); return; }
+      if (bad) { console.error('[categories view] reorder failed:', bad.error); showToast(friendlyDbError(bad.error, 'Reorder failed. Please try again.'), 'error', 5500); await loadAll(); return; }
       b.sort_order = idx;
       a.sort_order = newIdx;
       if (ctx && ctx.preview) ctx.preview.refreshCatalog();
     } catch (err) {
       console.error('[categories view] reorder failed:', err);
-      showToast('Reorder failed: ' + (err && err.message ? err.message : err), 'error');
+      showToast(friendlyDbError(err, 'Reorder failed. Please try again.'), 'error', 5500);
       await loadAll();
     } finally {
       reordering = false;
@@ -494,8 +494,8 @@ window.AdminViews.categories = (function () {
     closeConfirm();
     var res = await ctx.db.from('categories').delete().eq('id', id);
     if (res.error) {
-      // e.g. a FK RESTRICT constraint — surface the DB's own explanation.
-      showToast('Delete failed: ' + res.error.message, 'error');
+      console.error('[categories view] delete failed:', res.error);
+      showToast(friendlyDbError(res.error, 'Delete failed. Please try again.'), 'error', 5500);
       return;
     }
     showToast('Category deleted.', 'success');

@@ -189,8 +189,14 @@
     };
 
     // Restaurant row and catalog fetched in parallel, same as before.
+    // Reads `restaurants_public` — a column-limited VIEW (see
+    // supabase/migrations/001_restaurants_public_view.sql), NOT the base
+    // `restaurants` table. RLS protects rows, not columns; the base
+    // table's owner_id (and any future internal-only column) must never
+    // be reachable by an anonymous caller, including one that bypasses
+    // this file and queries PostgREST directly (milestone 1O §5).
     const [rRes, catalog] = await Promise.all([
-      fetch(base + '/restaurants?id=eq.' + RESTAURANT_ID + '&select=*', { headers: h }),
+      fetch(base + '/restaurants_public?id=eq.' + RESTAURANT_ID + '&select=*', { headers: h }),
       fetchCatalog(base, h),
     ]);
 
@@ -475,8 +481,26 @@
       'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);' +
       'background:var(--card-bg,#1e1c18);color:var(--text-muted,#9a9585);' +
       'padding:28px 36px;border-radius:12px;text-align:center;font-size:14px;' +
-      'border:1px solid var(--border,#3a3529);z-index:9999;max-width:340px;line-height:1.7';
+      'border:1px solid var(--border,#3a3529);max-width:340px;line-height:1.7;' +
+      // Above BOTH the Portal FX layer (100000) and the plain safety cover
+      // (99999, css/style.css) — on a failed INTERNAL navigation those are
+      // still mid fade-out when this appears (finishPageEntry() below
+      // releases them), and this notice must be immediately, unambiguously
+      // visible rather than waiting behind that animation (1O.1 §3/§5).
+      'z-index:200000';
     el.innerHTML = '<div style="font-size:28px;margin-bottom:12px">⚠</div>' + msg;
+    // Small, safe (own DOM node + addEventListener, no inline handler),
+    // clickable way to act on "please refresh" beyond waiting for the
+    // visitor to find their browser's own reload control (1O.1 §4).
+    var retry = document.createElement('button');
+    retry.type = 'button';
+    retry.textContent = '↻ Refresh / تحديث';
+    retry.style.cssText =
+      'margin-top:16px;padding:8px 20px;border-radius:999px;border:none;' +
+      'background:var(--accent,#d4af65);color:#1a1710;font-weight:600;' +
+      'font-size:13px;cursor:pointer;font-family:inherit';
+    retry.addEventListener('click', function () { window.location.reload(); });
+    el.appendChild(retry);
     document.body.appendChild(el);
   }
 
@@ -1210,7 +1234,8 @@
     setText('loc-weekends', shopHours(lang, 'weekends'));
 
     const dirBtn = document.getElementById('directions-btn');
-    if (dirBtn && SHOP.mapDirections) dirBtn.href = SHOP.mapDirections;
+    const safeDirections = safeHttpUrl(SHOP.mapDirections);
+    if (dirBtn && safeDirections) dirBtn.href = safeDirections;
 
     applyLocationVisual(lang);
   }
@@ -1220,7 +1245,9 @@
   // whole presentation (map vs image, contain vs cover, focal point, zoom,
   // blurred filler). Falls back to the map whenever the image can't be used;
   // hides the block only if neither a map nor an image is configured.
-  // DOM/CSSOM APIs only — no innerHTML.
+  // DOM/CSSOM APIs only — no innerHTML. Both owner-configurable URLs
+  // (mapEmbed iframe src, mapDirections href) go through safeHttpUrl() —
+  // a stray javascript:/data: value in Settings must never reach the DOM.
   function applyLocationVisual(lang) {
     const visual  = document.querySelector('.loc-visual');
     const mapWrap = document.getElementById('loc-map-wrap');
@@ -1230,13 +1257,14 @@
     const frame   = document.getElementById('map-frame');
     if (!mapWrap && !imgLink) return;
 
-    const hasMap = !!(SHOP.mapEmbed && String(SHOP.mapEmbed).trim());
+    const safeEmbed = safeHttpUrl(SHOP.mapEmbed);
+    const hasMap = !!safeEmbed;
     const url = (SHOP.locationVisualMode === 'image' && typeof SHOP.locationImage === 'string')
       ? SHOP.locationImage.trim() : '';
 
     // Keep the map iframe loaded whenever a map is configured — in EITHER mode —
     // so an image→map fallback is instant and never flashes an empty frame.
-    if (frame && hasMap && frame.getAttribute('src') !== SHOP.mapEmbed) frame.src = SHOP.mapEmbed;
+    if (frame && hasMap && frame.getAttribute('src') !== safeEmbed) frame.src = safeEmbed;
 
     // §8: the whole block is in layout unless there is NEITHER a usable map NOR
     // a usable image. This is decided HERE from data only — never from an
@@ -1275,7 +1303,7 @@
       imgLink.style.setProperty('--loc-zoom', fit === 'contain' ? '1' : String(zoom));
     }
 
-    const dest = SHOP.mapDirections || '';
+    const dest = safeHttpUrl(SHOP.mapDirections);
     if (dest) { imgLink.href = dest; imgLink.setAttribute('aria-label', t('location.viewOnMaps') || 'View on Google Maps'); }
     else      { imgLink.removeAttribute('href'); imgLink.removeAttribute('aria-label'); }  // shown, not clickable
     const badge = document.getElementById('loc-image-badge-text');
@@ -1735,6 +1763,19 @@
     if (!isFinite(n)) return dflt;
     return n < min ? min : (n > max ? max : n);
   }
+  // Owner-configurable destinations (Google Maps embed src / directions
+  // href) are free-text DB fields — never allow them to reach an href/src
+  // as a javascript: or data: URI. Returns the URL unchanged only if it
+  // parses as a plain http(s) destination, else '' (treated as absent by
+  // every call site). No general sanitizer — just a protocol allowlist for
+  // exactly the two owner-configurable URL fields that reach the DOM raw.
+  function safeHttpUrl(url) {
+    if (!url || typeof url !== 'string') return '';
+    try {
+      var u = new URL(url, window.location.href);
+      return (u.protocol === 'http:' || u.protocol === 'https:') ? url : '';
+    } catch (e) { return ''; }
+  }
 
   // Run whichever page-specific renderer the public site normally uses for this
   // document. Reused for the first Admin-preview paint AND every later draft
@@ -2092,13 +2133,22 @@
       } catch (err) {
         if (!arrivedSilently) hideLoading();
         console.error('[app.js] Supabase load error:', err);
-        // Render the bundled static fallback content (config/shop.js /
-        // config/products.js — untouched by the failed fetch) through the
-        // SAME localized pipeline before revealing anything, so a load
-        // failure can never expose the raw, untranslated English markup
-        // underneath the error notice (§32 — no wrong-language content, even
-        // on failure).
-        renderShell(lang);
+        // 1O §15: config/shop.js + config/products.js are DEMO PLACEHOLDER
+        // business data (fake phone/WhatsApp/address/hours/menu prices) —
+        // Admin Settings/Menu only ever write to the DATABASE, so these
+        // bundled files stay frozen at their original placeholder values
+        // forever, even long after a real launch. A prior version of this
+        // catch block rendered them through the normal page pipeline on
+        // every failure so the destination was never caught mid-translation
+        // — but that also means ANY future outage, no matter how long after
+        // launch, would present the ORIGINAL placeholder contact details and
+        // menu to a real customer as if current. Hide the real content
+        // outright instead of selectively blanking each unsafe field —
+        // #page-content is a sibling of the error box below (never a
+        // parent), so hiding it cannot hide the notice itself, and it
+        // needs no translation since it is not perceivable either way.
+        var pc = document.getElementById('page-content');
+        if (pc) pc.style.visibility = 'hidden';
         releaseI18nGuard();
         showAppError(
           'فشل تحميل المحتوى. يرجى تحديث الصفحة.<br/>' +
