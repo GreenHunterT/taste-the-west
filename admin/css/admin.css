@@ -276,7 +276,7 @@ img { max-width: 100%; display: block; }
 .live-preview__title { font-size: 15px; font-weight: 600; color: var(--atext); }
 .live-preview__hint { font-size: 11.5px; color: var(--amuted); flex: 1 1 auto; }
 
-/* Grouped, labelled preview controls (Page / Device / Language / Theme / View).
+/* Grouped, labelled preview controls (Page / Device / Language).
    Wrap cleanly; never one giant unreadable row. */
 .live-preview__controls {
   display: flex; flex-wrap: wrap; align-items: flex-end;
@@ -319,7 +319,6 @@ img { max-width: 100%; display: block; }
   border: 1px solid var(--aborder);
   border-radius: 8px;
 }
-.live-preview__stage[data-theme="light"] { background: #f4f1ea; }
 .lp-viewport {
   position: relative;           /* frames are absolutely stacked inside */
   overflow: hidden;             /* trims only the frames' invisible scaled-away
@@ -343,16 +342,11 @@ img { max-width: 100%; display: block; }
     radial-gradient(120% 78% at 50% 0%, rgba(255,255,255,.035), transparent 62%),
     #100e0c;
 }
-.live-preview__stage[data-device="mobile"][data-theme="light"] {
-  background:
-    radial-gradient(120% 78% at 50% 0%, rgba(0,0,0,.045), transparent 62%),
-    #e9e4d9;
-}
 .live-preview__stage[data-device="mobile"] .lp-viewport {
   border-radius: 12px;
   box-shadow:
     0 0 0 2px #17150f,                     /* screen edge */
-    0 0 0 11px #0a0908,                    /* matte bezel — always dark, both preview themes */
+    0 0 0 11px #0a0908,                    /* matte bezel */
     0 0 0 12px rgba(255, 255, 255, .06),   /* faint bezel highlight */
     0 12px 34px -10px rgba(0, 0, 0, .55);  /* restrained lift */
 }

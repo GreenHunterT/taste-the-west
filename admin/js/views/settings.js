@@ -135,7 +135,7 @@ window.AdminViews.settings = (function () {
 
   // Segmented-control sync for this view's OWN toggles (data-loc-visual /
   // data-loc-fit / data-loc-height). The preview engine syncs its own
-  // Page / Device / Language / Theme / View controls (shell chrome).
+  // Page / Device / Language controls (shell chrome).
   function syncSeg(attr, value) {
     root.querySelectorAll('.lp-seg__btn[' + attr + ']').forEach(function (btn) {
       var isOn = btn.getAttribute(attr) === value;
@@ -407,7 +407,7 @@ window.AdminViews.settings = (function () {
 
   // Draft "restaurants row" from the current UNSAVED form values + statistics
   // + branding selection. Only public-facing fields — no owner_id / id /
-  // timestamps. The controller wraps this with the authoritative lang + theme.
+  // timestamps. The controller wraps this with the authoritative lang.
   function buildRestaurantDraft() {
     var r = ctx.restaurant || null;
     var soundsEl = $('sounds_enabled');
@@ -659,7 +659,7 @@ window.AdminViews.settings = (function () {
 
   // "Does the editor hold ANY value that differs from the current saved
   // restaurant?" — used by both the shell navigation guard and the badge.
-  // Preview UI state (page / language / theme / device / zoom) is NEVER counted.
+  // Preview UI state (page / language / device / zoom) is NEVER counted.
   function isDirty() {
     if (!settingsReady || !ctx || ctx.restaurantLoadState !== 'ready') return false;
     var r = ctx.restaurant;

@@ -11,8 +11,53 @@
   <meta property="og:image"       content="" />
   <meta property="og:url"         content="" />
   <meta name="twitter:card"       content="summary_large_image" />
-  <!-- Anti-FOUC: apply theme + lang before first paint -->
-  <script>!function(){var t=localStorage.getItem('souqsite_theme')||'dark',l=localStorage.getItem('souqsite_language')||'ar';if(t==='light')document.documentElement.setAttribute('data-theme','light');document.documentElement.lang=l;document.documentElement.dir=l==='ar'?'rtl':'ltr';}();</script>
+  <!-- Anti-FOUC: apply lang/dir before first paint. The site has ONE
+       canonical visual design — no light/dark switch (milestone 1N v4). -->
+  <script>!function(){var l=localStorage.getItem('souqsite_language')||'ar';document.documentElement.lang=l;document.documentElement.dir=l==='ar'?'rtl':'ltr';
+
+  /* 1N-v4 I18N PRE-PAINT GUARD. Real-browser testing of the v3 aperture
+     (below) found it could still let ONE compositor frame of the raw
+     English static-fallback markup slip through on a fresh document's first
+     paint — a transform is a composited property, the plain body content
+     underneath it is not, so there's a genuine GPU layer-promotion gap
+     between them. Not a JS timing bug, and not fixable by tuning animation
+     speed (a 0ms aperture has the same gap). The fix is independent of the
+     aperture entirely: whenever the persisted/default language is Arabic,
+     add `i18n-pending` — css/style.css holds `body` at a boolean, non-
+     composited `visibility: hidden` while it's present, which has no such
+     gap. Released only by js/app.js's boot(), strictly AFTER
+     applyTranslations()/applyShopContent() have run for the currently
+     rendered shell (see releaseI18nGuard()). Applies to EVERY load that
+     could show the English fallback — cold, direct, refreshed, or via a
+     transition — never just the transition case. English needs no guard at
+     all: the static fallback text already IS English. If js/app.js fails to
+     run at all, css/style.css's own failsafe reveals the page after a few
+     seconds rather than trapping the visitor forever. */
+  if(l==='ar')document.documentElement.classList.add('i18n-pending');
+
+  /* 1N-v3 gate prepaint: close the aperture INSTANTLY, before any other
+     CSS/JS, whenever this document arrived via an intercepted internal link
+     click (js/app.js sets the marker right before navigating) — purely a
+     cosmetic animation now; language correctness is the i18n guard's job,
+     above, not this class's. The marker is consumed immediately so a
+     refresh can never replay a stuck gate. A 900ms hard ceiling guarantees
+     the animation is never trapped active even if the rest of js/app.js
+     fails to load or throws. */
+  var enter=false;
+  try{if(sessionStorage.getItem('ttw_page_transition')==='1'){sessionStorage.removeItem('ttw_page_transition');enter=true;}}catch(e){}
+  if(enter)document.documentElement.classList.add('is-page-entering');
+  addEventListener('pageshow',function(e){
+    document.documentElement.classList.remove('is-page-leaving');
+    if(e.persisted){
+      // BFCache restores an already-rendered, already-correct-language page —
+      // neither guard may come back stuck.
+      document.documentElement.classList.remove('is-page-entering');
+      document.documentElement.classList.remove('i18n-pending');
+      try{sessionStorage.removeItem('ttw_page_transition');}catch(x){}
+    }
+  });
+  setTimeout(function(){document.documentElement.classList.remove('is-page-entering');},900);
+  }();</script>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🍕</text></svg>" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -21,6 +66,24 @@
   <title>Taste The West — A Different Kind of Pizza</title>
 </head>
 <body data-page="home">
+
+  <!-- Decorative only — see css/style.css "PORTAL FX LAYER" + js/app.js.
+       Inert/never active under ?adminPreview=1. -->
+  <div id="page-transition-fx" aria-hidden="true">
+    <span class="ptfx-plate ptfx-plate--top"></span>
+    <span class="ptfx-plate ptfx-plate--bottom"></span>
+    <span class="ptfx-rail ptfx-rail--left"></span>
+    <span class="ptfx-rail ptfx-rail--right"></span>
+    <span class="ptfx-seam"></span>
+  </div>
+
+  <!-- Everything the visitor actually reads/uses lives in here — kept
+       structurally SEPARATE from #page-transition-fx above (a sibling, not
+       a parent) specifically so the transition's depth response
+       (transform/filter on THIS element, see css/style.css) can never
+       blur or clip the decorative FX layer, which must stay crisp and
+       full-viewport throughout. -->
+  <div id="page-content">
 
   <!-- ── NAVIGATION ── -->
   <header class="nav-header" id="site-header">
@@ -44,17 +107,10 @@
           <span class="lang-sep" aria-hidden="true">·</span>
           <button class="lang-btn" data-lang="ar" aria-label="التبديل إلى العربية" lang="ar">عربية</button>
         </div>
-        <!-- Theme toggle -->
-        <button class="theme-btn" id="theme-btn" aria-label="Toggle light / dark theme">
-          <svg class="icon-sun" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/>
-            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
-            <line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/>
-            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
-          </svg>
-          <svg class="icon-moon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/>
-          </svg>
+        <!-- Sound toggle -->
+        <button class="sound-btn" id="sound-btn" aria-pressed="true" aria-label="Sound on" title="Sound on">
+          <svg class="icon-vol" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
+          <svg class="icon-mute" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>
         </button>
         <!-- Hamburger — mobile only -->
         <button class="nav-toggle" id="nav-toggle" aria-label="Open menu" aria-expanded="false">
@@ -82,7 +138,7 @@
   <section class="hero" id="hero" aria-labelledby="hero-name">
     <div class="hero-bg" id="hero-bg"></div>
     <div class="hero-overlay" aria-hidden="true"></div>
-    <div class="hero-content container">
+    <div class="hero-content container reveal-grid">
       <p class="hero-eyebrow" data-t="hero.eyebrow">Welcome to</p>
       <h1 class="hero-name" id="hero-name">Taste The West</h1>
       <div class="hero-divider" aria-hidden="true"></div>
@@ -166,6 +222,8 @@
   <a href="#" class="wa-float" data-wa-link aria-label="Chat on WhatsApp">
     <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
   </a>
+
+  </div><!-- /#page-content -->
 
   <script src="config/supabase.js"></script>
   <script src="config/shop.js"></script>

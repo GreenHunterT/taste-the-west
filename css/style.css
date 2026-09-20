@@ -1,6 +1,6 @@
 /* =================================================================
    SOUQSITE — Premium Shop Template  v1.1
-   Theme  : CSS custom properties, dark default / light override
+   Design : CSS custom properties, one canonical dark design (no theme switch)
    Fonts  : Cormorant Garamond (display) · Cairo (UI + Arabic)
    Layout : Mobile-first, fluid type, CSS Grid / Flex
    RTL    : add dir="rtl" on <html> — layout mirrors automatically
@@ -16,14 +16,14 @@ ul { list-style: none; }
 
 /* ── DESIGN TOKENS ───────────────────────────────────────────────── */
 :root {
-  /* ─ Fixed — same in every theme ─ */
+  /* ─ Brand accents ─ */
   --gold:       #b8943f;
   --gold-light: #d4af65;
   --wa:         #25d366;
   --wa-dark:    #1da851;
   --nav-dark:   #0e0d0b;   /* nav, footer, CTA strips — always dark */
 
-  /* ─ DARK THEME (default) ─ */
+  /* ─ Palette — the site's one canonical design, no theme switch ─ */
   --bg:         #1c1914;
   --bg-alt:     #222019;
   --surface:    #2b2820;
@@ -48,7 +48,7 @@ ul { list-style: none; }
   --r-lg:   18px;
   --r-full: 9999px;
 
-  /* ─ Shadows (theme-aware depth) ─ */
+  /* ─ Shadows ─ */
   --sh-sm: 0 1px 4px rgba(0,0,0,.25);
   --sh-md: 0 4px 16px rgba(0,0,0,.35);
   --sh-lg: 0 8px 32px rgba(0,0,0,.45);
@@ -56,22 +56,7 @@ ul { list-style: none; }
   /* ─ Transitions ─ */
   --t-fast: .15s ease;
   --t:      .25s ease;
-  --t-slow: .4s ease;
-}
-
-/* ── LIGHT THEME ─────────────────────────────────────────────────── */
-[data-theme="light"] {
-  --bg:         #faf9f7;
-  --bg-alt:     #f3efe9;
-  --surface:    #ffffff;
-  --text:       #2c2a25;
-  --text-muted: #7a7570;
-  --border:     #e8e2d8;
-  --accent:     #b8943f;
-  --gold-pale:  #f8f0dc;
-  --sh-sm: 0 1px 4px rgba(26,24,20,.06);
-  --sh-md: 0 4px 16px rgba(26,24,20,.10);
-  --sh-lg: 0 8px 32px rgba(26,24,20,.16);
+  --t-slow: .22s ease;
 }
 
 /* ── BASE ────────────────────────────────────────────────────────── */
@@ -82,18 +67,36 @@ body {
   color: var(--text);
   background: var(--bg);
   overflow-x: hidden;
+  /* opacity here is used only by the lang-fade dip just below — the page-
+     transition depth response (milestone 1N v6) targets #page-content
+     instead, specifically so it never shares a containing block with
+     #page-transition-fx (both are children of body, but only #page-content
+     gets transform/filter — see the PORTAL FX section further down for why
+     that separation matters). */
+  transition: background-color var(--t), color var(--t),
+              opacity .32s cubic-bezier(.22,1,.36,1);
 }
+/* Brief dip while setLanguage() swaps text/direction underneath (js/app.js) —
+   restrained enough not to read as a loading state. Its own faster timing:
+   this is a UI acknowledgement, not a page-entrance settle. */
+body.lang-fade { opacity: .78; transition: opacity .12s ease; }
 
 h1, h2, h3, h4 {
   font-family: var(--f-display);
   font-weight: 600;
   line-height: 1.15;
   color: var(--text);
+  transition: color var(--t);
 }
-[data-theme="light"] h1,
-[data-theme="light"] h2,
-[data-theme="light"] h3,
-[data-theme="light"] h4 { color: #1a1814; }
+
+/* Smooths any dynamic background/text-colour change on these surfaces.
+   Targeted properties only — never `transition: all` — and never
+   layout-affecting ones (width/height/position). (.nav-header already
+   declares its own transition further down — merged there instead of
+   duplicated here, so the cascade can't drop either half.) */
+.footer, .cta-strip, .section, .bg-alt {
+  transition: background-color var(--t), color var(--t), border-color var(--t);
+}
 
 p { line-height: 1.7; }
 
@@ -154,7 +157,8 @@ p { line-height: 1.7; }
   font-weight: 600;
   letter-spacing: .04em;
   cursor: pointer;
-  transition: all var(--t);
+  transition: background-color .16s ease, color .16s ease, border-color .16s ease,
+              box-shadow .16s ease, transform .16s ease, filter .16s ease;
   white-space: nowrap;
   line-height: 1;
 }
@@ -198,7 +202,7 @@ p { line-height: 1.7; }
   inset-block-start: 0;
   inset-inline: 0;
   z-index: 100;
-  transition: background var(--t), box-shadow var(--t);
+  transition: background var(--t), box-shadow var(--t), color var(--t), border-color var(--t);
 }
 .nav-header.transparent { background: transparent; }
 .nav-header.scrolled    { background: var(--nav-dark); box-shadow: 0 2px 20px rgba(0,0,0,.3); }
@@ -264,7 +268,7 @@ p { line-height: 1.7; }
 .nav-link:hover, .nav-link.active { color: var(--gold-light); }
 .nav-link:hover::after, .nav-link.active::after { transform: scaleX(1); }
 
-/* ── NAV CONTROLS (lang + theme + hamburger) ─────────────────────── */
+/* ── NAV CONTROLS (lang + sound + hamburger) ───────────────────────── */
 .nav-controls {
   display: flex;
   align-items: center;
@@ -302,8 +306,10 @@ p { line-height: 1.7; }
   pointer-events: none;
 }
 
-/* Theme toggle button */
-.theme-btn {
+/* Sound toggle — visible on mobile AND desktop (not the desktop-only
+   .lang-toggle). Hidden entirely (native [hidden]) when the owner has turned
+   off Customer Site Sounds — never shown claiming sound is available. */
+.sound-btn {
   width: 34px;
   height: 34px;
   border-radius: 50%;
@@ -313,13 +319,11 @@ p { line-height: 1.7; }
   color: rgba(255,255,255,.6);
   transition: color var(--t-fast), background var(--t-fast);
 }
-.theme-btn:hover { color: var(--gold-light); background: rgba(255,255,255,.08); }
-
-/* Show sun in dark (click → go light), moon in light (click → go dark) */
-.icon-sun  { display: block; }
-.icon-moon { display: none; }
-[data-theme="light"] .icon-sun  { display: none; }
-[data-theme="light"] .icon-moon { display: block; }
+.sound-btn:hover { color: var(--gold-light); background: rgba(255,255,255,.08); }
+.icon-vol  { display: block; }
+.icon-mute { display: none; }
+.sound-btn[aria-pressed="false"] .icon-vol  { display: none; }
+.sound-btn[aria-pressed="false"] .icon-mute { display: block; }
 
 /* Hamburger — mobile only */
 .nav-toggle {
@@ -335,7 +339,7 @@ p { line-height: 1.7; }
   width: 22px;
   height: 1.5px;
   background: rgba(255,255,255,.8);
-  transition: all var(--t-fast);
+  transition: transform var(--t-fast), opacity var(--t-fast);
   transform-origin: center;
 }
 .nav-toggle.open span:nth-child(1) { transform: translateY(6.5px) rotate(45deg); }
@@ -351,9 +355,10 @@ p { line-height: 1.7; }
   gap: 4px;
   max-height: 0;
   overflow: hidden;
-  transition: max-height var(--t-slow), padding var(--t-slow);
+  opacity: 0;
+  transition: max-height var(--t-slow), padding var(--t-slow), opacity var(--t);
 }
-.nav-mobile.open { max-height: 460px; padding-block: 16px; }
+.nav-mobile.open { max-height: 460px; padding-block: 16px; opacity: 1; }
 
 .nav-mobile .nav-link { font-size: 13px; display: block; padding-block: 8px; }
 
@@ -591,7 +596,7 @@ p { line-height: 1.7; }
   object-fit: cover;
   transition: transform .55s ease;
 }
-.product-card:hover .product-img img { transform: scale(1.06); }
+.product-card:hover .product-img img { transform: scale(1.03); }
 
 .product-cat-badge {
   position: absolute;
@@ -653,7 +658,7 @@ p { line-height: 1.7; }
   border: 1.5px solid var(--border);
   color: var(--text-muted);
   background: var(--surface);
-  transition: all var(--t-fast);
+  transition: border-color var(--t-fast), color var(--t-fast), background-color var(--t-fast);
 }
 .filter-btn:hover { border-color: var(--text); color: var(--text); }
 .filter-btn.active {
@@ -1054,26 +1059,31 @@ p { line-height: 1.7; }
 .wa-float:hover { transform: scale(1.12); box-shadow: 0 6px 28px rgba(37,211,102,.6); }
 
 /* ── REVEAL ANIMATIONS ───────────────────────────────────────────── */
+/* A polished ease-out curve (decelerate, no overshoot) for every reveal —
+   restrained, not bouncy. Hero content reuses `.reveal-grid` too (its
+   children are always in-viewport at load, so the IntersectionObserver
+   marks it `.visible` within a frame or two — an "almost immediate"
+   entrance, not a scroll-gated one). */
 .reveal {
   opacity: 0;
-  transform: translateY(22px);
-  transition: opacity .65s ease, transform .65s ease;
+  transform: translateY(16px);
+  transition: opacity .55s cubic-bezier(.22,1,.36,1), transform .55s cubic-bezier(.22,1,.36,1);
 }
 .reveal.visible { opacity: 1; transform: translateY(0); }
 
 .reveal-grid > * {
   opacity: 0;
-  transform: translateY(20px);
-  transition: opacity .5s ease, transform .5s ease;
+  transform: translateY(16px);
+  transition: opacity .5s cubic-bezier(.22,1,.36,1), transform .5s cubic-bezier(.22,1,.36,1);
 }
 .reveal-grid.visible > *:nth-child(1) { transition-delay: 0s; }
-.reveal-grid.visible > *:nth-child(2) { transition-delay: .08s; }
-.reveal-grid.visible > *:nth-child(3) { transition-delay: .16s; }
-.reveal-grid.visible > *:nth-child(4) { transition-delay: .24s; }
-.reveal-grid.visible > *:nth-child(5) { transition-delay: .32s; }
-.reveal-grid.visible > *:nth-child(6) { transition-delay: .40s; }
-.reveal-grid.visible > *:nth-child(7) { transition-delay: .48s; }
-.reveal-grid.visible > *:nth-child(8) { transition-delay: .56s; }
+.reveal-grid.visible > *:nth-child(2) { transition-delay: .055s; }
+.reveal-grid.visible > *:nth-child(3) { transition-delay: .11s; }
+.reveal-grid.visible > *:nth-child(4) { transition-delay: .165s; }
+.reveal-grid.visible > *:nth-child(5) { transition-delay: .22s; }
+.reveal-grid.visible > *:nth-child(6) { transition-delay: .275s; }
+.reveal-grid.visible > *:nth-child(7) { transition-delay: .33s; }
+.reveal-grid.visible > *:nth-child(8) { transition-delay: .385s; }
 .reveal-grid.visible > * { opacity: 1; transform: translateY(0); }
 
 /* ── KEYFRAMES ───────────────────────────────────────────────────── */
@@ -1088,6 +1098,339 @@ p { line-height: 1.7; }
 @keyframes scrollPulse {
   0%,100% { opacity: .3;  transform: scaleY(1);   }
   50%      { opacity: .75; transform: scaleY(.65); }
+}
+
+/* ── I18N PRE-PAINT GUARD (milestone 1N v4) ──────────────────────────
+   Independent of the aperture below, and deliberately OUTSIDE any
+   prefers-reduced-motion query — this must hold even with all animation
+   disabled (§33). Real-browser testing of the v3 aperture found it could
+   still let ONE compositor frame of the raw English static-fallback markup
+   slip through on a fresh document's first paint: `transform` is a
+   composited property, and the plain body content underneath it is not, so
+   there is a genuine GPU layer-promotion timing gap between them — not a JS
+   timing bug, and not fixable by tuning animation speed (a 0ms aperture
+   would have the same gap). `visibility` has no such gap: it is a boolean,
+   non-composited property, so `html.i18n-pending #page-content` is
+   guaranteed hidden from the very first frame with nothing to promote. The
+   <head> script (see index.html) adds `i18n-pending` whenever the
+   persisted/default language is Arabic — for every load that could show
+   the English fallback, cold or via a transition — and js/app.js's boot()
+   removes it only once real translations are on screen. `html`'s own
+   background keeps the page reading as the site's native dark surface
+   (never the browser's default canvas) while content is hidden. English
+   never sets this class: its static fallback text is already correct.
+   Targets `#page-content` specifically, NOT `body` (milestone 1N v6): the
+   decorative #page-transition-fx Portal layer is now also a direct child
+   of body (a sibling of #page-content, see the PORTAL FX section below) and
+   must stay visible/active regardless of the language guard — it carries
+   no text at all, so it was never part of what needed hiding. 404.html has
+   no #page-transition-fx, but keeps the same #page-content wrapper purely
+   so this one shared rule still applies there too.
+   Failsafe: if js/app.js never runs at all (script failure), reveal the
+   page after a few seconds rather than trapping the visitor forever (§32) —
+   in every normal case JS releases the guard in well under a second. */
+html { background: var(--nav-dark); }
+html.i18n-pending #page-content {
+  visibility: hidden;
+  animation: i18nFailsafeReveal 0s 6s forwards;
+}
+@keyframes i18nFailsafeReveal { to { visibility: visible; } }
+
+/* ── PAGE TRANSITION SAFETY COVER (milestone 1N v6) ──────────────────
+   v5's two-panel html::before/::after SLIDE was rejected on real-device
+   testing: for the entire "closed" hold (however long boot() actually
+   takes), the visitor stared at a flat, fully-opaque brand-dark rectangle
+   with nothing on it but a thin gold line — an interstitial "third page,"
+   not a transformation. The fix separates two responsibilities that v3-v5
+   kept bundled into these same elements:
+     (1) SAFETY — guarantee zero white/English/raw-document flash, ever,
+         from the very first possible paint (a <head>-script class on
+         <html>, so it exists before body even parses). This must be
+         reachable with NO dependency on body markup, JS execution order,
+         or CSS having fully loaded, because it is the backstop of last
+         resort (see the i18n failsafe two blocks up).
+     (2) SHOW — the actual premium "Portal" visual (dark-glass plates, gold
+         accent rails, an energy seam with a light sweep, depth-blurred
+         page content). This is the NEW #page-transition-fx layer (see the
+         PORTAL FX section below), living in <body> on the four public
+         pages, styled ABOVE this safety layer (higher z-index).
+   Because SHOW sits visually on top of SAFETY, and SAFETY only reaches
+   full opacity in the last ~40ms before the actual document swap (§5 of
+   the v6 spec) rather than instantly, whatever the visitor perceives
+   during the transition is the styled dark-glass Portal — not a flat
+   rectangle. A single element now (not two): its only job is "fully
+   opaque or not," so there is nothing left to slide.
+   The background is a soft radial vignette, not a flat single colour —
+   defence in depth for the narrow edge case where this layer is visible
+   before body has parsed far enough to include #page-transition-fx below
+   (e.g. an unusually slow render-blocking font fetch on a first-ever cold
+   load — practically never during real internal navigation, since the
+   same stylesheet is already warm in cache by then). Even alone, this
+   layer should never look like a perfectly flat #0e0d0b rectangle. */
+html::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 99999;
+  pointer-events: none;
+  background: radial-gradient(120% 100% at 50% 50%, #18150f 0%, var(--nav-dark) 72%);
+  opacity: 0;
+}
+
+@media not (prefers-reduced-motion: reduce) {
+  /* Base/open state: fades out quickly once the guard is released — by
+     then the Portal FX layer above is already carrying the visual. */
+  html::before { transition: opacity .07s ease; }
+  /* Outgoing: stays fully transparent for most of the ~200ms close (the
+     Portal FX layer is doing the visible work), then snaps to fully
+     opaque in the LAST 40ms, right as js/app.js navigates — full opacity
+     exists only around the actual cross-document swap, never for the
+     whole transition (§5/§14 of the v6 spec). */
+  html.is-page-leaving::before { opacity: 1; transition: opacity .04s linear .16s; }
+  /* Incoming: the destination's first possible paint must be safe with
+     zero dependency on timing, so this is instant, no transition at all —
+     exactly like v3-v5. */
+  html.is-page-entering::before { opacity: 1; transition: none; }
+}
+
+/* ── PORTAL FX LAYER (milestone 1N v6) ───────────────────────────────
+   The actual "TasteTheWest Portal" visual: dark-glass plates (NOT flat
+   opaque — a translucent brand-dark gradient + backdrop-filter, so the
+   page keeps some silhouette/depth underneath, §8/§19), thin gold accent
+   rails framing the sides (§9), and a center energy seam with a one-shot
+   light sweep near full closure (§10/§11). Lives in <body> on the four
+   public pages (index/products/location/contact — never 404, which was
+   never part of the transition-marker system) as a static, inert
+   `<div id="page-transition-fx" aria-hidden="true">`; driven by the SAME
+   is-page-leaving / is-page-entering classes as the safety cover above —
+   one routing architecture, two coordinated visual layers, never two
+   competing transition systems (§34). `pointer-events: none` throughout:
+   purely decorative, never interactive, never a click target. */
+/* The real page — a sibling of #page-transition-fx, NEVER an ancestor of it.
+   `transform`/`filter` on an ancestor changes the containing block for a
+   `position: fixed` descendant and rasterises it through that ancestor's
+   filter — confirmed by real-browser testing: an earlier version of this
+   milestone applied the depth response directly to <body>, which quietly
+   blurred/clipped #page-transition-fx's rails and seam into invisibility
+   because they were ALSO children of body at the time. Keeping the two as
+   siblings under body, and putting the depth response only here, avoids
+   that trap entirely while still transforming everything the visitor
+   actually reads. */
+#page-content {
+  transition: opacity .32s cubic-bezier(.22,1,.36,1), transform .32s cubic-bezier(.22,1,.36,1),
+              filter .32s cubic-bezier(.22,1,.36,1);
+}
+
+#page-transition-fx, #page-transition-fx * { pointer-events: none; }
+#page-transition-fx {
+  position: fixed;
+  inset: 0;
+  z-index: 100000;   /* above the plain safety cover */
+  overflow: hidden;  /* never a scrollbar source, whatever the geometry does */
+}
+.ptfx-plate {
+  position: absolute;
+  left: 0; right: 0;
+  height: 55%;         /* deliberate slight overlap at center — never a seam gap */
+  opacity: 0;
+}
+@supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
+  /* Constant blur radius (never itself animated — browsers animate
+     backdrop-filter poorly/inconsistently); only opacity/transform move. */
+  .ptfx-plate { backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
+}
+.ptfx-plate--top {
+  top: 0; transform-origin: top;
+  background: linear-gradient(to bottom, rgba(14,13,11,.94) 0%, rgba(20,18,15,.85) 68%, rgba(34,28,20,.6) 100%);
+}
+.ptfx-plate--bottom {
+  bottom: 0; transform-origin: bottom;
+  background: linear-gradient(to top, rgba(14,13,11,.94) 0%, rgba(20,18,15,.85) 68%, rgba(34,28,20,.6) 100%);
+}
+.ptfx-rail {
+  position: absolute;
+  top: 0; bottom: 0;
+  width: clamp(2px, .4vw, 4px);
+  opacity: 0;
+  background: linear-gradient(to bottom, transparent, rgba(212,175,101,.85), transparent);
+  box-shadow: 0 0 10px 1px rgba(212,175,101,.3);
+}
+.ptfx-rail--left  { left: 0; }
+.ptfx-rail--right { right: 0; }
+.ptfx-seam {
+  position: absolute;
+  left: 0; right: 0; top: 50%;
+  height: 2px;
+  transform: translateY(-50%);
+  opacity: 0;
+  background: linear-gradient(to right, transparent, rgba(212,175,101,.95), transparent);
+  box-shadow: 0 0 16px 2px rgba(212,175,101,.5);
+}
+/* The "something advanced happened" light sweep (§11 of v6) — a small
+   bright glint that travels once across the seam near full closure. Pure
+   CSS `@keyframes`, one iteration, no library. */
+.ptfx-seam::after {
+  content: "";
+  position: absolute;
+  top: 50%; left: -20%;
+  width: 20%; height: 6px;
+  transform: translateY(-50%);
+  background: linear-gradient(to right, transparent, rgba(255,244,214,.9), transparent);
+  opacity: 0;
+}
+@keyframes ptfxSweep {
+  0%   { left: -20%; opacity: 0; }
+  15%  { opacity: 1; }
+  85%  { opacity: 1; }
+  100% { left: 100%;  opacity: 0; }
+}
+
+@media not (prefers-reduced-motion: reduce) {
+  /* OPEN — base/unclassed resting state for the FX layer. Same stagger
+     pattern proven in 1N-v5's real-browser testing (small delay + duration
+     difference between top/bottom reads as engineered, not a symmetric
+     wipe); `ease-out`, NOT cubic-bezier(.22,1,.36,1) — that curve's Y
+     control points both sitting at 1 was measured (real capture) to
+     front-load ~90% of visible motion into the first 30% of the duration. */
+  .ptfx-plate--top    { transform: translateY(-100%); transition: transform .34s  ease-out 50ms, opacity .34s  ease-out 50ms; }
+  .ptfx-plate--bottom { transform: translateY(100%);  transition: transform .355s ease-out 65ms, opacity .355s ease-out 65ms; }
+  .ptfx-rail { transition: opacity .3s ease-out 40ms; }
+  .ptfx-seam { transition: opacity .28s ease-out 30ms; }
+
+  /* CLOSE (outgoing): ~200ms, one decisive motion, both plates together —
+     opacity .92 (never fully flat/opaque — the page keeps a soft blurred
+     silhouette through the glass, §4/§8), rails and seam brightening in
+     alongside. The sweep plays once, timed to peak in the final ~80ms
+     before js/app.js navigates (§11 — "near full closure"). */
+  html.is-page-leaving .ptfx-plate--top,
+  html.is-page-leaving .ptfx-plate--bottom {
+    transform: translateY(0); opacity: .92;
+    transition: transform .2s cubic-bezier(.4,0,1,1), opacity .2s cubic-bezier(.4,0,1,1);
+  }
+  html.is-page-leaving .ptfx-rail { opacity: 1; transition: opacity .16s ease-out 20ms; }
+  html.is-page-leaving .ptfx-seam { opacity: 1; transition: opacity .19s ease-out; }
+  html.is-page-leaving .ptfx-seam::after { animation: ptfxSweep .14s linear .06s 1; }
+
+  /* Incoming: destination's first paint starts already in the fully-formed
+     "closed" Portal look — instant, no transition — so there is visual
+     continuity across the document swap instead of a hard cut back to
+     nothing (§3/§9's "navigation occurs while visual continuity is
+     maintained"). Removing is-page-entering (once boot() is ready) reveals
+     the OPEN transition above. */
+  html.is-page-entering .ptfx-plate--top,
+  html.is-page-entering .ptfx-plate--bottom { transform: translateY(0); opacity: .92; transition: none; }
+  html.is-page-entering .ptfx-rail,
+  html.is-page-entering .ptfx-seam { opacity: 1; transition: none; }
+
+  /* Outgoing page depth response (§12): restrained scale/opacity/blur,
+     never a translate — the page recedes, it doesn't slide away. Targets
+     #page-content, not body — see that element's own rule further up for
+     why (keeps #page-transition-fx un-blurred and un-clipped). */
+  html.is-page-leaving #page-content {
+    transform: scale(.985); opacity: .75; filter: blur(1.5px);
+    transition: transform .2s ease, opacity .2s ease, filter .2s ease;
+  }
+  /* Incoming depth response (§13): destination starts slightly receded
+     underneath the Portal, then resolves via #page-content's own .32s
+     transition as the FX layer opens — "emerges from depth," not "appears
+     after a wait." */
+  html.is-page-entering #page-content { transform: scale(.988); opacity: .85; filter: blur(1.5px); }
+}
+
+/* ── REDUCED MOTION ──────────────────────────────────────────────── */
+/* Content stays fully usable and immediately visible — nothing is ever
+   stuck invisible waiting on a transform/observer that never runs. Near-zero
+   durations (not 0) so any transitionend/animationend listener still fires.
+   Correctness fixes (no English flash via the i18n guard above, no loading
+   spinner via js/app.js) are NOT motion-gated — they apply regardless of
+   this preference. */
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+    scroll-behavior: auto !important;
+  }
+  .reveal, .reveal-grid > * {
+    opacity: 1 !important;
+    transform: none !important;
+  }
+  .reveal-grid.visible > * { transition-delay: 0s !important; }
+  .product-card:hover, .product-card:active,
+  .hl-card:hover, .btn:hover, .btn:active,
+  .wa-float:hover { transform: none !important; }
+
+  /* ── LOW-MOTION PORTAL HAND-OFF (milestone 1N v6) ──────────────────
+     "Reduced motion" must never mean "no transition, raw browser reload,"
+     AND it must never mean "revert to the flat-black-plus-line design that
+     v6 exists to fix" (§17 of the v6 spec — reduced motion must belong to
+     the SAME Portal family, same colours/glass/gold, just via opacity
+     instead of physical movement). Every element below — the safety cover
+     AND every Portal FX piece — gets `transform: none` (no slide, no
+     scale, no spatial motion at all) and is driven by opacity/filter only.
+     `!important` is required throughout to win over the blanket
+     `transition-duration: .01ms !important` a few lines up — without it
+     every declaration below would be forced to ~0ms and nothing would ever
+     be visible, which is exactly the "just a flash" failure this whole
+     effort exists to fix. Timing stays deliberately shorter than normal
+     motion (~85ms in / ~130ms out vs ~200ms / ~340-355ms) — less motion
+     means less time, never more (§10 of 1N-v5.1, unchanged here). */
+  html::before {
+    opacity: 0;
+    transition: opacity .13s ease !important;
+  }
+  html.is-page-leaving::before {
+    opacity: 1;
+    transition: opacity .085s ease !important;
+  }
+  html.is-page-entering::before {
+    opacity: 1;
+    transition: none !important;
+  }
+
+  .ptfx-plate, .ptfx-rail, .ptfx-seam { transform: none !important; }
+  .ptfx-plate {
+    opacity: 0;
+    transition: opacity .13s ease !important;
+  }
+  .ptfx-rail, .ptfx-seam {
+    opacity: 0;
+    transition: opacity .12s ease !important;
+  }
+  /* No travelling light sweep under reduced motion — a moving highlight is
+     still spatial motion; the seam communicates "something advanced
+     happened" through its own opacity/glow instead (§16 — opacity/filter
+     only). */
+  .ptfx-seam::after { display: none; }
+
+  html.is-page-leaving .ptfx-plate {
+    opacity: .85;
+    transition: opacity .085s ease !important;
+  }
+  html.is-page-leaving .ptfx-rail,
+  html.is-page-leaving .ptfx-seam {
+    opacity: 1;
+    transition: opacity .07s ease !important;
+  }
+  html.is-page-entering .ptfx-plate {
+    opacity: .85;
+    transition: none !important;
+  }
+  html.is-page-entering .ptfx-rail,
+  html.is-page-entering .ptfx-seam {
+    opacity: 1;
+    transition: none !important;
+  }
+
+  /* Page depth response: opacity + a hint of blur only, per §16's literal
+     "opacity/filter only" — no scale, no translate. Targets #page-content,
+     not body — see that element's own rule further up. */
+  html.is-page-leaving #page-content {
+    opacity: .82; filter: blur(1px);
+    transition: opacity .085s ease !important, filter .085s ease !important;
+  }
+  html.is-page-entering #page-content { opacity: .88; filter: blur(1px); }
 }
 
 /* ── RTL OVERRIDES ───────────────────────────────────────────────── */
@@ -1125,7 +1468,7 @@ p { line-height: 1.7; }
 .product-cat-badge { text-transform: capitalize; }
 
 /* Tactile click feedback — confirms the action without a full animation */
-.btn:active         { transform: translateY(0) scale(.97); transition: transform .06s ease; }
+.btn:active         { transform: translateY(0) scale(.98); transition: transform .12s ease; }
 .filter-btn:active  { transform: scale(.95);               transition: transform .06s ease; }
 .product-card:active { transform: translateY(-2px) scale(.992); }
 

@@ -5,7 +5,7 @@
 //  every editor view. Owns the double-buffered public-page <iframe>
 //  preview: frame lifecycle, navigation generations, the
 //  READY / DATA / APPLIED / ERROR handshake, scale-to-fit geometry,
-//  the Page / Device / Language / Theme / View controls,
+//  the Page / Device / Language controls,
 //  same-origin + known-source + navigation-generation message
 //  validation, PREVIEW_NAVIGATE / FOCUS transport (semantic targets only —
 //  never selectors), the unsaved catalog-draft overlay transport ({products,
@@ -60,8 +60,6 @@ window.LivePreview = (function () {
     let _page   = (opts.initialState && opts.initialState.page)   || 'home';    // requested page (selector reflects it now)
     let _device = (opts.initialState && opts.initialState.device) || 'desktop'; // 'desktop' | 'mobile'
     let _lang   = (opts.initialState && opts.initialState.lang)   || 'en';      // 'en' | 'ar' — authoritative
-    let _theme  = (opts.initialState && opts.initialState.theme)  || 'dark';    // 'dark' | 'light' — authoritative
-    let _zoom   = (opts.initialState && opts.initialState.zoom)   || 'fit';     // 'fit' | '100'
     let _pendingFocus = null;          // { kind, target?, id?, highlight?, behavior? } — fired once the next page is ready
     let _focusRaf = 0;                 // rAF handle: coalesces rapid focus requests to one send per frame
     let _focusQueued = null;
@@ -155,14 +153,10 @@ window.LivePreview = (function () {
     function _syncControls() {
       if (_stage) {
         _stage.dataset.device = _device;
-        _stage.dataset.zoom   = _zoom;
-        _stage.dataset.theme  = _theme;   // themed loading surface (no white flash)
       }
       _syncSeg('data-page',   _page);
       _syncSeg('data-device', _device);
       _syncSeg('data-lang',   _lang);
-      _syncSeg('data-theme',  _theme);
-      _syncSeg('data-zoom',   _zoom);
     }
 
     // Geometry model (scale-to-fit without pre-transform clipping):
@@ -178,11 +172,15 @@ window.LivePreview = (function () {
     //   #lp-stage     — the visible Admin preview area; the only scroll
     //     boundary.
     // Both frames get identical width/height/transform → an exact crossfade
-    // stack. Reads _device, _zoom and the live stage size, so it is correct
-    // after resize, pane switch, Device/View change and page navigation.
-    // The stage's OWN padding is subtracted from the available box — Mobile
-    // mode pads #lp-stage to seat the device frame, and that padding must not
-    // be counted as space the scaled page can occupy.
+    // stack. Reads _device and the live stage size, so it is correct after
+    // resize, pane switch, Device change and page navigation. The stage's
+    // OWN padding is subtracted from the available box — Mobile mode pads
+    // #lp-stage to seat the device frame, and that padding must not be
+    // counted as space the scaled page can occupy.
+    // Fit is the ONLY behaviour (milestone 1N v5 removed the 100%/actual-size
+    // alternative) — scale always shrinks the virtual viewport to whatever
+    // the stage has room for, clamped so it never grows past 1 (never
+    // upscale) or below a legible floor.
     function applyScale() {
       if (!_stage || !_viewport || !_frames.length) return;
       const targetW = VP[_device] || 1024;
@@ -197,9 +195,7 @@ window.LivePreview = (function () {
       const availW = Math.max(rawW - padX, 1);
       const availH = Math.max(rawH - padY, 240);
 
-      const scale = (_zoom === '100')
-        ? 1
-        : Math.max(Math.min(1, availW / targetW), 0.25);
+      const scale = Math.max(Math.min(1, availW / targetW), 0.25);
 
       const fw = targetW + 'px';                        // unscaled virtual width
       const fh = Math.round(availH / scale) + 'px';     // unscaled virtual height (tall)
@@ -213,13 +209,12 @@ window.LivePreview = (function () {
       _viewport.style.height    = Math.round(availH) + 'px';
       _viewport.style.transform = 'none';               // never transform the viewport box
       _stage.dataset.scale = scale.toFixed(3);
-      _stage.dataset.zoom  = _zoom;
       _seenStageW = _stage.clientWidth;                 // raw dims this pass measured
       _seenStageH = _stage.clientHeight;
     }
 
     // Deferred re-scale for size changes that aren't a window resize (narrow
-    // Edit|Preview pane switch, shell editor resize, Device/View change).
+    // Edit|Preview pane switch, shell editor resize, Device change).
     // rAF-coalesced; a no-op when the stage size is unchanged, so a scrollbar
     // toggle can never oscillate.
     function _scheduleScale() {
@@ -241,7 +236,7 @@ window.LivePreview = (function () {
       if (!_draft || !frame || !frame.contentWindow) return;
       frame.contentWindow.postMessage(
         { type: 'PREVIEW_DATA', nav: navId,
-          payload: { restaurant: _draft, lang: _lang, theme: _theme, catalog: _catalogDraft } },
+          payload: { restaurant: _draft, lang: _lang, catalog: _catalogDraft } },
         ORIGIN);
     }
     // Ordinary draft update → refresh the ACTIVE frame in place (no reload,
@@ -433,7 +428,6 @@ window.LivePreview = (function () {
       _previewReady  = false;
       incoming.classList.remove('is-active', 'is-leaving');
       incoming.setAttribute('aria-hidden', 'true');
-      if (_stage) _stage.dataset.theme = _theme;
       applyScale();                            // pre-size so it appears at the right dimensions
       incoming.src = _src(page, _navId);
       _notifyState();                          // requested page changed
@@ -566,16 +560,6 @@ window.LivePreview = (function () {
         // Same-site nav link clicked inside the ACTIVE preview. Validated
         // against the page allow-list; arbitrary paths are ignored.
         if (fromActive && PAGES[msg.page]) { _emit('navigate', { page: msg.page }); showPage(msg.page); }
-      } else if (msg.type === 'PREVIEW_THEME_CHANGE') {
-        // Real in-iframe theme button — keep the parent Theme control in sync.
-        // The child already applied it, so no re-send.
-        if (fromActive && (msg.theme === 'dark' || msg.theme === 'light')) {
-          _theme = msg.theme;
-          _syncControls();
-          if (_stage) _stage.dataset.theme = _theme;
-          _emit('theme-change', { theme: _theme });
-          _notifyState();
-        }
       } else if (msg.type === 'PREVIEW_LANGUAGE_CHANGE') {
         // Real in-iframe language toggle — keep the parent Language control in
         // sync. Child already applied it; no re-send.
@@ -603,7 +587,7 @@ window.LivePreview = (function () {
       }
     }
 
-    // Announce the current display state (page/device/lang/theme/zoom) so a
+    // Announce the current display state (page/device/lang/zoom) so a
     // host can persist it. UI-only — no restaurant data, no navigation.
     function _notifyState() { _emit('state', getState()); }
 
@@ -615,16 +599,6 @@ window.LivePreview = (function () {
     function setLanguage(v) {
       if (v !== 'en' && v !== 'ar') return;
       _lang = v; _syncControls(); applyScale(); _flushActive(); _notifyState();   // re-send draft WITH the new lang
-    }
-    function setTheme(v) {
-      if (v !== 'dark' && v !== 'light') return;
-      _theme = v;
-      if (_stage) _stage.dataset.theme = _theme;
-      _syncControls(); applyScale(); _flushActive(); _notifyState();
-    }
-    function setViewMode(v) {
-      if (v !== 'fit' && v !== '100') return;
-      _zoom = v; _syncControls(); applyScale(); _flushActive(); _notifyState();
     }
 
     // ── Location-image direct-edit capability (explicitly named) ───────
@@ -659,7 +633,7 @@ window.LivePreview = (function () {
     function getState() {
       return {
         page: _page, activePage: _activePage, navigating: !!pendingNav,
-        device: _device, lang: _lang, theme: _theme, zoom: _zoom,
+        device: _device, lang: _lang,
       };
     }
 
@@ -686,17 +660,9 @@ window.LivePreview = (function () {
       scope.querySelectorAll('.lp-seg__btn[data-lang]').forEach(function (b) {
         _bind(b, 'click', function () { setLanguage(b.dataset.lang); });
       });
-      scope.querySelectorAll('.lp-seg__btn[data-theme]').forEach(function (b) {
-        _bind(b, 'click', function () { setTheme(b.dataset.theme); });
-      });
-      scope.querySelectorAll('.lp-seg__btn[data-zoom]').forEach(function (b) {
-        _bind(b, 'click', function () { setViewMode(b.dataset.zoom); });
-      });
     }
 
     // ── Boot ─────────────────────────────────────────────────────────
-    if (_stage) _stage.dataset.theme = _theme;   // themed first-load surface (behind the frames)
-
     // Per-frame load-failure watchers.
     _frames.forEach(function (f) {
       _bind(f, 'error', function () {
@@ -731,8 +697,6 @@ window.LivePreview = (function () {
       setDraft: setDraft,
       setDevice: setDevice,
       setLanguage: setLanguage,
-      setTheme: setTheme,
-      setViewMode: setViewMode,
       refresh: refresh,
       applyScale: applyScale,
       scrollTo: scrollTo,

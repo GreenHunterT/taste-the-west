@@ -32,10 +32,10 @@ SouqSite/
 │   └── translations.js   UI strings in Arabic + English
 │
 ├── css/
-│   └── style.css         All styles (CSS variables, dark/light themes)
+│   └── style.css         All styles (CSS variables, single canonical design)
 │
 ├── js/
-│   └── app.js            Runtime — renders config, handles lang/theme
+│   └── app.js            Runtime — renders config, handles language
 │
 └── assets/
     └── images/           Place shop hero + product photos here
@@ -80,7 +80,6 @@ Copy `SouqSite/` and rename it — e.g. `AlNoor/`.
 ```js
 const SHOP_SETTINGS = {
   defaultLanguage: 'ar',   // 'ar' | 'en'
-  defaultTheme:    'dark', // 'dark' | 'light'
 };
 
 const SHOP = {
@@ -165,7 +164,6 @@ Push to GitHub → Vercel or GitHub Pages picks it up automatically.
 | Key | Values | Default |
 |-----|--------|---------|
 | `souqsite_language` | `'ar'` \| `'en'` | `SHOP_SETTINGS.defaultLanguage` |
-| `souqsite_theme` | `'dark'` \| `'light'` | `SHOP_SETTINGS.defaultTheme` |
 
 User preferences persist across sessions. Clear `localStorage` to reset.
 
@@ -203,8 +201,7 @@ To add a language (e.g. Urdu):
 - [ ] Scroll past hero — nav transitions from transparent to solid dark
 - [ ] Language toggle (EN · عربية) switches all UI text without reload
 - [ ] Arabic mode: layout shifts to RTL, no broken alignment
-- [ ] Theme toggle (☀ / 🌙) switches between dark and light instantly
-- [ ] Language + theme choices persist after page refresh (localStorage)
+- [ ] Language choice persists after page refresh (localStorage)
 - [ ] Products page: all cards render, category filter shows/hides correctly
 - [ ] "All" filter button text switches language with the toggle
 - [ ] Location page: map iframe loads, address shows in current language

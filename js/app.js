@@ -44,13 +44,12 @@
     try { return new URLSearchParams(window.location.search).has('adminPreview'); }
     catch (e) { return false; }
   })();
-  // Language + theme in preview are AUTHORITATIVE Admin state: the parent echoes
-  // them in every PREVIEW_DATA and the child obeys verbatim. They are only ever
-  // changed here by (a) a value the parent sent, or (b) the real in-iframe
-  // control — which reports the change back UP so parent and child never drift.
-  // Never derived from localStorage / restaurant data / a locale default.
+  // Language in preview is AUTHORITATIVE Admin state: the parent echoes it in
+  // every PREVIEW_DATA and the child obeys verbatim. It is only ever changed
+  // here by (a) a value the parent sent, or (b) the real in-iframe control —
+  // which reports the change back UP so parent and child never drift. Never
+  // derived from localStorage / restaurant data / a locale default.
   var _previewLang  = null;   // 'ar' | 'en'
-  var _previewTheme = null;   // 'dark' | 'light'
   var _previewApplied = false; // set once the first PREVIEW_DATA has been applied
   var _locEdit = null;         // Location-image direct-edit session state (preview only)
   // This document's preview navigation generation — read from its OWN boot URL
@@ -532,21 +531,35 @@
   }
 
   // ── SET LANGUAGE ─────────────────────────────────────────────────
+  // Normal site: a brief opacity dip hides the text/direction swap instead of
+  // a hard flash (§24 of 1N) — purely decorative, ~90ms, skipped entirely
+  // under reduced motion. Admin Preview keeps the exact original synchronous
+  // timing (the parent's live editor depends on it) — no fade, ever.
   function setLanguage(lang) {
     if (PREVIEW) {
       // Real in-iframe language control: update locally AND report up so the
       // Admin preview-language selector stays in sync. Never touches storage.
       _previewLang = lang;
       parentPost({ type: 'PREVIEW_LANGUAGE_CHANGE', lang: lang });
-    } else {
-      localStorage.setItem('souqsite_language', lang);
+      applyLanguageNow(lang);
+      return;
     }
+    localStorage.setItem('souqsite_language', lang);
+    if (reducedMotion()) { applyLanguageNow(lang); return; }
+    document.body.classList.add('lang-fade');
+    setTimeout(function () {
+      applyLanguageNow(lang);
+      requestAnimationFrame(function () { document.body.classList.remove('lang-fade'); });
+    }, 90);
+  }
+  function applyLanguageNow(lang) {
     document.documentElement.lang = lang;
     document.documentElement.dir  = lang === 'ar' ? 'rtl' : 'ltr';
     applyTranslations(lang);
     applyShopContent(lang);
     applyOgTags();
     updateWaLinks();
+    syncSoundBtn();   // accessible label is language-specific (§5 of 1N)
     const page = document.body.dataset.page;
     if (page === 'home')     refreshHighlights(lang);
     if (page === 'products') refreshFilterLabels(lang);
@@ -644,30 +657,6 @@
     if (content) el.setAttribute('content', content);
   }
 
-  // ── THEME ─────────────────────────────────────────────────────────
-  function getTheme() {
-    var fallback = (typeof SHOP_SETTINGS !== 'undefined' ? SHOP_SETTINGS.defaultTheme : 'dark');
-    if (PREVIEW) return _previewTheme || fallback;   // preview never reads shared storage
-    return localStorage.getItem('souqsite_theme') || fallback;
-  }
-  function applyTheme(theme) {
-    if (theme === 'light') document.documentElement.setAttribute('data-theme', 'light');
-    else                   document.documentElement.removeAttribute('data-theme');
-  }
-  function toggleTheme() {
-    const next = getTheme() === 'dark' ? 'light' : 'dark';
-    if (PREVIEW) {
-      // Real in-iframe theme control: update locally AND report up so the Admin
-      // preview-theme selector stays in sync. Never touches storage.
-      _previewTheme = next;
-      applyTheme(next);
-      parentPost({ type: 'PREVIEW_THEME_CHANGE', theme: next });
-      return;
-    }
-    localStorage.setItem('souqsite_theme', next);
-    applyTheme(next);
-  }
-
   // ── WHATSAPP ──────────────────────────────────────────────────────
   function waLink() {
     if (typeof SHOP === 'undefined') return '#';
@@ -685,7 +674,199 @@
   }
   function updateWaLinks() {
     const url = waLink();
-    document.querySelectorAll('[data-wa-link]').forEach(el => { el.href = url; });
+    document.querySelectorAll('[data-wa-link]').forEach(el => {
+      el.href = url;
+      // Same-tab navigation away from the site was cutting the tap sound off
+      // mid-tone (the document unloads before the ~90ms clip finishes) — the
+      // most-clicked customer CTA was effectively silent. Opening WhatsApp in
+      // its own tab fixes that AND keeps the visitor's place on the site.
+      el.target = '_blank';
+      el.rel = 'noopener noreferrer';
+    });
+  }
+
+  // ── PAGE TRANSITIONS ("TasteTheWest Portal", JS-timed marker) ────────
+  // This class pair (is-page-leaving / is-page-entering) is PURELY the
+  // routing/timing marker — as of milestone 1N v4, language correctness
+  // (no untranslated-English frame) is no longer this mechanism's job at
+  // all. See the separate, independent "I18N PRE-PAINT GUARD" section
+  // below for the actual correctness fix. The no-3-dot-loader behaviour is
+  // still owned here (via arrivedSilently / preparePageEntry), since that
+  // genuinely is about the transition marker's presence, not the language.
+  // As of 1N v6, style.css reacts to these same two classes across TWO
+  // coordinated visual layers — a plain html-level safety cover (correctness
+  // backstop, reaches full opacity only in the last instant before the
+  // document swap) and the richer #page-transition-fx "Portal" layer
+  // (dark-glass plates, gold rails, energy seam — the actual premium visual,
+  // see style.css). One marker, one routing architecture, never two.
+  // Reduced motion is NOT "skip the transition" (1N-v5.1 §7/§17) — it uses
+  // the exact same architecture below (marker, preventDefault, class,
+  // timed navigate), just a shorter delay and an opacity-only CSS
+  // treatment for both layers under that media query. Every visitor gets
+  // an intentional branded hand-off; there is exactly one routing system.
+  var pageTransitioning = false;   // one-way lock — this document is unloading, never reset...
+
+  // ...EXCEPT when this exact document is restored from BFCache (§13/§30).
+  // BFCache freezes and thaws the entire JS heap as-is, so `pageTransitioning`
+  // (and any is-page-leaving class added right before the navigation that
+  // cached it) would otherwise come back stuck `true` / stuck applied —
+  // silently swallowing every click on this page from then on. The <head>
+  // script's own pageshow listener clears the CSS classes unconditionally
+  // (cheap, and it has no access to this closure); this one resets the
+  // JS-side lock.
+  window.addEventListener('pageshow', function (e) {
+    if (!e.persisted) return;
+    pageTransitioning = false;
+    document.documentElement.classList.remove('is-page-leaving', 'is-page-entering');
+  });
+
+  // Same-tab, same-origin, one of the 4 known public pages, no modifier key,
+  // no target=_blank, not a download link. Reuses previewPageForHref()'s
+  // pathname-based resolution (never fragile raw-href string matching) so
+  // '/', './', 'index.html' and an absolute URL all resolve identically.
+  function isPublicInternalNavigation(link, ev) {
+    if (PREVIEW) return false;   // §33 — Admin Preview never intercepts page nav
+    if (!link || link.tagName !== 'A') return false;
+    if (link.target && link.target !== '_self') return false;
+    if (link.hasAttribute('download')) return false;
+    if (ev && (ev.defaultPrevented || ev.button !== 0 ||
+        ev.metaKey || ev.ctrlKey || ev.shiftKey || ev.altKey)) return false;
+    return !!previewPageForHref(link.getAttribute('href'));
+  }
+
+  // Close the Portal, then navigate. The delay MUST be >= the matching CSS
+  // close transition (style.css) or the document would unload
+  // mid-animation, cutting it off before it visibly finishes — the exact
+  // mistake that made v3-v5's animation unreadable. Normal motion: 205ms —
+  // a few ms of margin over the .2s outgoing close (Portal FX plates +
+  // page depth response), landing inside the 1N-v6 "~180-230ms outgoing"
+  // target. Reduced motion: 85ms, matching the CSS cover-in exactly —
+  // deliberately SHORTER than normal motion, never longer, because less
+  // motion should mean less time, not an added wait (§10). A plain
+  // timeout, not an animationend/transitionend listener: an event that
+  // might not fire is exactly the kind of fragility that broke the very
+  // first attempt.
+  function beginPageExit(url, ev) {
+    if (pageTransitioning) { if (ev) ev.preventDefault(); return; }   // §14/§44 — ignore rapid re-clicks
+    pageTransitioning = true;
+    try { sessionStorage.setItem('ttw_page_transition', '1'); } catch (e) {}
+    if (ev) ev.preventDefault();
+    document.documentElement.classList.add('is-page-leaving');
+    var delay = reducedMotion() ? 85 : 205;
+    setTimeout(function () { window.location.href = url; }, delay);
+  }
+
+  // Called once this document's own content is ready to be seen (end of
+  // boot()). No-ops instantly if this load did not arrive via an intercepted
+  // internal link (see the <head> script) — a normal direct/cold load never
+  // engages this at all. preparePageEntry() is a cheap read, safe to call
+  // any time.
+  function preparePageEntry() {
+    return document.documentElement.classList.contains('is-page-entering');
+  }
+  function finishPageEntry() {
+    document.documentElement.classList.remove('is-page-entering');
+  }
+
+  // ── I18N PRE-PAINT GUARD ─────────────────────────────────────────────
+  // Independent of the aperture above, and NOT motion-gated (milestone 1N
+  // v4, §33 — this must hold even with animation fully disabled). The <head>
+  // script (see index.html) adds `i18n-pending` to <html> whenever the
+  // persisted/default language is Arabic — for EVERY load that could show
+  // it, transition or cold, direct or refreshed — and style.css holds `body`
+  // at `visibility: hidden` while the class is present. `visibility` is a
+  // boolean, non-composited property: unlike the aperture's `transform`,
+  // there is no GPU layer-promotion window where a stale frame could slip
+  // through, which is the exact gap real-browser testing found in the
+  // aperture-only v3 design. English never sets this class at all — its
+  // static fallback text already IS correct (§7 — no penalty).
+  // Released ONLY after renderShell() has applied real translations for the
+  // shell currently on screen — see every call site in boot() below. If
+  // js/app.js fails to run at all, style.css's own failsafe animation reveals
+  // the page after a few seconds rather than trapping the visitor forever
+  // (§32) — this function is never involved in that path.
+  function releaseI18nGuard() {
+    document.documentElement.classList.remove('i18n-pending');
+  }
+
+  // ── SAME-SESSION PUBLIC-DATA HANDOFF ────────────────────────────────
+  // Audited: every public page currently re-fetches the FULL restaurant row
+  // + categories + products on every load, even for a page it was on 30
+  // seconds ago. That repeated round-trip is exactly the window the visitor
+  // perceives as "loading" between pages. This is a short-lived, PUBLIC-ONLY,
+  // self-revalidating cache — never a substitute for showing live data, only
+  // for not making the visitor wait for it on every click.
+  //   - Session-only (sessionStorage), not persisted across browser restarts.
+  //   - Only ever the same fields already rendered to every visitor publicly
+  //     (restaurant row + catalog) — no auth, no session, no admin data.
+  //   - Keyed to RESTAURANT_ID + a timestamp; ignored once stale or from a
+  //     different restaurant.
+  //   - ALWAYS revalidated against Supabase in the background immediately
+  //     after being used, and the page re-renders if anything actually
+  //     changed — this is instant-perceived-navigation, not an offline menu.
+  //   - Never read or written under PREVIEW (§33): the Admin iframe's
+  //     window.SHOP/PRODUCTS are the Admin's unsaved DRAFT overlay, not real
+  //     public data, and must never be written into (or read from) this key.
+  var SNAPSHOT_KEY = 'ttw_public_snapshot';
+  var SNAPSHOT_MAX_AGE_MS = 60000;   // 60s — "instant navigation", not stale caching
+  function saveSnapshot() {
+    if (PREVIEW || !isSupabaseConfigured()) return;
+    try {
+      sessionStorage.setItem(SNAPSHOT_KEY, JSON.stringify({
+        rid: RESTAURANT_ID,
+        t: Date.now(),
+        shop: window.SHOP,
+        products: window.PRODUCTS,
+      }));
+    } catch (e) { /* storage full / unavailable — snapshot is an optimisation, not a requirement */ }
+  }
+  function readSnapshot() {
+    if (PREVIEW || !isSupabaseConfigured()) return null;
+    try {
+      var raw = sessionStorage.getItem(SNAPSHOT_KEY);
+      if (!raw) return null;
+      var snap = JSON.parse(raw);
+      if (!snap || snap.rid !== RESTAURANT_ID) return null;
+      if (typeof snap.t !== 'number' || Date.now() - snap.t > SNAPSHOT_MAX_AGE_MS) return null;
+      if (!snap.shop || !Array.isArray(snap.products)) return null;
+      return snap;
+    } catch (e) { return null; }
+  }
+
+  // ── LIGHTWEIGHT HTML PREFETCH ────────────────────────────────────────
+  // By the time a visitor clicks Menu/Location/Contact, the destination's
+  // static HTML (and, from the second navigation on, its data — see the
+  // snapshot above) is very likely already sitting in cache. `rel=prefetch`
+  // is a low-priority hint — it never competes with the current page's own
+  // critical resources — so this is safe to fire once the page is settled.
+  var PUBLIC_PAGES = ['index.html', 'products.html', 'location.html', 'contact.html'];
+  var _prefetched = {};
+  function prefetchHref(href) {
+    if (!href || _prefetched[href]) return;
+    _prefetched[href] = true;
+    try {
+      var l = document.createElement('link');
+      l.rel = 'prefetch';
+      l.href = href;
+      document.head.appendChild(l);
+    } catch (e) {}
+  }
+  function prefetchOtherPublicPages() {
+    if (PREVIEW) return;
+    var pageMap = { home: 'index.html', products: 'products.html', location: 'location.html', contact: 'contact.html' };
+    var current = pageMap[document.body.dataset.page] || 'index.html';
+    PUBLIC_PAGES.forEach(function (f) { if (f !== current) prefetchHref(f); });
+  }
+  // Intent prefetch (§15 — optional, kept small): the FIRST time the pointer
+  // enters or keyboard focus lands on an internal nav link, prefetch that one
+  // destination. `_prefetched` already de-dupes repeated hovers/focus.
+  function wireIntentPrefetch() {
+    function onIntent(e) {
+      var a = e.target.closest && e.target.closest('a');
+      if (a && isPublicInternalNavigation(a)) prefetchHref(a.getAttribute('href'));
+    }
+    document.addEventListener('pointerenter', onIntent, true);   // capture — pointerenter doesn't bubble
+    document.addEventListener('focusin', onIntent);
   }
 
   // ── NAVIGATION ────────────────────────────────────────────────────
@@ -694,6 +875,8 @@
     const toggle = document.getElementById('nav-toggle');
     const mobile = document.getElementById('nav-mobile');
     if (!header) return;
+
+    wireIntentPrefetch();
 
     const isHome = document.body.dataset.page === 'home';
     header.classList.add(isHome ? 'transparent' : 'scrolled');
@@ -729,18 +912,28 @@
       l.classList.toggle('active', l.getAttribute('href') === file);
     });
 
-    const themeBtn = document.getElementById('theme-btn');
-    if (themeBtn) themeBtn.addEventListener('click', toggleTheme);
+    initSoundBtn();
 
     document.addEventListener('click', e => {
       const btn = e.target.closest('.lang-btn');
-      if (btn && btn.dataset.lang) setLanguage(btn.dataset.lang);
+      if (btn && btn.dataset.lang) { setLanguage(btn.dataset.lang); playUISound('toggle'); }
     });
 
+    // ONE delegated tap path (§8/§9 of 1N) — real customer controls only:
+    // header + mobile nav, category filters, primary CTA buttons, WhatsApp
+    // buttons (inline + floating), Location/Contact links styled as
+    // controls. Never for plain body text links, typing, or scrolling.
+    // Language / the sound button itself each report their own
+    // `toggle` sound above (state-flip controls, not a plain tap) — kept out
+    // of this list so a click on them can never double-sound.
+    // A same-origin link to one of the 4 public pages ALSO begins the
+    // branded page-transition cover here — same click, same one sound, per
+    // §15 of the 1N-v2 redo ("do not play two navigation sounds").
     document.addEventListener('click', e => {
-      if (e.target.closest('.btn, .filter-btn, .lang-btn, .theme-btn, .nav-toggle')) {
-        playUISound();
-      }
+      const hit = e.target.closest('.btn, .filter-btn, .nav-toggle, .nav-link, .wa-float');
+      if (!hit) return;
+      playUISound('tap');
+      if (isPublicInternalNavigation(hit, e)) beginPageExit(hit.href, e);
     }, true);
   }
 
@@ -1431,28 +1624,94 @@
   }
 
   // ── SOUND FEEDBACK ────────────────────────────────────────────────
-  var _audioCtx = null;
-  function playUISound() {
-    if (PREVIEW) return;                 // no click beeps inside the Admin preview
-    const sounds = typeof SHOP_SETTINGS !== 'undefined'
-      ? SHOP_SETTINGS.sounds
-      : (typeof SHOP !== 'undefined' ? SHOP.sounds : false);
-    if (!sounds) return;
+  // Two independent gates, BOTH must pass:
+  //   owner permission  — restaurants.sounds_enabled → SHOP_SETTINGS.sounds
+  //                        (global site-level switch; false = always silent)
+  //   visitor preference — ttw_public_sounds in localStorage (per-device;
+  //                        absent = on, so sound is ON by default whenever
+  //                        the owner allows it)
+  // Never inside the Admin Live Preview iframe (?adminPreview=1) regardless
+  // of either flag — that guard is unconditional (see PREVIEW check below).
+  // One AudioContext, one master gain, reused for every call.
+  var _audioCtx = null, _audioMaster = null;
+  function ownerSoundsEnabled() {
+    return typeof SHOP_SETTINGS !== 'undefined'
+      ? SHOP_SETTINGS.sounds !== false
+      : (typeof SHOP !== 'undefined' ? SHOP.sounds !== false : false);
+  }
+  function visitorSoundsOn() {
+    try { return localStorage.getItem('ttw_public_sounds') !== 'off'; }
+    catch (e) { return true; }
+  }
+  function publicSoundsAllowed() {
+    return !PREVIEW && ownerSoundsEnabled() && visitorSoundsOn();
+  }
+  function ensureAudio() {
+    if (_audioCtx) return _audioCtx;
     try {
-      if (!_audioCtx) _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-      if (_audioCtx.state === 'suspended') _audioCtx.resume();
-      const osc  = _audioCtx.createOscillator();
-      const gain = _audioCtx.createGain();
+      var AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return null;
+      _audioCtx = new AC();
+      _audioMaster = _audioCtx.createGain();
+      _audioMaster.gain.value = 0.09;   // conservative — never startle a headphone user
+      _audioMaster.connect(_audioCtx.destination);
+    } catch (e) { _audioCtx = null; _audioMaster = null; }
+    return _audioCtx;
+  }
+  // kind: 'tap' (default — any click) | 'toggle' (a preference/state flip:
+  // language, the sound button itself). Deliberately just these two —
+  // this is a restaurant site, not an editor; no success/warning/focus/tick
+  // vocabulary here.
+  function playUISound(kind) {
+    if (!publicSoundsAllowed()) return;
+    var c = ensureAudio();
+    if (!c || !_audioMaster) return;
+    if (c.state === 'suspended') { try { c.resume(); } catch (e) {} }
+    try {
+      var isToggle = kind === 'toggle';
+      var t0  = c.currentTime;
+      var dur = isToggle ? 0.10 : 0.09;
+      var osc  = c.createOscillator();
+      var gain = c.createGain();
       osc.connect(gain);
-      gain.connect(_audioCtx.destination);
+      gain.connect(_audioMaster);
       osc.type = 'sine';
-      osc.frequency.setValueAtTime(780, _audioCtx.currentTime);
-      osc.frequency.exponentialRampToValueAtTime(520, _audioCtx.currentTime + 0.09);
-      gain.gain.setValueAtTime(0.045, _audioCtx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.001, _audioCtx.currentTime + 0.11);
-      osc.start(_audioCtx.currentTime);
-      osc.stop(_audioCtx.currentTime + 0.11);
-    } catch (e) {}
+      osc.frequency.setValueAtTime(isToggle ? 620 : 720, t0);
+      osc.frequency.exponentialRampToValueAtTime(isToggle ? 520 : 480, t0 + dur);
+      gain.gain.setValueAtTime(0.0001, t0);
+      gain.gain.exponentialRampToValueAtTime(1, t0 + Math.min(0.012, dur * 0.4));
+      gain.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+      osc.start(t0);
+      osc.stop(t0 + dur + 0.02);
+      osc.onended = function () { try { osc.disconnect(); gain.disconnect(); } catch (e) {} };
+    } catch (e) { /* fail silently — audio must never break the site */ }
+  }
+
+  // ── Customer sound toggle (header) ─────────────────────────────────
+  // Hidden entirely when the owner has turned Customer Site Sounds off —
+  // never shown claiming sound is available when it globally isn't.
+  function syncSoundBtn() {
+    const btn = document.getElementById('sound-btn');
+    if (!btn) return;
+    if (!ownerSoundsEnabled()) { btn.hidden = true; return; }
+    btn.hidden = false;
+    const on = visitorSoundsOn();
+    btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+    const label = on ? (t('nav.soundOn') || 'Sound on') : (t('nav.soundOff') || 'Sound off');
+    btn.setAttribute('aria-label', label);
+    btn.title = label;
+  }
+  function initSoundBtn() {
+    const btn = document.getElementById('sound-btn');
+    syncSoundBtn();
+    if (!btn) return;
+    btn.addEventListener('click', () => {
+      const wasOn = visitorSoundsOn();
+      if (wasOn) playUISound('toggle');       // confirm BEFORE muting
+      try { localStorage.setItem('ttw_public_sounds', wasOn ? 'off' : 'on'); } catch (e) {}
+      syncSoundBtn();
+      if (!wasOn) playUISound('toggle');      // confirm AFTER enabling
+    });
   }
 
   // ── HELPERS ───────────────────────────────────────────────────────
@@ -1466,6 +1725,10 @@
     if (content) el.content = content;
   }
   function capitalize(s) { return s ? s.charAt(0).toUpperCase() + s.slice(1) : ''; }
+  function reducedMotion() {
+    try { return !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches); }
+    catch (e) { return false; }
+  }
   // Numeric coerce + clamp with a default for missing / non-finite input.
   function clampNum(v, min, max, dflt) {
     var n = typeof v === 'number' ? v : parseFloat(v);
@@ -1490,8 +1753,8 @@
     const page = document.body.dataset.page;
 
     // Stay visually hidden until the parent's real Preview state (language,
-    // theme, unsaved draft) has been applied — otherwise a freshly navigated
-    // page paints its bundled-default language/theme for a frame and flashes.
+    // unsaved draft) has been applied — otherwise a freshly navigated page
+    // paints its bundled-default language for a frame and flashes.
     // Revealed again in applyPreviewData(), which also posts PREVIEW_APPLIED.
     // Reachable ONLY via boot()'s `if (PREVIEW)` branch, so a normal visitor is
     // never affected.
@@ -1524,7 +1787,6 @@
     // First paint from bundled config (still hidden) so layout is warm, then
     // tell the parent we're ready for the real settings draft.
     const lang = getLang();
-    applyTheme(getTheme());
     applyTranslations(lang);
     applyShopContent(lang);
     applyOgTags();
@@ -1724,16 +1986,14 @@
         window.PRODUCTS = previewProducts();
       }
 
-      // Language + theme are authoritative Admin state, echoed on EVERY message.
-      // Obey a valid value; otherwise KEEP the current one — never fall back to a
+      // Language is authoritative Admin state, echoed on EVERY message. Obey a
+      // valid value; otherwise KEEP the current one — never fall back to a
       // locale / localStorage default. That fallback was the language-reset bug.
-      if (payload.lang === 'ar' || payload.lang === 'en')        _previewLang  = payload.lang;
-      if (payload.theme === 'dark' || payload.theme === 'light') _previewTheme = payload.theme;
+      if (payload.lang === 'ar' || payload.lang === 'en') _previewLang = payload.lang;
 
       const lang = _previewLang || getLang();
       document.documentElement.lang = lang;
       document.documentElement.dir  = lang === 'ar' ? 'rtl' : 'ltr';
-      applyTheme(_previewTheme || getTheme());
 
       applyTranslations(lang);
       applyShopContent(lang);
@@ -1754,14 +2014,40 @@
   }
 
   // ── BOOT (async) ──────────────────────────────────────────────────
-  async function boot() {
-    const lang  = getLang();
-    const theme = getTheme();
+  // Applies translations/branding/reveal + renders the page-specific content.
+  // Shared by: the immediate snapshot render, the normal (no-snapshot) path,
+  // and the quiet background revalidation — ONE render pipeline, called from
+  // wherever content is actually ready, instead of three copies of it.
+  function renderShell(lang) {
+    applyTranslations(lang);
+    applyShopContent(lang);
+    applyOgTags();
+    updateWaLinks();
+    syncSoundBtn();   // re-sync against the current owner setting
+    const yearEl = document.getElementById('footer-year');
+    if (yearEl) yearEl.textContent = new Date().getFullYear();
+    renderCurrentPage();
+  }
 
-    applyTheme(theme);
+  async function boot() {
+    const lang = getLang();
+
     initNav();
+    // Read ONCE, early: whether this load is an intercepted internal
+    // transition arrival (§I) — purely the cosmetic aperture now, see the
+    // "PAGE TRANSITIONS" section above. Language correctness is handled
+    // entirely separately by the i18n guard below.
+    const arrivedSilently = preparePageEntry();
 
     if (PREVIEW) {
+      // §33 — Admin Preview has its own persistent double-buffer transition
+      // architecture; this site's gate/loader/i18n-guard logic must never
+      // layer on top of it, and the public snapshot must never mix with the
+      // Admin's unsaved draft overlay. In practice none of these classes can
+      // be set from inside the iframe (see isPublicInternalNavigation /
+      // saveSnapshot), but strip them explicitly rather than relying on that
+      // alone.
+      document.documentElement.classList.remove('is-page-entering', 'is-page-leaving', 'i18n-pending');
       initPreviewMode().catch(function (e) {
         console.warn('[app.js] preview init failed:', e);
         parentPost({ type: 'PREVIEW_ERROR', nav: _previewNav });   // parent keeps the current page visible
@@ -1770,30 +2056,68 @@
     }
 
     if (isSupabaseConfigured()) {
-      showLoading();
+      // Same-session snapshot: render instantly from already-known public
+      // data (no network wait at all), THEN quietly revalidate — never a
+      // loader for this path, and the DOM is only touched again if the live
+      // data actually differs (§12/§22 — no card-replacement flash).
+      const snap = readSnapshot();
+      if (snap) {
+        window.SHOP = snap.shop;
+        window.PRODUCTS = snap.products;
+        if (typeof SHOP_SETTINGS !== 'undefined') SHOP_SETTINGS.sounds = snap.shop.sounds !== false;
+        renderShell(lang);
+        releaseI18nGuard();   // real translations are on screen now — safe to reveal
+        initReveal();
+        if (arrivedSilently) finishPageEntry();
+        prefetchOtherPublicPages();
+        const priorSignature = JSON.stringify({ shop: snap.shop, products: snap.products });
+        loadFromSupabase().then(function () {
+          saveSnapshot();
+          const freshSignature = JSON.stringify({ shop: window.SHOP, products: window.PRODUCTS });
+          if (freshSignature !== priorSignature) renderShell(lang);   // reconcile only if something changed
+        }).catch(function (e) { console.warn('[app.js] background revalidate failed:', e); });
+        return;
+      }
+
+      // No usable snapshot — a genuine cold path (first visit this session,
+      // or the 60s window lapsed). §24: NEVER the 3-dot loader while a
+      // silent-boot hold is active (transition arrival) — the branded gate
+      // is already covering this wait; §25: for a true cold visit with no
+      // hold active, the loader is the accepted fallback. The i18n guard
+      // (if active) stays up regardless — it is independent of this loader.
+      if (!arrivedSilently) showLoading();
       try {
         await loadFromSupabase();
+        saveSnapshot();
       } catch (err) {
+        if (!arrivedSilently) hideLoading();
         console.error('[app.js] Supabase load error:', err);
+        // Render the bundled static fallback content (config/shop.js /
+        // config/products.js — untouched by the failed fetch) through the
+        // SAME localized pipeline before revealing anything, so a load
+        // failure can never expose the raw, untranslated English markup
+        // underneath the error notice (§32 — no wrong-language content, even
+        // on failure).
+        renderShell(lang);
+        releaseI18nGuard();
         showAppError(
           'فشل تحميل المحتوى. يرجى تحديث الصفحة.<br/>' +
           '<span style="font-size:12px;opacity:.6">Failed to load content. Please refresh.</span>'
         );
+        finishPageEntry();   // never leave the customer stuck under the gate on a load failure
         return;
       }
-      hideLoading();
+      if (!arrivedSilently) hideLoading();
     }
 
-    applyTranslations(lang);
-    applyShopContent(lang);
-    applyOgTags();
-    updateWaLinks();
+    renderShell(lang);
+    releaseI18nGuard();   // real translations are on screen now — safe to reveal
     initReveal();
 
-    const yearEl = document.getElementById('footer-year');
-    if (yearEl) yearEl.textContent = new Date().getFullYear();
-
-    renderCurrentPage();
+    // Content is ready — if this load was an intercepted transition arrival,
+    // open the gate now (§7/§8). No-op otherwise.
+    if (arrivedSilently) finishPageEntry();
+    prefetchOtherPublicPages();
   }
 
   // Support both DOMContentLoaded and already-loaded pages

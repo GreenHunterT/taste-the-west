@@ -241,8 +241,6 @@
     page:   (['home', 'menu', 'location', 'contact'].indexOf(ui.page) !== -1) ? ui.page : 'home',
     device: (ui.device === 'mobile') ? 'mobile' : 'desktop',
     lang:   (ui.lang === 'ar') ? 'ar' : 'en',
-    theme:  (ui.theme === 'light') ? 'light' : 'dark',
-    zoom:   (ui.zoom === '100') ? '100' : 'fit',
   };
 
   const shellMain = document.getElementById('admin-shell-main');
@@ -253,10 +251,10 @@
     initialState: initialState,
   });
 
-  // Persist any shared Preview UI-state change (page / device / lang / theme /
-  // zoom). UI-only — never restaurant data.
+  // Persist any shared Preview UI-state change (page / device / lang).
+  // UI-only — never restaurant data.
   ctx.preview.on('state', function (s) {
-    writeUi({ page: s.page, device: s.device, lang: s.lang, theme: s.theme, zoom: s.zoom });
+    writeUi({ page: s.page, device: s.device, lang: s.lang });
   });
 
   // Re-seed the shared Preview from the SAVED restaurant row. Editor views call

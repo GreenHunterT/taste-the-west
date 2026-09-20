@@ -10,6 +10,8 @@ const TRANSLATIONS = {
       products: 'Menu',
       location: 'Location',
       contact:  'Contact',
+      soundOn:  'Sound on',
+      soundOff: 'Sound off',
     },
     hero: {
       eyebrow: 'Welcome to',
@@ -78,6 +80,8 @@ const TRANSLATIONS = {
       products: 'القائمة',
       location: 'الموقع',
       contact:  'التواصل',
+      soundOn:  'الصوت مفعل',
+      soundOff: 'الصوت متوقف',
     },
     hero: {
       eyebrow: 'مرحباً بكم في',

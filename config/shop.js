@@ -5,7 +5,6 @@
 // ─────────────────────────────────────────────────────────────────
 const SHOP_SETTINGS = {
   defaultLanguage: 'ar',    // 'ar' | 'en'
-  defaultTheme:    'dark',  // 'dark' | 'light'
   sounds:          true,    // subtle UI click feedback — set false to disable
 };
 
