@@ -2,6 +2,14 @@
 --  TASTE THE WEST — Supabase Database Schema
 --  Run this entire file in the Supabase SQL Editor (one shot).
 --  Project: https://supabase.com/dashboard/project/<your-project>
+--
+--  This file represents the FINAL state after migrations 001–003 (see
+--  supabase/migrations/) — a fresh project built from this file alone
+--  lands directly in the same hardened shape as the live, already-migrated
+--  TasteTheWest project, including the restaurants_public view (001) and
+--  the least-privilege RLS/grant model (003). The already-applied
+--  migrations are kept as an append-only historical record and are never
+--  rewritten; this file is the one that's kept in sync with them.
 -- =================================================================
 
 
@@ -141,75 +149,198 @@ CREATE TRIGGER products_updated_at
 
 
 -- ── ROW LEVEL SECURITY ────────────────────────────────────────────
+-- This section reflects the FINAL state after migrations 001–003 (see
+-- supabase/migrations/) — a fresh project run from this file alone lands
+-- directly here, never in the intermediate pre-003 shape that caused a
+-- live production outage (see 003's header comment for the full incident
+-- writeup: an owner policy with no explicit `TO authenticated` was also
+-- reachable by anon, and evaluating its restaurants-ownership subquery as
+-- anon broke the entire public products query once anon's direct
+-- `restaurants` grant was revoked).
 ALTER TABLE restaurants ENABLE ROW LEVEL SECURITY;
 ALTER TABLE categories  ENABLE ROW LEVEL SECURITY;
 ALTER TABLE products    ENABLE ROW LEVEL SECURITY;
 
 
 -- restaurants
--- Public: anyone can read any restaurant row (needed for public site).
--- Owner: full write access to their own row only.
-CREATE POLICY "restaurants_public_read"
-  ON restaurants FOR SELECT USING (true);
-
-CREATE POLICY "restaurants_owner_insert"
-  ON restaurants FOR INSERT WITH CHECK (auth.uid() = owner_id);
+-- No public/anon policy here at all — public customers read the
+-- restaurants_public view below instead, which runs as its owning role
+-- (not RLS-subject) and so needs no base-table policy to keep working.
+-- Owner: SELECT + UPDATE only on their own row — restaurants_owner_select
+-- is what Admin's own identity resolution depends on (getMyRestaurant() in
+-- admin/js/auth.js, and the restaurant-identity load in
+-- admin/js/admin-shell.js); restaurants_owner_update is what Settings
+-- saves through (admin/js/views/settings.js). No INSERT/DELETE policy
+-- exists: a repository search of every `.from('restaurants')` /
+-- `/rest/v1/restaurants` callsite found none that create or delete a
+-- restaurant row — that only ever happens once, manually, via this file's
+-- own seed block. No policy means no authenticated user, owner or
+-- otherwise, can ever INSERT or DELETE here, full stop.
+CREATE POLICY "restaurants_owner_select"
+  ON restaurants FOR SELECT
+  TO authenticated
+  USING (auth.uid() = owner_id);
 
 CREATE POLICY "restaurants_owner_update"
-  ON restaurants FOR UPDATE USING (auth.uid() = owner_id);
+  ON restaurants FOR UPDATE
+  TO authenticated
+  USING (auth.uid() = owner_id)
+  WITH CHECK (auth.uid() = owner_id);
 
-CREATE POLICY "restaurants_owner_delete"
-  ON restaurants FOR DELETE USING (auth.uid() = owner_id);
+
+-- restaurants_public — the public-safe projection (originally migration
+-- 001). Deliberately an ordinary ("security definer") view, NOT
+-- `security_invoker = true`: it runs with the privileges of its owning
+-- role, which is exempt from RLS on the base table it selects from, so it
+-- keeps working regardless of what grant anon holds on `restaurants`
+-- directly (which is none, by design — see the grants below). Exposes
+-- exactly the columns the public site's mapRestaurant() (js/app.js) reads
+-- — excludes owner_id, created_at, updated_at — for exactly TasteTheWest's
+-- one restaurant row. See migration 001 for the full rationale.
+CREATE OR REPLACE VIEW public.restaurants_public AS
+SELECT
+  id,
+  name_ar, name_en, tagline_ar, tagline_en, description_ar, description_en,
+  phone, whatsapp, instagram, email,
+  address_ar, address_en, map_embed, map_directions,
+  location_visual_mode, location_image_url, location_image_fit,
+  location_image_position_x, location_image_position_y,
+  location_image_zoom, location_image_height,
+  hours_weekdays_en, hours_weekdays_ar, hours_weekends_en, hours_weekends_ar,
+  hero_image_url, logo_url,
+  wa_message_ar, wa_message_en,
+  sounds_enabled, highlights
+FROM public.restaurants
+WHERE id = '57ee591f-39fb-4320-af05-fec66ebd512a'::uuid;
 
 
 -- categories
--- Public: read all categories for any restaurant.
--- Owner: write only for their own restaurant.
+-- Public: read only TasteTheWest's own categories — this is a dedicated
+-- single-restaurant project (see migration 001's "WHY (ROWS)"), not the
+-- future shared multi-tenant SouqSite database, so a second restaurant's
+-- categories must never become publicly enumerable just because this
+-- policy said `USING (true)`.
+-- Owner: full read/write, scoped to restaurants they own.
 CREATE POLICY "categories_public_read"
-  ON categories FOR SELECT USING (true);
+  ON categories FOR SELECT
+  TO anon
+  USING (restaurant_id = '57ee591f-39fb-4320-af05-fec66ebd512a'::uuid);
+
+CREATE POLICY "categories_owner_read"
+  ON categories FOR SELECT
+  TO authenticated
+  USING (
+    restaurant_id IN (SELECT id FROM restaurants WHERE owner_id = auth.uid())
+  );
 
 CREATE POLICY "categories_owner_insert"
-  ON categories FOR INSERT WITH CHECK (
+  ON categories FOR INSERT
+  TO authenticated
+  WITH CHECK (
     restaurant_id IN (SELECT id FROM restaurants WHERE owner_id = auth.uid())
   );
 
 CREATE POLICY "categories_owner_update"
-  ON categories FOR UPDATE USING (
+  ON categories FOR UPDATE
+  TO authenticated
+  USING (
+    restaurant_id IN (SELECT id FROM restaurants WHERE owner_id = auth.uid())
+  )
+  WITH CHECK (
     restaurant_id IN (SELECT id FROM restaurants WHERE owner_id = auth.uid())
   );
 
 CREATE POLICY "categories_owner_delete"
-  ON categories FOR DELETE USING (
+  ON categories FOR DELETE
+  TO authenticated
+  USING (
     restaurant_id IN (SELECT id FROM restaurants WHERE owner_id = auth.uid())
   );
 
 
 -- products
--- Public: only available=true rows are readable.
+-- Public: only TasteTheWest's own available=true rows are readable.
 -- Owner: can read ALL their products (including unavailable), and write.
--- Note: two SELECT policies — Supabase merges them with OR.
+-- Note: two SELECT policies exist (public_read + owner_read) — Postgres
+-- OR's multiple permissive policies for the same command together. Both
+-- MUST carry an explicit `TO` role: an owner policy reachable by anon
+-- (the pre-003 bug — see this section's header comment) makes anon
+-- evaluate a restaurants-ownership subquery it can never satisfy, and if
+-- anon ever loses base-table `restaurants` access, that subquery errors
+-- out instead of quietly returning false, taking the whole query down
+-- with it rather than just declining that one policy's contribution.
 CREATE POLICY "products_public_read"
-  ON products FOR SELECT USING (available = true);
+  ON products FOR SELECT
+  TO anon
+  USING (
+    available = true
+    AND restaurant_id = '57ee591f-39fb-4320-af05-fec66ebd512a'::uuid
+  );
 
 CREATE POLICY "products_owner_read"
-  ON products FOR SELECT USING (
+  ON products FOR SELECT
+  TO authenticated
+  USING (
     restaurant_id IN (SELECT id FROM restaurants WHERE owner_id = auth.uid())
   );
 
 CREATE POLICY "products_owner_insert"
-  ON products FOR INSERT WITH CHECK (
+  ON products FOR INSERT
+  TO authenticated
+  WITH CHECK (
     restaurant_id IN (SELECT id FROM restaurants WHERE owner_id = auth.uid())
   );
 
 CREATE POLICY "products_owner_update"
-  ON products FOR UPDATE USING (
+  ON products FOR UPDATE
+  TO authenticated
+  USING (
+    restaurant_id IN (SELECT id FROM restaurants WHERE owner_id = auth.uid())
+  )
+  WITH CHECK (
     restaurant_id IN (SELECT id FROM restaurants WHERE owner_id = auth.uid())
   );
 
 CREATE POLICY "products_owner_delete"
-  ON products FOR DELETE USING (
+  ON products FOR DELETE
+  TO authenticated
+  USING (
     restaurant_id IN (SELECT id FROM restaurants WHERE owner_id = auth.uid())
   );
+
+
+-- ── TABLE GRANTS — CLOSED-WORLD RESET ──────────────────────────────
+-- Supabase grants broad default privileges (SELECT/INSERT/UPDATE/DELETE/
+-- REFERENCES/TRIGGER/TRUNCATE for authenticated; similar minus DML for
+-- anon) to every new table automatically. Rather than selectively REVOKE
+-- individual privileges off of an assumed starting grant state, REVOKE
+-- ALL first on each relation for both roles — a genuine closed-world
+-- reset — so the GRANTs immediately below are a complete, self-contained
+-- statement of the entire intended privilege surface.
+REVOKE ALL PRIVILEGES ON public.restaurants        FROM anon, authenticated;
+REVOKE ALL PRIVILEGES ON public.products           FROM anon, authenticated;
+REVOKE ALL PRIVILEGES ON public.categories         FROM anon, authenticated;
+REVOKE ALL PRIVILEGES ON public.restaurants_public FROM anon, authenticated;
+
+-- anon: SELECT only, and never on the restaurants base table at all —
+-- public reads go exclusively through restaurants_public.
+GRANT SELECT
+  ON public.products, public.categories, public.restaurants_public
+  TO anon;
+
+-- authenticated: SELECT + UPDATE on restaurants (Admin reads its own row
+-- and edits Settings — never creates or deletes one); full SELECT/INSERT/
+-- UPDATE/DELETE on products/categories (Admin's actual Menu/Categories
+-- CRUD); SELECT only on restaurants_public.
+GRANT SELECT, UPDATE
+  ON public.restaurants
+  TO authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE
+  ON public.products, public.categories
+  TO authenticated;
+GRANT SELECT
+  ON public.restaurants_public
+  TO authenticated;
 
 
 -- ── STORAGE: restaurant-media BUCKET RLS ─────────────────────────
