@@ -732,16 +732,26 @@
 
   // ...EXCEPT when this exact document is restored from BFCache (§13/§30).
   // BFCache freezes and thaws the entire JS heap as-is, so `pageTransitioning`
-  // (and any is-page-leaving class added right before the navigation that
-  // cached it) would otherwise come back stuck `true` / stuck applied —
-  // silently swallowing every click on this page from then on. The <head>
-  // script's own pageshow listener clears the CSS classes unconditionally
-  // (cheap, and it has no access to this closure); this one resets the
-  // JS-side lock.
+  // would otherwise come back stuck `true` forever, silently swallowing
+  // every click on this page from then on — that part still needs
+  // resetting here (this closure owns it; the <head> script has no access
+  // to it). Portal CSS classes are deliberately NOT touched here anymore
+  // (1P.3): the <head> script's OWN pageshow listener now drives a real
+  // sealed→open animation on a persisted restore (see that listener for
+  // the full BFCache pre-seal/open-on-restore design) by ADDING
+  // `is-page-entering` and removing it two rAFs later — if this listener
+  // also unconditionally stripped `is-page-entering` here, in the same
+  // synchronous tick, it would erase that class before a single frame
+  // painted it, silently breaking the whole mechanism. `is-page-leaving`
+  // still gets defensively cleared here as a last-resort backstop in case
+  // the head script's own handling was ever bypassed (e.g. a very old
+  // cached document from before this class existed) — no non-obvious
+  // Portal effect, since without `is-page-leaving` the plates/wave are
+  // simply back at their normal idle (invisible) state.
   window.addEventListener('pageshow', function (e) {
     if (!e.persisted) return;
     pageTransitioning = false;
-    document.documentElement.classList.remove('is-page-leaving', 'is-page-entering');
+    document.documentElement.classList.remove('is-page-leaving');
   });
 
   // Same-tab, same-origin, one of the 4 known public pages, no modifier key,
@@ -758,25 +768,49 @@
     return !!previewPageForHref(link.getAttribute('href'));
   }
 
-  // Close the Portal, then navigate. The delay MUST be >= the matching CSS
-  // close transition (style.css) or the document would unload
-  // mid-animation, cutting it off before it visibly finishes — the exact
-  // mistake that made v3-v5's animation unreadable. Normal motion: 205ms —
-  // a few ms of margin over the .2s outgoing close (Portal FX plates +
-  // page depth response), landing inside the 1N-v6 "~180-230ms outgoing"
-  // target. Reduced motion: 85ms, matching the CSS cover-in exactly —
-  // deliberately SHORTER than normal motion, never longer, because less
-  // motion should mean less time, not an added wait (§10). A plain
-  // timeout, not an animationend/transitionend listener: an event that
-  // might not fire is exactly the kind of fragility that broke the very
-  // first attempt.
+  // 1P.9 §10 — is this internal link's destination the page already on
+  // screen? Compares resolved pathnames (basename only, matching
+  // previewPageForHref()'s own resolution so '/', './' and 'index.html'
+  // agree). A real hash or query string on the LINK itself is treated as
+  // an intentional, different destination and never suppressed — this only
+  // catches the plain "click Home while already on Home" case.
+  function isSamePublicPageHref(hrefAttr) {
+    try {
+      var dest = new URL(hrefAttr, location.href);
+      if (dest.hash || dest.search) return false;
+      var destBase = dest.pathname.split('/').pop() || 'index.html';
+      var curBase = location.pathname.split('/').pop() || 'index.html';
+      return destBase === curBase;
+    } catch (e) { return false; }
+  }
+
+  // Close duration + SEALED HOLD, for each motion mode — MUST stay in sync
+  // with the matching values in css/style.css (the curtains' transition
+  // duration + html.is-page-leaving::before's delay/duration), and the
+  // delay below MUST be >= the CSS close transition or the document would
+  // unload mid-animation, cutting it off before it visibly finishes — the
+  // exact mistake that made v3-v5's animation unreadable. Normal motion:
+  // .65s close + 70ms hold = 720ms (1P.4 rebuild §10). Reduced motion
+  // (1P.6): the curtains now ACTUALLY TRAVEL under reduced motion too
+  // (§1 — the previous `transform: none !important` that pinned them
+  // permanently center-sealed was the 1P.5 root cause), just on a
+  // shorter, simpler timeline — .33s close + 40ms hold = 370ms. Still
+  // deliberately shorter than normal motion (less motion, less time, not
+  // an added wait), just no longer near-instant, since the travel itself
+  // is now essential rather than decorative.
+  var CLOSE_MS_NORMAL = 650, HOLD_MS_NORMAL = 70;
+  var CLOSE_MS_REDUCED = 330, HOLD_MS_REDUCED = 40;
+
+  // Close the Portal, then navigate. A plain timeout, not an
+  // animationend/transitionend listener: an event that might not fire is
+  // exactly the kind of fragility that broke the very first attempt.
   function beginPageExit(url, ev) {
     if (pageTransitioning) { if (ev) ev.preventDefault(); return; }   // §14/§44 — ignore rapid re-clicks
     pageTransitioning = true;
     try { sessionStorage.setItem('ttw_page_transition', '1'); } catch (e) {}
     if (ev) ev.preventDefault();
     document.documentElement.classList.add('is-page-leaving');
-    var delay = reducedMotion() ? 85 : 205;
+    var delay = reducedMotion() ? (CLOSE_MS_REDUCED + HOLD_MS_REDUCED) : (CLOSE_MS_NORMAL + HOLD_MS_NORMAL);
     setTimeout(function () { window.location.href = url; }, delay);
   }
 
@@ -790,6 +824,54 @@
   }
   function finishPageEntry() {
     document.documentElement.classList.remove('is-page-entering');
+  }
+
+  // ── 1P.9 — SINGLE DESTINATION-READY GATE ─────────────────────────────
+  // The only place in this file allowed to reveal the destination (remove
+  // is-page-entering, which is what starts the curtain-open CSS
+  // transition) — every boot() path below calls THIS, never
+  // finishPageEntry() directly, so there is exactly one owner of "the
+  // Portal is allowed to open now" (no competing timers/listeners for the
+  // fresh-parse path; the <head> script's own BFCache pageshow handler is
+  // a separate, already-instant-ready case — see its own comment there).
+  // No-ops immediately if this load never arrived via a transition
+  // (preparePageEntry() false) — identical to the old direct-call behavior
+  // for a cold/direct load.
+  //
+  // Real-browser diagnostic evidence (1P.9 milestone) showed the safety
+  // cover (html::before) fading out in the SAME instant the curtains
+  // started their ~650-720ms open transition, and the destination content
+  // being revealed with no guaranteed prior paint — both are symptoms of
+  // the old code calling finishPageEntry() synchronously, in the same tick
+  // as renderShell()/initReveal(), with nothing forcing the browser to
+  // actually PAINT the rendered destination before starting the visible
+  // open animation. Two rAFs force that paint to happen first (same
+  // technique already used, and proven safe in real-browser testing, by
+  // the <head> script's BFCache restore path) — both frames are invisible
+  // regardless, since the curtains are still 100% sealed throughout.
+  //
+  // is-page-sealed and is-page-entering are then cleared TOGETHER, not
+  // split across a further rAF — measured evidence during this milestone
+  // (headless, both motion modes, all 4 pages, warm/cold/slow paths) found
+  // curtain geometry identically ~100% sealed (topEdge.bottom ≈ 450) at
+  // the instant of EITHER removal regardless of ordering, because the
+  // curtain's own position/transition only ever depends on is-page-entering
+  // — is-page-sealed clearing one frame earlier or in the same frame is
+  // equally invisible either way (still fully covered by the curtain, a
+  // z-index above the safety cover). A separating rAF was tried first, but
+  // on heavier pages/paths (a full product grid render, a real network
+  // fetch just having completed) it measured up to ~200ms of pure added
+  // delay for zero visual benefit — exactly the "over-engineered guessed
+  // wait" §12 of the brief warns against. This costs 2 frames (~16-35ms)
+  // total, not 3.
+  function revealDestination() {
+    if (!preparePageEntry()) return;
+    requestAnimationFrame(function () {
+      requestAnimationFrame(function () {
+        document.documentElement.classList.remove('is-page-sealed');
+        finishPageEntry();
+      });
+    });
   }
 
   // ── I18N PRE-PAINT GUARD ─────────────────────────────────────────────
@@ -891,6 +973,7 @@
     }
     document.addEventListener('pointerenter', onIntent, true);   // capture — pointerenter doesn't bubble
     document.addEventListener('focusin', onIntent);
+    document.addEventListener('touchstart', onIntent, { passive: true, capture: true });   // §9 — mobile has no hover
   }
 
   // ── NAVIGATION ────────────────────────────────────────────────────
@@ -957,7 +1040,12 @@
       const hit = e.target.closest('.btn, .filter-btn, .nav-toggle, .nav-link, .wa-float');
       if (!hit) return;
       playUISound('tap');
-      if (isPublicInternalNavigation(hit, e)) beginPageExit(hit.href, e);
+      if (isPublicInternalNavigation(hit, e)) {
+        // 1P.9 §10 — clicking the page already on screen must never
+        // close/reload/reopen the Portal over itself.
+        if (isSamePublicPageHref(hit.getAttribute('href'))) { e.preventDefault(); return; }
+        beginPageExit(hit.href, e);
+      }
     }, true);
   }
 
@@ -1557,6 +1645,26 @@
     setText('contact-hours', shopHours(lang, 'weekdays') + '  ·  ' + shopHours(lang, 'weekends'));
   }
 
+  // ── PRICE FORMATTING (milestone 1P.1 — permanent Riyal symbol) ──────
+  // `products.price` is a free-text column (see supabase/schema.sql — not
+  // numeric, and changing that is out of scope here: no migration, no
+  // schema change, no rewriting of stored values). Pre-1P.1 rows were
+  // typed by the owner as e.g. "39 SAR"; going forward the Admin field
+  // guides bare-numeric entry instead (see admin/js/views/menu.js), but
+  // this formatter must render EITHER convention identically, since old
+  // rows are never rewritten. It takes the leading numeric token from
+  // whatever is stored (dropping any legacy "SAR"/other suffix) and
+  // appends the one true symbol — never storing or round-tripping the
+  // symbol itself, purely a render-time presentation step.
+  var RIYAL_SYMBOL = '﷼';
+  function formatPrice(raw) {
+    if (raw == null) return '';
+    var s = String(raw).trim();
+    if (!s) return '';
+    var m = s.match(/-?\d+(?:\.\d+)?/);
+    return (m ? m[0] : s) + ' ' + RIYAL_SYMBOL;
+  }
+
   // ── PRODUCT CARD RENDERER ─────────────────────────────────────────
   // Built with DOM APIs + textContent — owner-entered name / description /
   // price / category never touch innerHTML. In Admin Preview each card carries
@@ -1617,7 +1725,14 @@
       if (p.price) {
         const price = document.createElement('div');
         price.className = 'product-price';
-        price.textContent = p.price;
+        // `.price-amount` forces one fixed LTR run for "<number> ﷼" (see
+        // css/style.css) — without it, the Riyal glyph's own strong-RTL
+        // bidi class next to a plain digit run can visually reorder inside
+        // an `[dir=rtl]` ancestor, splitting the symbol from its number.
+        const amount = document.createElement('span');
+        amount.className = 'price-amount';
+        amount.textContent = formatPrice(p.price);
+        price.appendChild(amount);
         body.appendChild(price);
       }
       if (desc) {
@@ -1637,7 +1752,24 @@
   }
 
   // ── SCROLL REVEAL ─────────────────────────────────────────────────
-  function initReveal() {
+  // `immediate` (1P.7): the Portal curtains are ALREADY the reveal
+  // mechanism for a transition arrival — an above-the-fold .reveal/
+  // .reveal-grid element ALSO waiting on its own IntersectionObserver
+  // callback (inherently async, "a frame or two" per below) raced the
+  // curtains' own fast ease-out opening and lost: real-browser testing
+  // showed the curtain gap opening onto still-opacity:0 page title/filter
+  // bar content that only faded in a beat later — the site owner's
+  // reported "empty gap, page appears later" bug, confirmed via a frozen
+  // half-open capture showing exactly those elements at opacity:0 while
+  // products-grid (which separately force-adds `.visible` on render, see
+  // above) was already visible. `immediate` skips the observer entirely
+  // for whatever is ALREADY in the viewport at this exact moment — no
+  // redundant concealment on top of the curtains — while anything below
+  // the fold still gets the observer attached completely normally, so the
+  // scroll-triggered entrance (a real, separate, unrelated feature) is
+  // untouched. Cold/direct loads keep the original "a frame or two" async
+  // polish — only the Portal-arrival case needs this.
+  function initReveal(immediate) {
     const targets = document.querySelectorAll('.reveal, .reveal-grid');
     if (!('IntersectionObserver' in window)) {
       targets.forEach(el => el.classList.add('visible'));
@@ -1648,7 +1780,14 @@
         if (e.isIntersecting) { e.target.classList.add('visible'); io.unobserve(e.target); }
       });
     }, { threshold: 0.08, rootMargin: '0px 0px -32px 0px' });
-    targets.forEach(el => io.observe(el));
+    const vh = window.innerHeight || document.documentElement.clientHeight;
+    targets.forEach(el => {
+      if (immediate) {
+        const r = el.getBoundingClientRect();
+        if (r.bottom > 0 && r.top < vh) { el.classList.add('visible'); return; }
+      }
+      io.observe(el);
+    });
   }
 
   // ── SOUND FEEDBACK ────────────────────────────────────────────────
@@ -2096,6 +2235,20 @@
       return;
     }
 
+    // 1P.4 rebuild — the Portal's gold wave edges carry a "living" SVG
+    // SMIL <animate attributeName="d"> morph (see the four public HTML
+    // files) that runs continuously and independently of the close/open
+    // transform, purely decorative. Under reduced motion, §21 of the
+    // 1P.4 brief asks for it to be paused, not just visually suppressed —
+    // CSS alone cannot stop a running SMIL animation, only
+    // SVGSVGElement.pauseAnimations() can. Runs once, unconditionally,
+    // this early (never reached under PREVIEW — see the return above).
+    if (reducedMotion()) {
+      document.querySelectorAll('.portal-edge').forEach(function (svg) {
+        try { if (typeof svg.pauseAnimations === 'function') svg.pauseAnimations(); } catch (e) {}
+      });
+    }
+
     if (isSupabaseConfigured()) {
       // Same-session snapshot: render instantly from already-known public
       // data (no network wait at all), THEN quietly revalidate — never a
@@ -2108,14 +2261,27 @@
         if (typeof SHOP_SETTINGS !== 'undefined') SHOP_SETTINGS.sounds = snap.shop.sounds !== false;
         renderShell(lang);
         releaseI18nGuard();   // real translations are on screen now — safe to reveal
-        initReveal();
-        if (arrivedSilently) finishPageEntry();
+        initReveal(arrivedSilently);
+        revealDestination();
         prefetchOtherPublicPages();
         const priorSignature = JSON.stringify({ shop: snap.shop, products: snap.products });
         loadFromSupabase().then(function () {
           saveSnapshot();
           const freshSignature = JSON.stringify({ shop: window.SHOP, products: window.PRODUCTS });
-          if (freshSignature !== priorSignature) renderShell(lang);   // reconcile only if something changed
+          if (freshSignature !== priorSignature) {
+            renderShell(lang);
+            // 1P.7: this rebuilds .reveal/.reveal-grid elements fresh —
+            // without this, they'd sit at opacity:0 with no observer ever
+            // reattached (the original one already fired-and-unobserved
+            // for the OLD nodes), leaving content the visitor already saw
+            // once silently invisible until they scroll. Always
+            // `immediate` here regardless of how this page was reached:
+            // by the time a background reconcile fires, the visitor has
+            // already been looking at this content — re-hiding then
+            // re-revealing it a beat later would be a confusing flash,
+            // never a wanted "entrance."
+            initReveal(true);
+          }
         }).catch(function (e) { console.warn('[app.js] background revalidate failed:', e); });
         return;
       }
@@ -2154,7 +2320,7 @@
           'فشل تحميل المحتوى. يرجى تحديث الصفحة.<br/>' +
           '<span style="font-size:12px;opacity:.6">Failed to load content. Please refresh.</span>'
         );
-        finishPageEntry();   // never leave the customer stuck under the gate on a load failure
+        revealDestination();   // never leave the customer stuck under the gate on a load failure — opens onto this error state, not a blank one
         return;
       }
       if (!arrivedSilently) hideLoading();
@@ -2162,11 +2328,11 @@
 
     renderShell(lang);
     releaseI18nGuard();   // real translations are on screen now — safe to reveal
-    initReveal();
+    initReveal(arrivedSilently);
 
     // Content is ready — if this load was an intercepted transition arrival,
     // open the gate now (§7/§8). No-op otherwise.
-    if (arrivedSilently) finishPageEntry();
+    revealDestination();
     prefetchOtherPublicPages();
   }
 

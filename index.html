@@ -48,18 +48,123 @@
      fails to load or throws. */
   var enter=false;
   try{if(sessionStorage.getItem('ttw_page_transition')==='1'){sessionStorage.removeItem('ttw_page_transition');enter=true;}}catch(e){}
-  if(enter)document.documentElement.classList.add('is-page-entering');
-  addEventListener('pageshow',function(e){
-    document.documentElement.classList.remove('is-page-leaving');
-    if(e.persisted){
-      // BFCache restores an already-rendered, already-correct-language page —
-      // neither guard may come back stuck.
-      document.documentElement.classList.remove('is-page-entering');
-      document.documentElement.classList.remove('i18n-pending');
-      try{sessionStorage.removeItem('ttw_page_transition');}catch(x){}
-    }
+
+  /* Admin Preview check, computed once up front (1P.3) — both the 1P.1
+     back/forward detection below AND the new BFCache pagehide/pageshow
+     handling further down need it, so it's no longer buried inside the
+     back/forward block alone. Wrapped in try/catch, defaults to false
+     (never Preview) on any failure — the safer default here is to KEEP
+     Portal-suppressing checks active, not skip them. */
+  var isPreview=false;
+  try{isPreview=new URLSearchParams(location.search).has('adminPreview');}catch(e){}
+
+  /* 1P.1 — BACK/FORWARD DESTINATION ENTRY. This script only ever runs on a
+     FRESH parse (a BFCache restore re-executes no script at all — see the
+     pagehide/pageshow listeners below for that separate case). A fresh
+     document whose PerformanceNavigationTiming.type is 'back_forward'
+     means the visitor pressed Back/Forward and the browser could not, or
+     chose not to, serve this document from BFCache. There is no reliable
+     way to play a CLOSE animation on the page being LEFT first — this is
+     multi-document navigation, not an SPA, and a beforeunload/pagehide
+     delay to fake one would be unreliable AND would disqualify every page
+     on the site from BFCache eligibility (never worth it). So instead the
+     destination enters already sealed and opens exactly the way the
+     marker-based path above does — same class, same CSS, same timing,
+     the identical wave visuals — with no separate design. Wrapped in
+     try/catch — a Navigation Timing failure must never block this page's
+     own first paint. */
+  if(!enter){
+    try{
+      var navEntries=performance&&performance.getEntriesByType&&performance.getEntriesByType('navigation');
+      var navType=navEntries&&navEntries[0]&&navEntries[0].type;
+      if(navType==='back_forward'&&!isPreview)enter=true;
+    }catch(e){}
+  }
+
+  if(enter)document.documentElement.classList.add('is-page-entering','is-page-sealed');
+
+  /* 1P.3 — BFCACHE: SEAL BEFORE FREEZE, OPEN ON RESTORE.
+     Real-browser testing (Opera/Chromium, not just the headless sandbox)
+     found that mouse/native Back-Forward showed NO Portal at all — 1P.1's
+     back_forward-type detection above only ever helps when the browser
+     does NOT serve the destination from BFCache; a BFCache restore
+     re-executes no script whatsoever, so that whole detection block never
+     even runs for it. BFCache needed its own, separate mechanism:
+       pagehide (about to freeze) → synchronously force the SEALED look,
+         INSTANTLY (no transition — there is no time left to animate
+         before the freeze), so whatever gets captured into the cached
+         snapshot is always fully closed, never a half-open frame.
+       pageshow with persisted=true (restored) → the frozen snapshot is
+         ALREADY sealed, so start the OPEN transition from there: same
+         "is-page-entering" mechanism the fresh-parse paths above already
+         use (their sealed-first-paint IS pixel-identical to what pagehide
+         just froze), removed two rAFs later to trigger the real .60s/
+         .625s retreat — never fabricate an "already open, then suddenly
+         seal, then reopen" sequence (that would flash the resolved page
+         before the seal, the exact problem this design avoids by sealing
+         BEFORE the freeze instead of after the restore).
+     Never touches Admin Preview (`isPreview`, above) at any stage. */
+  addEventListener('pagehide',function(e){
+    if(isPreview)return;
+    if(!e.persisted)return;   // not being frozen — nothing to prepare
+    var html=document.documentElement;
+    // A normal intercepted-click close (the marker path) already added
+    // is-page-leaving up to 720ms ago and has been animating toward the
+    // sealed look via the ordinary CSS transition ever since — by the
+    // time pagehide can fire, it has already visibly reached (or is
+    // essentially at) that sealed state, so there is nothing left to do.
+    if(html.classList.contains('is-page-leaving'))return;
+    // Otherwise: native Back/Forward, a typed URL, a bookmark, etc. — no
+    // Portal ever played on the way out. Force the SAME end state the
+    // normal close reaches, but INSTANTLY (ptfx-instant, see style.css),
+    // since there is no time left to animate before the freeze.
+    html.classList.add('is-page-leaving','ptfx-instant');
   });
-  setTimeout(function(){document.documentElement.classList.remove('is-page-entering');},900);
+  addEventListener('pageshow',function(e){
+    if(!e.persisted){
+      document.documentElement.classList.remove('is-page-leaving');
+      return;
+    }
+    document.documentElement.classList.remove('i18n-pending');
+    try{sessionStorage.removeItem('ttw_page_transition');}catch(x){}
+    if(isPreview){
+      // Defensive only — Preview should never have picked up any of
+      // these classes in the first place (pagehide skips it above, and
+      // js/app.js never calls beginPageExit() under PREVIEW either).
+      document.documentElement.classList.remove('is-page-leaving','is-page-entering','is-page-sealed','ptfx-instant');
+      return;
+    }
+    var html=document.documentElement;
+    // Swap the "sealed" class combo (is-page-leaving+ptfx-instant, set by
+    // pagehide before freezing, or already present from a marker-path
+    // close) for the OTHER "sealed, no transition" combo the fresh-parse
+    // paths use (is-page-entering) — both render pixel-identically, so
+    // there is no visible change in this exact tick, only a handoff of
+    // which class is driving it.
+    html.classList.remove('is-page-leaving','ptfx-instant');
+    html.classList.add('is-page-entering','is-page-sealed');
+    // Double rAF: force the browser to actually PAINT that sealed
+    // starting state at least once before removing the class triggers
+    // the OPEN transition — without this, a browser can coalesce "add
+    // then remove in the same tick" into a single frame with no visible
+    // transition played at all. A BFCache restore has no async content to
+    // wait for (the whole page is already frozen exactly as it was), so
+    // both classes clear together here — unlike the fresh-parse path's
+    // own readiness gate in js/app.js (revealDestination()), which clears
+    // them in separate steps because it DOES have to wait on real render
+    // work first (1P.9).
+    requestAnimationFrame(function(){
+      requestAnimationFrame(function(){
+        html.classList.remove('is-page-entering','is-page-sealed');
+      });
+    });
+  });
+  // Last-resort failsafe only (1P.9: widened from 900ms to 6s) — if
+  // js/app.js fails to load/execute at all, this guarantees the Portal is
+  // never trapped sealed forever. Normal readiness (including a genuinely
+  // slow cold Supabase fetch) is expected to resolve well before this and
+  // call revealDestination() itself; this is not the primary mechanism.
+  setTimeout(function(){document.documentElement.classList.remove('is-page-entering','is-page-sealed');},6000);
   }();</script>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🍕</text></svg>" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -73,11 +178,34 @@
   <!-- Decorative only — see css/style.css "PORTAL FX LAYER" + js/app.js.
        Inert/never active under ?adminPreview=1. -->
   <div id="page-transition-fx" aria-hidden="true">
-    <span class="ptfx-plate ptfx-plate--top"></span>
-    <span class="ptfx-plate ptfx-plate--bottom"></span>
-    <span class="ptfx-rail ptfx-rail--left"></span>
-    <span class="ptfx-rail ptfx-rail--right"></span>
-    <span class="ptfx-seam"></span>
+    <div class="portal-curtain portal-curtain-top">
+      <div class="portal-curtain-surface"></div>
+      <svg class="portal-edge portal-edge-top" viewBox="0 0 400 32" preserveAspectRatio="none">
+        <path class="portal-wave-fill" d="M0,27 C40,25 70,29 110,26 C150,24 180,28 220,25 C260,29 300,26 340,27 C365,25 385,28 400,26">
+          <animate attributeName="d" dur="950ms" repeatCount="indefinite" calcMode="spline" keyTimes="0;0.333;0.667;1" keySplines="0.4 0 0.6 1;0.4 0 0.6 1;0.4 0 0.6 1" values="M0,27 C40,25 70,29 110,26 C150,24 180,28 220,25 C260,29 300,26 340,27 C365,25 385,28 400,26;M0,25 C40,28 70,25 110,29 C150,26 180,24 220,28 C260,25 300,29 340,25 C365,27 385,25 400,28;M0,28 C40,26 70,27 110,24 C150,29 180,26 220,24 C260,27 300,25 340,29 C365,26 385,24 400,27;M0,27 C40,25 70,29 110,26 C150,24 180,28 220,25 C260,29 300,26 340,27 C365,25 385,28 400,26" />
+        </path>
+        <path class="portal-wave-glow" d="M0,27 C40,25 70,29 110,26 C150,24 180,28 220,25 C260,29 300,26 340,27 C365,25 385,28 400,26">
+          <animate attributeName="d" dur="950ms" repeatCount="indefinite" calcMode="spline" keyTimes="0;0.333;0.667;1" keySplines="0.4 0 0.6 1;0.4 0 0.6 1;0.4 0 0.6 1" values="M0,27 C40,25 70,29 110,26 C150,24 180,28 220,25 C260,29 300,26 340,27 C365,25 385,28 400,26;M0,25 C40,28 70,25 110,29 C150,26 180,24 220,28 C260,25 300,29 340,25 C365,27 385,25 400,28;M0,28 C40,26 70,27 110,24 C150,29 180,26 220,24 C260,27 300,25 340,29 C365,26 385,24 400,27;M0,27 C40,25 70,29 110,26 C150,24 180,28 220,25 C260,29 300,26 340,27 C365,25 385,28 400,26" />
+        </path>
+        <path class="portal-wave-core" d="M0,27 C40,25 70,29 110,26 C150,24 180,28 220,25 C260,29 300,26 340,27 C365,25 385,28 400,26">
+          <animate attributeName="d" dur="950ms" repeatCount="indefinite" calcMode="spline" keyTimes="0;0.333;0.667;1" keySplines="0.4 0 0.6 1;0.4 0 0.6 1;0.4 0 0.6 1" values="M0,27 C40,25 70,29 110,26 C150,24 180,28 220,25 C260,29 300,26 340,27 C365,25 385,28 400,26;M0,25 C40,28 70,25 110,29 C150,26 180,24 220,28 C260,25 300,29 340,25 C365,27 385,25 400,28;M0,28 C40,26 70,27 110,24 C150,29 180,26 220,24 C260,27 300,25 340,29 C365,26 385,24 400,27;M0,27 C40,25 70,29 110,26 C150,24 180,28 220,25 C260,29 300,26 340,27 C365,25 385,28 400,26" />
+        </path>
+      </svg>
+    </div>
+    <div class="portal-curtain portal-curtain-bottom">
+      <div class="portal-curtain-surface"></div>
+      <svg class="portal-edge portal-edge-bottom" viewBox="0 0 400 32" preserveAspectRatio="none">
+        <path class="portal-wave-fill" d="M0,5 C40,7 70,3 110,6 C150,4 180,8 220,5 C260,3 300,6 340,4 C365,7 385,5 400,6">
+          <animate attributeName="d" dur="1050ms" repeatCount="indefinite" calcMode="spline" keyTimes="0;0.333;0.667;1" keySplines="0.4 0 0.6 1;0.4 0 0.6 1;0.4 0 0.6 1" values="M0,5 C40,7 70,3 110,6 C150,4 180,8 220,5 C260,3 300,6 340,4 C365,7 385,5 400,6;M0,6 C40,4 70,7 110,3 C150,6 180,5 220,8 C260,4 300,5 340,7 C365,3 385,6 400,4;M0,4 C40,6 70,5 110,8 C150,3 180,6 220,4 C260,7 300,5 340,6 C365,4 385,7 400,3;M0,5 C40,7 70,3 110,6 C150,4 180,8 220,5 C260,3 300,6 340,4 C365,7 385,5 400,6" />
+        </path>
+        <path class="portal-wave-glow" d="M0,5 C40,7 70,3 110,6 C150,4 180,8 220,5 C260,3 300,6 340,4 C365,7 385,5 400,6">
+          <animate attributeName="d" dur="1050ms" repeatCount="indefinite" calcMode="spline" keyTimes="0;0.333;0.667;1" keySplines="0.4 0 0.6 1;0.4 0 0.6 1;0.4 0 0.6 1" values="M0,5 C40,7 70,3 110,6 C150,4 180,8 220,5 C260,3 300,6 340,4 C365,7 385,5 400,6;M0,6 C40,4 70,7 110,3 C150,6 180,5 220,8 C260,4 300,5 340,7 C365,3 385,6 400,4;M0,4 C40,6 70,5 110,8 C150,3 180,6 220,4 C260,7 300,5 340,6 C365,4 385,7 400,3;M0,5 C40,7 70,3 110,6 C150,4 180,8 220,5 C260,3 300,6 340,4 C365,7 385,5 400,6" />
+        </path>
+        <path class="portal-wave-core" d="M0,5 C40,7 70,3 110,6 C150,4 180,8 220,5 C260,3 300,6 340,4 C365,7 385,5 400,6">
+          <animate attributeName="d" dur="1050ms" repeatCount="indefinite" calcMode="spline" keyTimes="0;0.333;0.667;1" keySplines="0.4 0 0.6 1;0.4 0 0.6 1;0.4 0 0.6 1" values="M0,5 C40,7 70,3 110,6 C150,4 180,8 220,5 C260,3 300,6 340,4 C365,7 385,5 400,6;M0,6 C40,4 70,7 110,3 C150,6 180,5 220,8 C260,4 300,5 340,7 C365,3 385,6 400,4;M0,4 C40,6 70,5 110,8 C150,3 180,6 220,4 C260,7 300,5 340,6 C365,4 385,7 400,3;M0,5 C40,7 70,3 110,6 C150,4 180,8 220,5 C260,3 300,6 340,4 C365,7 385,5 400,6" />
+        </path>
+      </svg>
+    </div>
   </div>
 
   <!-- Everything the visitor actually reads/uses lives in here — kept

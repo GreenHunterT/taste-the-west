@@ -632,6 +632,20 @@ p { line-height: 1.7; }
   letter-spacing: .04em;
   margin-bottom: 10px;
 }
+/* Milestone 1P.1 — keeps "<number> ﷼" one fixed left-to-right unit even
+   inside an `[dir=rtl]` ancestor (the site's Arabic default). The Riyal
+   glyph is its own strong-RTL bidi character; sitting next to plain
+   digits inside RTL text, the bidi algorithm can otherwise reorder or
+   split them onto what looks like the wrong side of the number.
+   `unicode-bidi: isolate` + explicit `direction: ltr` pin the run's
+   internal order regardless of the surrounding paragraph direction, and
+   `white-space: nowrap` keeps the symbol from ever wrapping onto its own
+   line, per §9/§3 of that milestone. */
+.price-amount {
+  direction: ltr;
+  unicode-bidi: isolate;
+  white-space: nowrap;
+}
 .product-desc {
   font-size: 13.5px;
   color: var(--text-muted);
@@ -1179,162 +1193,249 @@ html::before {
 
 @media not (prefers-reduced-motion: reduce) {
   /* Base/open state: fades out quickly once the guard is released — by
-     then the Portal FX layer above is already carrying the visual. */
+     then the Portal layer above is already carrying the visual. */
   html::before { transition: opacity .07s ease; }
-  /* Outgoing: stays fully transparent for most of the ~200ms close (the
-     Portal FX layer is doing the visible work), then snaps to fully
-     opaque in the LAST 40ms, right as js/app.js navigates — full opacity
-     exists only around the actual cross-document swap, never for the
-     whole transition (§5/§14 of the v6 spec). */
-  html.is-page-leaving::before { opacity: 1; transition: opacity .04s linear .16s; }
+  /* Outgoing: stays fully transparent through the entire .65s close (the
+     Portal layer is doing the visible work), then snaps to fully opaque
+     in a brief ~70ms SEALED HOLD right as js/app.js navigates at .72s
+     (1P.4 rebuild §10) — full opacity exists only around the actual
+     cross-document swap, never for the whole transition. */
+  html.is-page-leaving::before { opacity: 1; transition: opacity .07s linear .65s; }
   /* Incoming: the destination's first possible paint must be safe with
-     zero dependency on timing, so this is instant, no transition at all —
-     exactly like v3-v5. */
-  html.is-page-entering::before { opacity: 1; transition: none; }
+     zero dependency on timing, so this is instant, no transition at all.
+     1P.9: driven by `is-page-sealed`, NOT `is-page-entering` — the two
+     are added together on first paint (identical visual result to before)
+     but js/app.js's revealDestination() now clears this class in its own
+     separate, earlier step, WHILE `is-page-entering` (and so the fully
+     sealed curtains) are still present — see that function's own comment
+     for why. Falls back to the `html::before { transition: opacity .07s
+     ease; }` rule above once cleared, same quick fade as always, just no
+     longer coupled to the moment the curtains start visibly moving. */
+  html.is-page-sealed::before { opacity: 1; transition: none; }
 }
 
-/* ── PORTAL FX LAYER (milestone 1N v6) ───────────────────────────────
-   The actual "TasteTheWest Portal" visual: dark-glass plates (NOT flat
-   opaque — a translucent brand-dark gradient + backdrop-filter, so the
-   page keeps some silhouette/depth underneath, §8/§19), thin gold accent
-   rails framing the sides (§9), and a center energy seam with a one-shot
-   light sweep near full closure (§10/§11). Lives in <body> on the four
-   public pages (index/products/location/contact — never 404, which was
-   never part of the transition-marker system) as a static, inert
-   `<div id="page-transition-fx" aria-hidden="true">`; driven by the SAME
-   is-page-leaving / is-page-entering classes as the safety cover above —
-   one routing architecture, two coordinated visual layers, never two
-   competing transition systems (§34). `pointer-events: none` throughout:
-   purely decorative, never interactive, never a click target. */
-/* The real page — a sibling of #page-transition-fx, NEVER an ancestor of it.
-   `transform`/`filter` on an ancestor changes the containing block for a
-   `position: fixed` descendant and rasterises it through that ancestor's
-   filter — confirmed by real-browser testing: an earlier version of this
-   milestone applied the depth response directly to <body>, which quietly
-   blurred/clipped #page-transition-fx's rails and seam into invisibility
-   because they were ALSO children of body at the time. Keeping the two as
-   siblings under body, and putting the depth response only here, avoids
-   that trap entirely while still transforming everything the visitor
-   actually reads. */
-#page-content {
-  transition: opacity .32s cubic-bezier(.22,1,.36,1), transform .32s cubic-bezier(.22,1,.36,1),
-              filter .32s cubic-bezier(.22,1,.36,1);
-}
-
+/* ── PORTAL — CURTAIN REBUILD (milestone 1P.4) ────────────────────────
+   Ground-up rebuild replacing the entire old `.ptfx-*` system (dark
+   "plates" sized to 55% of the viewport with a deliberate overlap, a
+   separate opacity-fade layer, and a wave SVG whose visibility depended
+   on that fade). Real-browser testing (not just headless capture) found
+   the old system read as "two lines that fade in/out near center," never
+   as two edges physically traveling from the top/bottom boundaries — see
+   the 1P.4 rebuild report for the full diagnosis. This version has
+   exactly ONE geometry system:
+     .portal-curtain          a plain 50vh-tall panel, fixed to the
+                               viewport's top or bottom edge. Idle
+                               position is `translateY` by its OWN full
+                               height, off-screen — so its LEADING edge
+                               (the one that travels) sits EXACTLY at the
+                               true viewport boundary (y=0 for top,
+                               y=100vh for bottom) even at rest. Closed
+                               position is `translateY(0)`, landing that
+                               same leading edge at 50vh. No opacity
+                               animation anywhere in this rule: the
+                               curtain is always fully "on," and is
+                               invisible purely because it is physically
+                               off-screen — nothing to desync, nothing
+                               that can visually lag behind its own
+                               position.
+     .portal-curtain-surface  the dark glass background (a translucent
+                               gradient, not flat opaque, so the page
+                               keeps a soft silhouette underneath until
+                               fully sealed — unchanged aesthetic from
+                               earlier milestones, just no longer driven
+                               by an animated `opacity`).
+     .portal-edge              a SMALL (32px) SVG cap physically attached
+                               to the curtain's own trailing/leading edge
+                               (top curtain: `bottom:-1px`; bottom
+                               curtain: `top:-1px`) — being a CHILD of
+                               the curtain, it inherits the SAME
+                               `transform` for free, so it travels with
+                               the curtain by construction, no separate
+                               positioning logic to keep in sync.
+   The wave curve itself sits near the OUTER edge of that 32px band (the
+   edge that faces the viewport boundary), same reasoning as the old
+   1P.3 fix, recomputed for the smaller band — see the four public HTML
+   files' `<path d="...">` data. Three thin, constant-width STROKES
+   (never a filled clip region — see the 1P.4 report for why that
+   produced a "thick bar" last time) share this curve:
+     .portal-wave-fill   a modest stroke in the curtain's own edge tone,
+                         continuing its silhouette in a wavy line.
+     .portal-wave-glow   a soft, blurred bloom.
+     .portal-wave-core   a 2px bright line — the actual visible boundary.
+   LIVING WAVE: each of those three strokes carries an SVG SMIL
+   `<animate attributeName="d">` (defined in the HTML, not here) that
+   subtly morphs the curve between 3 compatible shapes on an ~900ms-1s
+   loop, independent of and running throughout the close/open transform —
+   "an energy ripple," per the brief, not a static squiggle riding a
+   moving panel. Paused via `SVGAnimationElement.pauseAnimations()` from
+   JS under `prefers-reduced-motion: reduce` (see js/app.js). */
 #page-transition-fx, #page-transition-fx * { pointer-events: none; }
 #page-transition-fx {
   position: fixed;
   inset: 0;
   z-index: 100000;   /* above the plain safety cover */
   overflow: hidden;  /* never a scrollbar source, whatever the geometry does */
+  /* 1P.9 §3 — explicit, defence-in-depth: this container is a positioning
+     box ONLY. No rule anywhere else in this file paints a background on
+     it (audited), but a real-browser diagnostic report suspected exactly
+     that during destination opening — pinning it transparent here removes
+     any doubt and any future risk of a rule accidentally doing so. Only
+     .portal-curtain-top/-bottom (and their own children) are allowed to
+     paint dark Portal pixels; the gap between them must always be
+     genuinely transparent. */
+  background: transparent;
 }
-.ptfx-plate {
-  position: absolute;
+.portal-curtain {
+  position: fixed;
   left: 0; right: 0;
-  height: 55%;         /* deliberate slight overlap at center — never a seam gap */
-  opacity: 0;
+  height: 50vh;
+}
+.portal-curtain-top {
+  top: 0;
+  transform-origin: top;
+  transform: translateY(-100%);   /* idle: shifted up by its OWN height — leading edge exactly at y=0 */
+}
+.portal-curtain-bottom {
+  bottom: 0;
+  transform-origin: bottom;
+  transform: translateY(100%);    /* idle: shifted down by its OWN height — leading edge exactly at y=100vh */
+}
+.portal-curtain-surface {
+  position: absolute;
+  inset: 0;
+  /* No `opacity` property here at all (1P.4 rebuild §12) — always fully
+     "on"; the curtain is invisible purely through its own translated
+     position, not through a fade that could desync from that position. */
+}
+.portal-curtain-top .portal-curtain-surface {
+  background: linear-gradient(to bottom, rgba(14,13,11,.96) 0%, rgba(20,18,15,.9) 68%, rgba(34,28,20,.78) 100%);
+}
+.portal-curtain-bottom .portal-curtain-surface {
+  background: linear-gradient(to top, rgba(14,13,11,.96) 0%, rgba(20,18,15,.9) 68%, rgba(34,28,20,.78) 100%);
 }
 @supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
-  /* Constant blur radius (never itself animated — browsers animate
-     backdrop-filter poorly/inconsistently); only opacity/transform move. */
-  .ptfx-plate { backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
+  .portal-curtain-surface { backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
 }
-.ptfx-plate--top {
-  top: 0; transform-origin: top;
-  background: linear-gradient(to bottom, rgba(14,13,11,.94) 0%, rgba(20,18,15,.85) 68%, rgba(34,28,20,.6) 100%);
-}
-.ptfx-plate--bottom {
-  bottom: 0; transform-origin: bottom;
-  background: linear-gradient(to top, rgba(14,13,11,.94) 0%, rgba(20,18,15,.85) 68%, rgba(34,28,20,.6) 100%);
-}
-.ptfx-rail {
+.portal-edge {
   position: absolute;
-  top: 0; bottom: 0;
-  width: clamp(2px, .4vw, 4px);
-  opacity: 0;
-  background: linear-gradient(to bottom, transparent, rgba(212,175,101,.85), transparent);
-  box-shadow: 0 0 10px 1px rgba(212,175,101,.3);
+  left: 0; right: 0;
+  /* `width: 100%` required, not just left/right — <svg> is a CSS replaced
+     element; an absolutely-positioned replaced element with `width: auto`
+     resolves to its own intrinsic size (SVG's ~300px default) rather than
+     stretching to fill, confirmed by real-browser capture in 1P.2. */
+  width: 100%;
+  height: 32px;
+  display: block;
+  overflow: visible;
 }
-.ptfx-rail--left  { left: 0; }
-.ptfx-rail--right { right: 0; }
-.ptfx-seam {
-  position: absolute;
-  left: 0; right: 0; top: 50%;
-  height: 2px;
-  transform: translateY(-50%);
-  opacity: 0;
-  background: linear-gradient(to right, transparent, rgba(212,175,101,.95), transparent);
-  box-shadow: 0 0 16px 2px rgba(212,175,101,.5);
+.portal-edge-top    { bottom: -1px; }   /* -1px: no subpixel hairline gap against the curtain's own edge */
+.portal-edge-bottom { top: -1px; }
+/* `vector-effect: non-scaling-stroke` keeps every stroke below a constant
+   SCREEN width regardless of `preserveAspectRatio="none"` stretching the
+   two axes unevenly, and — critically, per the 1P.4 report's diagnosis —
+   is what keeps them all genuinely THIN no matter where the curve sits
+   within its band: a stroke's rendered thickness depends only on
+   `stroke-width`, never on curve position, unlike the old filled-region
+   technique this rebuild removes entirely. */
+.portal-wave-fill {
+  fill: none;
+  stroke: rgba(30,25,18,.85);
+  stroke-width: 8;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
 }
-/* The "something advanced happened" light sweep (§11 of v6) — a small
-   bright glint that travels once across the seam near full closure. Pure
-   CSS `@keyframes`, one iteration, no library. */
-.ptfx-seam::after {
-  content: "";
-  position: absolute;
-  top: 50%; left: -20%;
-  width: 20%; height: 6px;
-  transform: translateY(-50%);
-  background: linear-gradient(to right, transparent, rgba(255,244,214,.9), transparent);
-  opacity: 0;
+.portal-wave-glow {
+  fill: none;
+  stroke: rgba(212,175,101,.55);
+  stroke-width: 5;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+  filter: blur(3px);
 }
-@keyframes ptfxSweep {
-  0%   { left: -20%; opacity: 0; }
-  15%  { opacity: 1; }
-  85%  { opacity: 1; }
-  100% { left: 100%;  opacity: 0; }
+.portal-wave-core {
+  fill: none;
+  stroke: rgba(255,240,205,.95);
+  stroke-width: 2;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+  filter: drop-shadow(0 0 2px rgba(212,175,101,.7));
 }
 
 @media not (prefers-reduced-motion: reduce) {
-  /* OPEN — base/unclassed resting state for the FX layer. Same stagger
-     pattern proven in 1N-v5's real-browser testing (small delay + duration
-     difference between top/bottom reads as engineered, not a symmetric
-     wipe); `ease-out`, NOT cubic-bezier(.22,1,.36,1) — that curve's Y
-     control points both sitting at 1 was measured (real capture) to
-     front-load ~90% of visible motion into the first 30% of the duration. */
-  .ptfx-plate--top    { transform: translateY(-100%); transition: transform .34s  ease-out 50ms, opacity .34s  ease-out 50ms; }
-  .ptfx-plate--bottom { transform: translateY(100%);  transition: transform .355s ease-out 65ms, opacity .355s ease-out 65ms; }
-  .ptfx-rail { transition: opacity .3s ease-out 40ms; }
-  .ptfx-seam { transition: opacity .28s ease-out 30ms; }
-
-  /* CLOSE (outgoing): ~200ms, one decisive motion, both plates together —
-     opacity .92 (never fully flat/opaque — the page keeps a soft blurred
-     silhouette through the glass, §4/§8), rails and seam brightening in
-     alongside. The sweep plays once, timed to peak in the final ~80ms
-     before js/app.js navigates (§11 — "near full closure"). */
-  html.is-page-leaving .ptfx-plate--top,
-  html.is-page-leaving .ptfx-plate--bottom {
-    transform: translateY(0); opacity: .92;
-    transition: transform .2s cubic-bezier(.4,0,1,1), opacity .2s cubic-bezier(.4,0,1,1);
+  /* OPEN — base/unclassed resting state. Both curtains share identical
+     timing (no stagger this rebuild — "two curtains," symmetric, per the
+     brief's own framing). Plain `ease-out`: computed (not just eyeballed)
+     against 1P.2's rejected front-loaded alternative, which reached ~80%
+     openness by just 30% of the duration — ease-out spreads the retreat
+     evenly across the full .70s instead. */
+  .portal-curtain-top,
+  .portal-curtain-bottom {
+    transition: transform .70s ease-out;
   }
-  html.is-page-leaving .ptfx-rail { opacity: 1; transition: opacity .16s ease-out 20ms; }
-  html.is-page-leaving .ptfx-seam { opacity: 1; transition: opacity .19s ease-out; }
-  html.is-page-leaving .ptfx-seam::after { animation: ptfxSweep .14s linear .06s 1; }
+
+  /* CLOSE (outgoing): .65s, `cubic-bezier(.42,0,.58,1)` — standard
+     ease-in-out. The brief's own suggested cubic-bezier(.45,0,.2,1) was
+     computed first (1P.4 rebuild report): it reaches 76% progress by
+     just 50% of the duration, front-loaded enough to risk the same
+     "motion crammed into too short a visible window" failure this whole
+     effort exists to fix. Standard ease-in-out is exactly symmetric
+     (50% progress at 50% time), giving the most even, legible spread of
+     visible travel across the full duration of any curve tested so far
+     across this milestone's iterations. */
+  html.is-page-leaving .portal-curtain-top,
+  html.is-page-leaving .portal-curtain-bottom {
+    transform: translateY(0);
+    transition: transform .65s cubic-bezier(.42,0,.58,1);
+  }
 
   /* Incoming: destination's first paint starts already in the fully-formed
      "closed" Portal look — instant, no transition — so there is visual
      continuity across the document swap instead of a hard cut back to
-     nothing (§3/§9's "navigation occurs while visual continuity is
-     maintained"). Removing is-page-entering (once boot() is ready) reveals
-     the OPEN transition above. */
-  html.is-page-entering .ptfx-plate--top,
-  html.is-page-entering .ptfx-plate--bottom { transform: translateY(0); opacity: .92; transition: none; }
-  html.is-page-entering .ptfx-rail,
-  html.is-page-entering .ptfx-seam { opacity: 1; transition: none; }
-
-  /* Outgoing page depth response (§12): restrained scale/opacity/blur,
-     never a translate — the page recedes, it doesn't slide away. Targets
-     #page-content, not body — see that element's own rule further up for
-     why (keeps #page-transition-fx un-blurred and un-clipped). */
-  html.is-page-leaving #page-content {
-    transform: scale(.985); opacity: .75; filter: blur(1.5px);
-    transition: transform .2s ease, opacity .2s ease, filter .2s ease;
+     nothing. Removing is-page-entering (once boot() is ready) reveals the
+     OPEN transition above. */
+  html.is-page-entering .portal-curtain-top,
+  html.is-page-entering .portal-curtain-bottom {
+    transform: translateY(0);
+    transition: none;
   }
-  /* Incoming depth response (§13): destination starts slightly receded
-     underneath the Portal, then resolves via #page-content's own .32s
-     transition as the FX layer opens — "emerges from depth," not "appears
-     after a wait." */
-  html.is-page-entering #page-content { transform: scale(.988); opacity: .85; filter: blur(1.5px); }
+
+  /* Page depth response (1P.4 rebuild §13): DELIBERATELY subtle and
+     DELAYED — the physical curtains should create almost all of the
+     perceived coverage; the page itself must stay clearly readable
+     inside the shrinking gap for most of the close, only receiving a
+     faint depth cue in the final stretch. The `.40s` delay means nothing
+     happens here until ~62% of the .65s close has already elapsed. */
+  html.is-page-leaving #page-content {
+    transform: scale(.992); opacity: .90; filter: blur(1px);
+    transition: transform .25s ease .40s, opacity .25s ease .40s, filter .25s ease .40s;
+  }
+  html.is-page-entering #page-content { transform: scale(.995); opacity: .93; filter: blur(.5px); }
+  #page-content {
+    transition: opacity .70s ease-out, transform .70s ease-out, filter .70s ease-out;
+  }
+
+  /* ── BFCACHE INSTANT SEAL ─────────────────────────────────────────
+     Applied ALONGSIDE `is-page-leaving` — never alone — by the `pagehide`
+     handler in js/app.js, for the case where the visitor leaves via
+     native browser history/typed URL/etc rather than an intercepted
+     internal link click (that click path already has up to 720ms of
+     normal close-transition time before pagehide could ever fire, so it
+     has ALREADY reached the sealed look by then — see that handler for
+     the exact condition). There is no time left to animate before a page
+     gets frozen into BFCache, and freezing it MID-transition would
+     restore later at a random half-closed frame — forcing every relevant
+     transition to `none` here makes `is-page-leaving`'s end values apply
+     INSTANTLY instead, so whatever gets frozen is always the fully
+     sealed look, never a partial one. Retargeted to the new curtain
+     selectors (was `.ptfx-plate`/`.ptfx-plate-bg`/`.ptfx-wave`/`.ptfx-rail`
+     pre-rebuild) — the class name itself (`ptfx-instant`) and the JS that
+     applies it are unchanged. */
+  html.ptfx-instant .portal-curtain-top,
+  html.ptfx-instant .portal-curtain-bottom,
+  html.ptfx-instant #page-content,
+  html.ptfx-instant::before {
+    transition: none !important;
+  }
 }
 
 /* ── REDUCED MOTION ──────────────────────────────────────────────── */
@@ -1361,76 +1462,80 @@ html::before {
   .hl-card:hover, .btn:hover, .btn:active,
   .wa-float:hover { transform: none !important; }
 
-  /* ── LOW-MOTION PORTAL HAND-OFF (milestone 1N v6) ──────────────────
-     "Reduced motion" must never mean "no transition, raw browser reload,"
-     AND it must never mean "revert to the flat-black-plus-line design that
-     v6 exists to fix" (§17 of the v6 spec — reduced motion must belong to
-     the SAME Portal family, same colours/glass/gold, just via opacity
-     instead of physical movement). Every element below — the safety cover
-     AND every Portal FX piece — gets `transform: none` (no slide, no
-     scale, no spatial motion at all) and is driven by opacity/filter only.
-     `!important` is required throughout to win over the blanket
-     `transition-duration: .01ms !important` a few lines up — without it
-     every declaration below would be forced to ~0ms and nothing would ever
-     be visible, which is exactly the "just a flash" failure this whole
-     effort exists to fix. Timing stays deliberately shorter than normal
-     motion (~85ms in / ~130ms out vs ~200ms / ~340-355ms) — less motion
-     means less time, never more (§10 of 1N-v5.1, unchanged here). */
-  html::before {
-    opacity: 0;
-    transition: opacity .13s ease !important;
-  }
+  /* ── REDUCED-MOTION PORTAL — 1P.6 ───────────────────────────────────
+     1P.5 found the previous rule here — `.portal-curtain-top,
+     .portal-curtain-bottom { transform: none !important; }` — permanently
+     pinned BOTH curtains at their closed/center geometry. Under reduced
+     motion the Portal never travelled at all: only opacity toggled, AT
+     the center, which is precisely the "two static lines that just
+     appear/disappear" bug the site owner's real browser hit. Product
+     decision (1P.6): curtain travel — top edge to center, bottom edge to
+     center, and back — is the site's ESSENTIAL page-transition
+     affordance, not decorative motion accessibility should strip. What
+     genuinely IS decorative (the living SVG wave-morph, the full-motion
+     glow intensity, the page-content scale/blur depth cue) is what gets
+     removed under this media query instead — same physical travel,
+     shorter and simpler. `!important` wins over the blanket
+     `transition-duration: .01ms !important` above, same as before. */
   html.is-page-leaving::before {
     opacity: 1;
-    transition: opacity .085s ease !important;
+    /* Delayed to start only once the (shorter) reduced close is done —
+       must never cover the curtain travel early (1P.6 §7). */
+    transition: opacity .04s linear .33s !important;
   }
-  html.is-page-entering::before {
-    opacity: 1;
+  /* 1P.9: driven by `is-page-sealed`, not `is-page-entering` — see the
+     matching rule + comment in the normal-motion block above. Under
+     reduced motion the blanket `transition-duration: .01ms !important`
+     already makes any fade effectively instant regardless. */
+  html.is-page-sealed::before { opacity: 1; transition: none !important; }
+
+  /* OPEN — base/resting reduced-motion timing. Plain, simple ease-out;
+     no fancy curve needed at this shorter duration. */
+  .portal-curtain-top,
+  .portal-curtain-bottom {
+    transition: transform .33s ease-out !important;
+  }
+  /* CLOSE — same simple curve, ~330ms per 1P.6 §2's suggested range. */
+  html.is-page-leaving .portal-curtain-top,
+  html.is-page-leaving .portal-curtain-bottom {
+    transform: translateY(0) !important;
+    transition: transform .33s ease-out !important;
+  }
+  /* Destination's first paint starts already sealed, instantly — same
+     hand-off pattern as normal motion, just retargeted to this media
+     query so it no longer depends on the removed `transform: none`. */
+  html.is-page-entering .portal-curtain-top,
+  html.is-page-entering .portal-curtain-bottom {
+    transform: translateY(0) !important;
+    transition: none !important;
+  }
+  /* BFCache pre-freeze seal (1P.6 §9): now that reduced motion actually
+     transitions, it needs the same "instantly reach the end state, no
+     time to animate before freezing" escape hatch normal motion already
+     has — the old design never needed this because transform was
+     permanently `none` regardless of class. */
+  html.ptfx-instant .portal-curtain-top,
+  html.ptfx-instant .portal-curtain-bottom,
+  html.ptfx-instant::before {
     transition: none !important;
   }
 
-  .ptfx-plate, .ptfx-rail, .ptfx-seam { transform: none !important; }
-  .ptfx-plate {
-    opacity: 0;
-    transition: opacity .13s ease !important;
-  }
-  .ptfx-rail, .ptfx-seam {
-    opacity: 0;
-    transition: opacity .12s ease !important;
-  }
-  /* No travelling light sweep under reduced motion — a moving highlight is
-     still spatial motion; the seam communicates "something advanced
-     happened" through its own opacity/glow instead (§16 — opacity/filter
-     only). */
-  .ptfx-seam::after { display: none; }
+  /* .portal-curtain-surface / .portal-edge / the wave-stroke paths are
+     intentionally left alone here (no reduced-motion override at all) —
+     their shared base rules (above, outside any media query) have no
+     opacity property, so they stay fully visible exactly like normal
+     motion; invisibility comes purely from the curtain's own off-screen
+     translateY, same mechanism in both modes. The living wave-morph SMIL
+     is paused separately via JS under this same media query (unchanged),
+     leaving a static — but still fully visible, still gold — wave shape
+     riding the travelling curtain edge, per 1P.6 §3. */
 
-  html.is-page-leaving .ptfx-plate {
-    opacity: .85;
-    transition: opacity .085s ease !important;
-  }
-  html.is-page-leaving .ptfx-rail,
-  html.is-page-leaving .ptfx-seam {
-    opacity: 1;
-    transition: opacity .07s ease !important;
-  }
-  html.is-page-entering .ptfx-plate {
-    opacity: .85;
-    transition: none !important;
-  }
-  html.is-page-entering .ptfx-rail,
-  html.is-page-entering .ptfx-seam {
-    opacity: 1;
-    transition: none !important;
-  }
-
-  /* Page depth response: opacity + a hint of blur only, per §16's literal
-     "opacity/filter only" — no scale, no translate. Targets #page-content,
-     not body — see that element's own rule further up. */
-  html.is-page-leaving #page-content {
-    opacity: .82; filter: blur(1px);
-    transition: opacity .085s ease !important, filter .085s ease !important;
-  }
-  html.is-page-entering #page-content { opacity: .88; filter: blur(1px); }
+  /* Page depth response REMOVED (1P.6 §4) — no scale, no blur, no
+     opacity dimming of #page-content under reduced motion at all; it was
+     scoped only to the `@media not (prefers-reduced-motion: reduce)`
+     block above, so simply adding no reduced-motion rule for it here is
+     sufficient — #page-content stays fully stable, and the curtains
+     alone (now that they actually travel) do all the covering/revealing. */
 }
 
 /* ── RTL OVERRIDES ───────────────────────────────────────────────── */
