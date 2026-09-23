@@ -810,6 +810,19 @@
     try { sessionStorage.setItem('ttw_page_transition', '1'); } catch (e) {}
     if (ev) ev.preventDefault();
     document.documentElement.classList.add('is-page-leaving');
+    // 1Q.1 — the Portal sound REPLACES the generic 'tap' click sound for a
+    // genuine navigation (the click handler skips 'tap' for this branch —
+    // see the delegated listener); gated by the SAME pageTransitioning
+    // lock above, so a rapid re-click can never double it, no separate
+    // debounce needed. Deferred one rAF past the class add: adding
+    // is-page-leaving synchronously here invalidates style, but the CSS
+    // transition it triggers doesn't visually start interpolating until
+    // the browser's NEXT style/paint pass — starting the audio in the
+    // same synchronous tick as the class add would make it begin one
+    // frame BEFORE the curtains actually move. One rAF (not a guessed
+    // delay) aligns the audio's scheduled start with that same next
+    // frame — real frame timing, not an assumption.
+    requestAnimationFrame(function () { playPortalTransitionSound(); });
     var delay = reducedMotion() ? (CLOSE_MS_REDUCED + HOLD_MS_REDUCED) : (CLOSE_MS_NORMAL + HOLD_MS_NORMAL);
     setTimeout(function () { window.location.href = url; }, delay);
   }
@@ -1035,22 +1048,60 @@
     // of this list so a click on them can never double-sound.
     // A same-origin link to one of the 4 public pages ALSO begins the
     // branded page-transition cover here — same click, same one sound, per
-    // §15 of the 1N-v2 redo ("do not play two navigation sounds").
+    // §15 of the 1N-v2 redo ("do not play two navigation sounds"). 1Q: for
+    // a GENUINE (different-page) Portal navigation that one sound is now
+    // the swoosh, not 'tap' — played from inside beginPageExit() itself —
+    // so 'tap' is skipped for that branch only; every other match on this
+    // selector (filters, WhatsApp, same-page clicks, external/staff links,
+    // anything isPublicInternalNavigation() doesn't accept) keeps 'tap'
+    // exactly as before.
     document.addEventListener('click', e => {
       const hit = e.target.closest('.btn, .filter-btn, .nav-toggle, .nav-link, .wa-float');
       if (!hit) return;
+      if (isPublicInternalNavigation(hit, e) && !isSamePublicPageHref(hit.getAttribute('href'))) {
+        beginPageExit(hit.href, e);
+        return;
+      }
       playUISound('tap');
       if (isPublicInternalNavigation(hit, e)) {
         // 1P.9 §10 — clicking the page already on screen must never
         // close/reload/reopen the Portal over itself.
-        if (isSamePublicPageHref(hit.getAttribute('href'))) { e.preventDefault(); return; }
-        beginPageExit(hit.href, e);
+        e.preventDefault();
       }
     }, true);
   }
 
   // ── HOME PAGE ──────────────────────────────────────────────────────
+  // Hero scroll cue: click/tap smoothly scrolls to whatever section
+  // actually follows the hero (not a hardcoded id, so this keeps working
+  // if that section is ever reordered/renamed), fades out once the
+  // visitor has meaningfully scrolled, and honours the visitor's real
+  // motion preference for the scroll itself (the cue's own idle bounce is
+  // already handled by the site-wide reduced-motion CSS rule). Runs
+  // independently of SHOP data readiness — pure UI chrome.
+  function initHeroScrollCue() {
+    const cue = document.getElementById('hero-scroll-cue');
+    const hero = document.getElementById('hero');
+    if (!cue || !hero) return;
+    cue.addEventListener('click', function () {
+      // Skip past any sibling that's display:none — About, for one, hides
+      // itself entirely (applyAboutVisibility()) whenever the owner hasn't
+      // given it real content, and scrollIntoView() on a display:none
+      // element is a silent no-op (zero box to scroll to), which would
+      // otherwise make the cue appear to do nothing.
+      let next = hero.nextElementSibling;
+      while (next && getComputedStyle(next).display === 'none') next = next.nextElementSibling;
+      if (next) next.scrollIntoView({ behavior: reducedMotion() ? 'auto' : 'smooth', block: 'start' });
+    });
+    function syncVisibility() {
+      cue.classList.toggle('is-hidden', window.scrollY > 60);
+    }
+    window.addEventListener('scroll', syncVisibility, { passive: true });
+    syncVisibility();
+  }
+
   function initHome() {
+    initHeroScrollCue();
     if (typeof SHOP === 'undefined') return;
 
     const heroBg = document.getElementById('hero-bg');
@@ -1852,6 +1903,146 @@
       osc.stop(t0 + dur + 0.02);
       osc.onended = function () { try { osc.disconnect(); gain.disconnect(); } catch (e) {} };
     } catch (e) { /* fail silently — audio must never break the site */ }
+  }
+
+  // ── PORTAL TRANSITION SOUND (milestone 1Q.1 — futuristic energy) ──────
+  // Replaces 1Q's noise-dominant "airy swoosh" (rejected — wrong character,
+  // wrong sync) entirely. Same gates, same shared AudioContext/master gain
+  // as playUISound() above — no second sound system. Four synthesized
+  // layers, no external file:
+  //   A. ENERGY BODY    — triangle oscillator, smooth low->mid-high pitch
+  //                        glide + a parallel lowpass brightness sweep;
+  //                        the main tonal "energy building" character.
+  //   B. SHIMMER         — a quieter sine, harmonically above the body,
+  //                        silent until the second half, then fades in —
+  //                        the "electronic shimmer as curtains near center."
+  //   C. TEXTURE (noise) — very low-gain filtered noise under the tonal
+  //                        layers, for air/movement only — never dominant
+  //                        (this is what 1Q got backwards: noise WAS the
+  //                        sound there; here it's a barely-there garnish).
+  //   D. CENTER-MEET ACCENT — a short (~80ms) two-tone pulse timed to the
+  //                        END of the close, i.e. the instant the curtains
+  //                        actually meet — not a notification beep, a
+  //                        harmonic convergence (root + a fifth above).
+  // Duration is DERIVED from the real Portal timing constants (CLOSE_MS_*/
+  // HOLD_MS_*), never an independent guessed value — the energy build
+  // spans the close, the accent lands at end-of-close, the tail decays
+  // during the hold, so the whole sound naturally matches whichever motion
+  // mode is active without a separate reduced-motion implementation.
+  var _texNoiseBuffer = null;
+  function getTextureNoiseBuffer(c) {
+    if (_texNoiseBuffer && _texNoiseBuffer.sampleRate === c.sampleRate) return _texNoiseBuffer;
+    var len = Math.ceil(c.sampleRate * 1.0);
+    var buf = c.createBuffer(1, len, c.sampleRate);
+    var data = buf.getChannelData(0);
+    for (var i = 0; i < len; i++) data[i] = Math.random() * 2 - 1;
+    _texNoiseBuffer = buf;
+    return buf;
+  }
+  function playPortalTransitionSound() {
+    if (!publicSoundsAllowed()) return;
+    var c = ensureAudio();
+    if (!c || !_audioMaster) return;
+    if (c.state === 'suspended') { try { c.resume(); } catch (e) {} }
+    try {
+      var closeMs  = reducedMotion() ? CLOSE_MS_REDUCED : CLOSE_MS_NORMAL;
+      var holdMs   = reducedMotion() ? HOLD_MS_REDUCED  : HOLD_MS_NORMAL;
+      var closeDur = closeMs / 1000;     // energy build spans the real close duration
+      var holdDur  = holdMs  / 1000;     // tail decays during the real sealed hold
+      var t0 = c.currentTime;
+      var meetT = t0 + closeDur;         // curtains meet = end of close
+      var endT  = meetT + holdDur;
+
+      var voice = c.createGain();        // per-call submix — individual layers stay
+      voice.gain.value = 1;              // conservative; shared master gain (0.09) does the real attenuation
+      voice.connect(_audioMaster);
+
+      var bodyStartFreq = 130, bodyEndFreq = 480;
+
+      // A — ENERGY BODY
+      var body = c.createOscillator();
+      body.type = 'triangle';
+      body.frequency.setValueAtTime(bodyStartFreq, t0);
+      body.frequency.exponentialRampToValueAtTime(bodyEndFreq, t0 + closeDur * 0.95);
+
+      var bodyFilter = c.createBiquadFilter();
+      bodyFilter.type = 'lowpass';
+      bodyFilter.Q.value = 0.7;          // low Q — brightness sweep, never a resonant whistle
+      bodyFilter.frequency.setValueAtTime(700, t0);
+      bodyFilter.frequency.exponentialRampToValueAtTime(3200, meetT);
+
+      var bodyGain = c.createGain();
+      bodyGain.gain.setValueAtTime(0.0001, t0);
+      bodyGain.gain.exponentialRampToValueAtTime(0.55, t0 + closeDur * 0.10);   // 0-10%: very soft onset
+      bodyGain.gain.exponentialRampToValueAtTime(0.85, t0 + closeDur * 0.65);   // 10-65%: energy rises
+      bodyGain.gain.exponentialRampToValueAtTime(0.5,  t0 + closeDur * 0.95);   // 65-95%: eases back, making room for the accent
+      bodyGain.gain.exponentialRampToValueAtTime(0.0001, endT);                 // decays through the hold
+
+      body.connect(bodyFilter);
+      bodyFilter.connect(bodyGain);
+      bodyGain.connect(voice);
+
+      // B — HIGH ENERGY SHIMMER (quieter, enters late, harmonically above the body)
+      var shimmer = c.createOscillator();
+      shimmer.type = 'sine';
+      shimmer.frequency.setValueAtTime(bodyStartFreq * 2.5, t0);
+      shimmer.frequency.exponentialRampToValueAtTime(bodyEndFreq * 2.2, t0 + closeDur * 0.95);
+
+      var shimmerGain = c.createGain();
+      shimmerGain.gain.setValueAtTime(0.0001, t0);
+      shimmerGain.gain.setValueAtTime(0.0001, t0 + closeDur * 0.55);            // silent through the first half
+      shimmerGain.gain.exponentialRampToValueAtTime(0.28, t0 + closeDur * 0.80);// fades in, "shimmer becomes present"
+      shimmerGain.gain.exponentialRampToValueAtTime(0.32, meetT);
+      shimmerGain.gain.exponentialRampToValueAtTime(0.0001, endT);
+
+      shimmer.connect(shimmerGain);
+      shimmerGain.connect(voice);
+
+      // C — OPTIONAL TEXTURE: very quiet filtered noise, air/movement only
+      var tex = c.createBufferSource();
+      tex.buffer = getTextureNoiseBuffer(c);
+      var texFilter = c.createBiquadFilter();
+      texFilter.type = 'lowpass';
+      texFilter.Q.value = 0.5;
+      texFilter.frequency.value = 1800;   // soft, no hiss/whistle — fixed, not swept (this is garnish, not the 1Q design)
+      var texGain = c.createGain();
+      texGain.gain.setValueAtTime(0.0001, t0);
+      texGain.gain.exponentialRampToValueAtTime(0.045, t0 + closeDur * 0.5);
+      texGain.gain.exponentialRampToValueAtTime(0.06, meetT);
+      texGain.gain.exponentialRampToValueAtTime(0.0001, endT);
+      tex.connect(texFilter);
+      texFilter.connect(texGain);
+      texGain.connect(voice);
+
+      // D — CENTER-MEET ACCENT: short harmonic pulse exactly at end-of-close
+      var accentDur = 0.08;
+      var accent1 = c.createOscillator();   // root, at the body's own ending pitch
+      accent1.type = 'sine';
+      accent1.frequency.setValueAtTime(bodyEndFreq, meetT);
+      var accent2 = c.createOscillator();   // a fifth above — convergence, not a single "ding"
+      accent2.type = 'sine';
+      accent2.frequency.setValueAtTime(bodyEndFreq * 1.5, meetT);
+      var accentGain = c.createGain();
+      accentGain.gain.setValueAtTime(0.0001, meetT);
+      accentGain.gain.exponentialRampToValueAtTime(0.4, meetT + 0.012);   // fast attack, restrained peak
+      accentGain.gain.exponentialRampToValueAtTime(0.0001, meetT + accentDur);
+      accent1.connect(accentGain);
+      accent2.connect(accentGain);
+      accentGain.connect(voice);
+
+      var nodes = [body, shimmer, tex, accent1, accent2];
+      body.start(t0);         body.stop(endT + 0.02);
+      shimmer.start(t0);      shimmer.stop(endT + 0.02);
+      tex.start(t0);          tex.stop(endT + 0.02);
+      accent1.start(meetT);   accent1.stop(meetT + accentDur + 0.02);
+      accent2.start(meetT);   accent2.stop(meetT + accentDur + 0.02);
+
+      var allNodes = [body, bodyFilter, bodyGain, shimmer, shimmerGain, tex, texFilter, texGain,
+                       accent1, accent2, accentGain, voice];
+      body.onended = function () {
+        try { allNodes.forEach(function (n) { n.disconnect(); }); } catch (e) {}
+      };
+    } catch (e) { /* fail silently — audio must never block or break navigation */ }
   }
 
   // ── Customer sound toggle (header) ─────────────────────────────────

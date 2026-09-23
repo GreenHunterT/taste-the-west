@@ -458,6 +458,10 @@ p { line-height: 1.7; }
   animation: fadeUp .8s ease 1.05s forwards;
 }
 
+/* Compact gold-accented scroll cue (replaces the old text+line indicator) —
+   a circular button, two stacked chevrons with a subtle downward pulse.
+   `<button>`, not a decorative aria-hidden div, since it's now a real,
+   clickable "scroll to next section" control (see js/app.js initHome()). */
 .hero-scroll {
   position: absolute;
   bottom: 28px;
@@ -467,20 +471,32 @@ p { line-height: 1.7; }
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
-}
-.hero-scroll span {
-  font-size: 9px;
-  letter-spacing: .2em;
-  text-transform: uppercase;
-  color: rgba(255,255,255,.35);
-}
-.hero-scroll-line {
-  width: 1px;
+  justify-content: center;
+  gap: 1px;
+  width: 40px;
   height: 40px;
-  background: linear-gradient(to bottom, transparent, rgba(255,255,255,.4));
-  animation: scrollPulse 2.2s ease-in-out infinite;
+  padding: 0;
+  border: 1px solid rgba(212,175,101,.4);
+  border-radius: 50%;
+  background: rgba(14,13,11,.3);
+  color: var(--gold-light);
+  cursor: pointer;
+  transition: opacity .3s ease, border-color .2s ease, transform .2s ease;
 }
+.hero-scroll:hover,
+.hero-scroll:focus-visible { border-color: var(--gold-light); transform: translateX(-50%) scale(1.06); }
+.hero-scroll:focus-visible { outline: 2px solid var(--gold-light); outline-offset: 3px; }
+/* Fade out once the visitor has meaningfully scrolled (js/app.js) — a
+   functional state change, not decorative motion, so this transition is
+   NOT gated by prefers-reduced-motion (the blanket reduced-motion rule
+   still shortens it to near-instant, which is fine here). */
+.hero-scroll.is-hidden { opacity: 0; pointer-events: none; }
+.hero-scroll-chevron {
+  width: 14px;
+  height: 7px;
+  animation: heroScrollBounce 1.8s ease-in-out infinite;
+}
+.hero-scroll-chevron-2 { opacity: .5; animation-delay: .15s; }
 
 /* ── PAGE HERO (inner pages) ─────────────────────────────────────── */
 .page-hero {
@@ -1109,9 +1125,9 @@ p { line-height: 1.7; }
   from { width: 0;    opacity: 0; }
   to   { width: 52px; opacity: 1; }
 }
-@keyframes scrollPulse {
-  0%,100% { opacity: .3;  transform: scaleY(1);   }
-  50%      { opacity: .75; transform: scaleY(.65); }
+@keyframes heroScrollBounce {
+  0%, 100% { transform: translateY(0);   opacity: 1;  }
+  50%      { transform: translateY(4px); opacity: .55; }
 }
 
 /* ── I18N PRE-PAINT GUARD (milestone 1N v4) ──────────────────────────
@@ -1540,6 +1556,8 @@ html::before {
 
 /* ── RTL OVERRIDES ───────────────────────────────────────────────── */
 [dir="rtl"] .hero-scroll { left: auto; right: 50%; transform: translateX(50%); }
+[dir="rtl"] .hero-scroll:hover,
+[dir="rtl"] .hero-scroll:focus-visible { transform: translateX(50%) scale(1.06); }
 [dir="rtl"] .cta-inner   { text-align: end; }
 
 /* ── RESPONSIVE ──────────────────────────────────────────────────── */
