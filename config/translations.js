@@ -35,7 +35,7 @@ const TRANSLATIONS = {
       label:     'Our Menu',
       title:     'Full Menu',
       filterAll: 'All',
-      emptyCategory: 'No menu items in this category yet.',
+      emptyCategory: 'No items in this category yet.',
       newCategory: 'New category',
       cta:       'Ready to order?',
       visitBtn:  'Find the Restaurant',
@@ -70,7 +70,10 @@ const TRANSLATIONS = {
       staffLogin: 'Staff Login',
     },
     wa: {
-      message: "Hi! I'd like to place an order from Taste The West.",
+      // {name} is substituted with the restaurant's own name_en/name_ar
+      // (js/app.js waLink()) — never a hardcoded business name, so this
+      // stays correct for any restaurant this template is deployed for.
+      message: "Hi! I'd like to place an order from {name}.",
     },
   },
 
@@ -140,7 +143,7 @@ const TRANSLATIONS = {
       staffLogin: 'دخول الموظفين',
     },
     wa: {
-      message: 'مرحباً! أريد طلب من تيست ذا ويست.',
+      message: 'مرحباً! أريد طلب من {name}.',
     },
   },
 };

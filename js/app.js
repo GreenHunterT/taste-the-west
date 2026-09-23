@@ -155,8 +155,20 @@
       },
       sounds: r.sounds_enabled !== false,
       transitions: normTransitionCfg(r),
+      // Owner-editable overrides for the small set of niche-specific public
+      // labels (milestone 1S) — {en,ar} pair, or null when BOTH sides are
+      // blank so customLabelOverride() below falls straight through to
+      // config/translations.js's existing TasteTheWest wording, unchanged.
+      catalogLabel:    pickBilingual(r.catalog_label_en, r.catalog_label_ar),
+      featuredTitle:   pickBilingual(r.featured_title_en, r.featured_title_ar),
+      catalogHeading:  pickBilingual(r.catalog_heading_en, r.catalog_heading_ar),
       categories: [], // populated after categories fetch
     };
+  }
+  function pickBilingual(enVal, arVal) {
+    var en = (typeof enVal === 'string') ? enVal.trim() : '';
+    var ar = (typeof arVal === 'string') ? arVal.trim() : '';
+    return (en || ar) ? { en: en, ar: ar } : null;
   }
 
   // ── PAGE TRANSITION CONFIG (milestone 1R) ─────────────────────────
@@ -571,11 +583,34 @@
 
   function t(key) {
     if (typeof TRANSLATIONS === 'undefined') return null;
-    const lang  = getLang();
+    const lang = getLang();
+    const override = customLabelOverride(key, lang);
+    if (override) return override;
     const parts = key.split('.');
     let val = TRANSLATIONS[lang];
     for (const p of parts) val = val?.[p];
     return typeof val === 'string' ? val : null;
+  }
+
+  // ── OWNER-CONFIGURABLE NICHE LABELS (milestone 1S) ──────────────────
+  // A small, fixed set of translation keys an owner can override from
+  // Settings (catalog nav label, featured-section title, catalog-page
+  // heading) — see mapRestaurant()'s catalogLabel/featuredTitle/
+  // catalogHeading. Returns null (never '') whenever SHOP is unavailable,
+  // the key isn't one of these three, or the owner left THAT language's
+  // side of the pair blank — every caller already falls through to the
+  // static TRANSLATIONS value on a null/falsy return, so an untouched
+  // restaurant (or one that only filled English, on an Arabic page, etc.)
+  // renders exactly like today's TasteTheWest, unchanged.
+  function customLabelOverride(key, lang) {
+    if (typeof SHOP === 'undefined') return null;
+    var pair = (key === 'nav.products' || key === 'products.label') ? SHOP.catalogLabel
+      : (key === 'featured.title') ? SHOP.featuredTitle
+      : (key === 'products.title') ? SHOP.catalogHeading
+      : null;
+    if (!pair) return null;
+    var val = lang === 'ar' ? pair.ar : pair.en;
+    return val || null;
   }
 
   function shopName(lang) {
@@ -660,7 +695,10 @@
     if (typeof TRANSLATIONS === 'undefined') return;
     const tr = TRANSLATIONS[lang];
     document.querySelectorAll('[data-t]').forEach(el => {
-      const parts = el.dataset.t.split('.');
+      const key = el.dataset.t;
+      const override = customLabelOverride(key, lang);
+      if (override) { el.textContent = override; return; }
+      const parts = key.split('.');
       let val = tr;
       for (const p of parts) val = val?.[p];
       if (typeof val === 'string') el.textContent = val;
@@ -708,7 +746,7 @@
       return;
     }
     const name = shopName(lang);
-    img.alt = name ? name + ' logo' : 'Restaurant logo';
+    img.alt = name ? name + ' logo' : 'Business logo';
     if (img.getAttribute('src') !== url) {
       img.onload  = function () { img.hidden = false; };
       img.onerror = function () { img.hidden = true; img.removeAttribute('src'); };
@@ -749,9 +787,12 @@
     const dbMsg = SHOP.social
       ? (lang === 'ar' ? SHOP.social.whatsappMessage : SHOP.social.whatsappMessageEn)
       : '';
+    // Static fallback carries a {name} token (never a literal hardcoded
+    // business name — milestone 1S) — filled from the restaurant's own
+    // name, so this reads correctly for any business this template runs.
     const msg = (typeof dbMsg === 'string' && dbMsg.trim())
       ? dbMsg
-      : (t('wa.message') || '');
+      : (t('wa.message') || '').replace('{name}', shopName(lang));
     return 'https://wa.me/' + SHOP.whatsapp + '?text=' + encodeURIComponent(msg);
   }
   function updateWaLinks() {
@@ -1356,7 +1397,7 @@
               note.style.cssText = 'grid-column:1/-1;color:var(--text-muted);text-align:center;padding:40px 0';
               grid.appendChild(note);
             }
-            note.textContent = t('products.emptyCategory') || 'No menu items in this category yet.';
+            note.textContent = t('products.emptyCategory') || 'No items in this category yet.';
             note.style.display = '';
           } else if (note) {
             note.style.display = 'none';
@@ -2278,6 +2319,10 @@
     'contact-whatsapp': function () { return document.querySelector('[data-wa-link]') || document.querySelector('.contact-grid'); },
     'contact-instagram':function () { return document.getElementById('contact-insta'); },
     'contact-email':    function () { return document.getElementById('contact-email'); },
+    // milestone 1S — the two new owner-editable niche labels that don't
+    // already have a focus target above.
+    featured:           function () { return document.getElementById('featured'); },
+    'catalog-heading':  function () { return document.getElementById('page-hero'); },
   };
 
   var _pvFocusEl = null, _pvFocusT1 = 0, _pvFocusT2 = 0;

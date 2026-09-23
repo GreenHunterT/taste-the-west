@@ -3,15 +3,16 @@
 --  Run this entire file in the Supabase SQL Editor (one shot).
 --  Project: https://supabase.com/dashboard/project/<your-project>
 --
---  This file represents the FINAL state after migrations 001–004 (see
+--  This file represents the FINAL state after migrations 001–005 (see
 --  supabase/migrations/) — a fresh project built from this file alone
 --  lands directly in the same hardened shape as the live, already-migrated
 --  TasteTheWest project, including the restaurants_public view (001), the
---  least-privilege RLS/grant model (003), and the page-transition settings
---  columns (004 — NOT yet applied to the live project; see that file's own
---  header for the exact SQL to run manually). The already-applied
---  migrations are kept as an append-only historical record and are never
---  rewritten; this file is the one that's kept in sync with them.
+--  least-privilege RLS/grant model (003), the page-transition settings
+--  columns (004), and the business-identity/niche-label columns (005 —
+--  004/005 NOT yet applied to the live project; see each file's own header
+--  for the exact SQL to run manually). The already-applied migrations are
+--  kept as an append-only historical record and are never rewritten; this
+--  file is the one that's kept in sync with them.
 -- =================================================================
 
 
@@ -77,6 +78,21 @@ CREATE TABLE IF NOT EXISTS restaurants (
   transition_style   TEXT        DEFAULT 'portal',
   transition_color   TEXT        DEFAULT '#d4af65',
 
+  -- Business identity + niche-neutral labels (milestone 1S). business_type
+  -- is metadata only (no behaviour keys off it yet) and is intentionally
+  -- NOT exposed via restaurants_public — admin-only, no public read need.
+  -- The six label_* columns default to '' meaning "use the built-in
+  -- TasteTheWest wording" (config/translations.js / js/app.js
+  -- customLabelOverride) — an untouched row renders byte-for-byte the same
+  -- as before this milestone.
+  business_type       TEXT       DEFAULT 'restaurant',
+  catalog_label_en    TEXT       DEFAULT '',
+  catalog_label_ar    TEXT       DEFAULT '',
+  featured_title_en   TEXT       DEFAULT '',
+  featured_title_ar   TEXT       DEFAULT '',
+  catalog_heading_en  TEXT       DEFAULT '',
+  catalog_heading_ar  TEXT       DEFAULT '',
+
   -- Homepage highlights: [{value, label, labelAr}]
   highlights       JSONB         DEFAULT '[]'::jsonb,
 
@@ -101,7 +117,14 @@ ALTER TABLE restaurants
   ADD COLUMN IF NOT EXISTS location_image_height     TEXT    DEFAULT 'standard',
   ADD COLUMN IF NOT EXISTS transition_enabled        BOOLEAN DEFAULT true,
   ADD COLUMN IF NOT EXISTS transition_style          TEXT    DEFAULT 'portal',
-  ADD COLUMN IF NOT EXISTS transition_color          TEXT    DEFAULT '#d4af65';
+  ADD COLUMN IF NOT EXISTS transition_color          TEXT    DEFAULT '#d4af65',
+  ADD COLUMN IF NOT EXISTS business_type              TEXT   DEFAULT 'restaurant',
+  ADD COLUMN IF NOT EXISTS catalog_label_en           TEXT   DEFAULT '',
+  ADD COLUMN IF NOT EXISTS catalog_label_ar           TEXT   DEFAULT '',
+  ADD COLUMN IF NOT EXISTS featured_title_en          TEXT   DEFAULT '',
+  ADD COLUMN IF NOT EXISTS featured_title_ar          TEXT   DEFAULT '',
+  ADD COLUMN IF NOT EXISTS catalog_heading_en         TEXT   DEFAULT '',
+  ADD COLUMN IF NOT EXISTS catalog_heading_ar         TEXT   DEFAULT '';
 
 
 -- ── CATEGORIES ───────────────────────────────────────────────────
@@ -223,7 +246,10 @@ SELECT
   hero_image_url, logo_url,
   wa_message_ar, wa_message_en,
   sounds_enabled, highlights,
-  transition_enabled, transition_style, transition_color
+  transition_enabled, transition_style, transition_color,
+  catalog_label_en, catalog_label_ar,
+  featured_title_en, featured_title_ar,
+  catalog_heading_en, catalog_heading_ar
 FROM public.restaurants
 WHERE id = '57ee591f-39fb-4320-af05-fec66ebd512a'::uuid;
 

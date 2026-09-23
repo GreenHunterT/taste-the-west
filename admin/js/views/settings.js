@@ -17,6 +17,9 @@ window.AdminViews.settings = (function () {
 
   // ── Constants (never change) ─────────────────────────────────────
   var VALID_TYPES = new Set(['custom', 'percent', 'plus', 'rating', 'number']);
+  // Metadata only (milestone 1S) — nothing branches on this yet; the
+  // <select>'s own <option> list is the other half of this whitelist.
+  var BUSINESS_TYPES = new Set(['restaurant', 'cafe', 'bakery', 'retail', 'clothing', 'salon', 'services', 'other']);
   var TYPE_LABELS = {
     custom:  'Custom text',
     percent: 'Percentage',
@@ -24,10 +27,15 @@ window.AdminViews.settings = (function () {
     rating:  'Rating out of 5',
     number:  'Plain number',
   };
+  // Niche-neutral (milestone 1S) — these seed a NEW restaurant's first
+  // highlights and "Reset to default"; TasteTheWest's own already-SAVED
+  // highlights are stored data and are never rewritten by changing this
+  // constant, so this has no effect on the live site unless the owner
+  // explicitly resets.
   var STAT_DEFAULTS = [
-    { type: 'percent', value: '100%', label: 'Fresh Daily',     labelAr: 'طازج كل يوم'  },
-    { type: 'plus',    value: '4+',   label: 'Pizza Styles',    labelAr: 'تشكيلة بيتزا' },
-    { type: 'rating',  value: '★4.8', label: 'Customer Rating', labelAr: 'تقييم العملاء' },
+    { type: 'percent', value: '100%', label: 'Quality Guaranteed', labelAr: 'جودة مضمونة'      },
+    { type: 'plus',    value: '4+',   label: 'Product Varieties',  labelAr: 'تشكيلات المنتجات' },
+    { type: 'rating',  value: '★4.8', label: 'Customer Rating',    labelAr: 'تقييم العملاء'    },
   ];
   var MAX_STATS = 6;
   var HISTORY_MAX = 20;
@@ -41,6 +49,8 @@ window.AdminViews.settings = (function () {
     'address_ar', 'address_en', 'map_directions', 'map_embed',
     'hours_weekdays_en', 'hours_weekdays_ar', 'hours_weekends_en', 'hours_weekends_ar',
     'sounds_enabled', 'transition_enabled', 'transition_color',
+    'business_type', 'catalog_label_en', 'catalog_label_ar',
+    'featured_title_en', 'featured_title_ar', 'catalog_heading_en', 'catalog_heading_ar',
   ];
 
   // ── Per-mount state (reset by resetState() at the top of mount()) ──
@@ -198,6 +208,63 @@ window.AdminViews.settings = (function () {
       '        <textarea id="description_en" name="description_en" placeholder="Restaurant description in English…"></textarea>',
       '      </div>',
       '    </div>',
+      '    <div class="form-row single">',
+      '      <div class="form-group">',
+      '        <label for="business_type">Business Type <span class="bilingual-hint bilingual-hint--inline" dir="rtl" lang="ar">نوع النشاط التجاري</span></label>',
+      '        <select id="business_type" name="business_type">',
+      '          <option value="restaurant">Restaurant · مطعم</option>',
+      '          <option value="cafe">Cafe · مقهى</option>',
+      '          <option value="bakery">Bakery · مخبز</option>',
+      '          <option value="retail">Retail · تجزئة</option>',
+      '          <option value="clothing">Clothing · ملابس</option>',
+      '          <option value="salon">Salon · صالون</option>',
+      '          <option value="services">Services · خدمات</option>',
+      '          <option value="other">Other · أخرى</option>',
+      '        </select>',
+      '        <p class="field-hint">For your own reference — this does not change how your site looks yet.</p>',
+      '        <p class="field-hint bilingual-hint" dir="rtl" lang="ar">لغرض الرجوع فقط — لا يغيّر هذا شكل موقعك حالياً.</p>',
+      '      </div>',
+      '    </div>',
+      '  </div>',
+      '',
+      '  <!-- Content Labels -->',
+      '  <div class="acard mt-2" id="content-labels-acard">',
+      '    <div class="acard-title">Content Labels <span class="bilingual-hint bilingual-hint--inline" dir="rtl" lang="ar">تسميات المحتوى</span></div>',
+      '    <p class="field-hint">Leave any field blank to keep the current wording shown below it.</p>',
+      '    <p class="field-hint bilingual-hint" dir="rtl" lang="ar">اترك أي حقل فارغاً للإبقاء على النص الحالي الموضح تحته.</p>',
+      '    <div class="form-row mt-2" data-pv-page="products" data-pv-target="catalog-heading">',
+      '      <div class="form-group">',
+      '        <label for="catalog_label_en">Catalog Label (English) <span class="bilingual-hint bilingual-hint--inline" dir="rtl" lang="ar">تسمية الكتالوج (إنجليزي)</span></label>',
+      '        <input type="text" id="catalog_label_en" name="catalog_label_en" placeholder="Menu (default)" />',
+      '      </div>',
+      '      <div class="form-group">',
+      '        <label for="catalog_label_ar">Catalog Label (Arabic) <span class="bilingual-hint bilingual-hint--inline" dir="rtl" lang="ar">تسمية الكتالوج (عربي)</span></label>',
+      '        <input type="text" id="catalog_label_ar" name="catalog_label_ar" dir="rtl" placeholder="القائمة (افتراضي)" />',
+      '      </div>',
+      '    </div>',
+      '    <p class="field-hint">Used for the main navigation link and the catalog page\'s eyebrow label. Examples: Menu, Products, Services, Collection.</p>',
+      '    <div class="form-row mt-2" data-pv-page="home" data-pv-target="featured">',
+      '      <div class="form-group">',
+      '        <label for="featured_title_en">Featured Section Title (English) <span class="bilingual-hint bilingual-hint--inline" dir="rtl" lang="ar">عنوان القسم المميز (إنجليزي)</span></label>',
+      '        <input type="text" id="featured_title_en" name="featured_title_en" placeholder="Featured Dishes (default)" />',
+      '      </div>',
+      '      <div class="form-group">',
+      '        <label for="featured_title_ar">Featured Section Title (Arabic) <span class="bilingual-hint bilingual-hint--inline" dir="rtl" lang="ar">عنوان القسم المميز (عربي)</span></label>',
+      '        <input type="text" id="featured_title_ar" name="featured_title_ar" dir="rtl" placeholder="أطباق مميزة (افتراضي)" />',
+      '      </div>',
+      '    </div>',
+      '    <p class="field-hint">Shown above the homepage\'s highlighted items. Examples: Featured Dishes, Featured Products, Featured Services.</p>',
+      '    <div class="form-row mt-2" data-pv-page="products" data-pv-target="catalog-heading">',
+      '      <div class="form-group">',
+      '        <label for="catalog_heading_en">Catalog Page Heading (English) <span class="bilingual-hint bilingual-hint--inline" dir="rtl" lang="ar">عنوان صفحة الكتالوج (إنجليزي)</span></label>',
+      '        <input type="text" id="catalog_heading_en" name="catalog_heading_en" placeholder="Full Menu (default)" />',
+      '      </div>',
+      '      <div class="form-group">',
+      '        <label for="catalog_heading_ar">Catalog Page Heading (Arabic) <span class="bilingual-hint bilingual-hint--inline" dir="rtl" lang="ar">عنوان صفحة الكتالوج (عربي)</span></label>',
+      '        <input type="text" id="catalog_heading_ar" name="catalog_heading_ar" dir="rtl" placeholder="القائمة الكاملة (افتراضي)" />',
+      '      </div>',
+      '    </div>',
+      '    <p class="field-hint">The main heading at the top of the full catalog page.</p>',
       '  </div>',
       '',
       '  <!-- Contact -->',
@@ -471,6 +538,9 @@ window.AdminViews.settings = (function () {
       hours_weekdays_en: val('hours_weekdays_en'), hours_weekdays_ar: val('hours_weekdays_ar'),
       hours_weekends_en: val('hours_weekends_en'), hours_weekends_ar: val('hours_weekends_ar'),
       sounds_enabled: soundsEl ? soundsEl.checked : true,
+      catalog_label_en: val('catalog_label_en'), catalog_label_ar: val('catalog_label_ar'),
+      featured_title_en: val('featured_title_en'), featured_title_ar: val('featured_title_ar'),
+      catalog_heading_en: val('catalog_heading_en'), catalog_heading_ar: val('catalog_heading_ar'),
       hero_image_url: brandingPreviewUrl('hero', heroFile, removeHero, r && r.hero_image_url),
       logo_url:       brandingPreviewUrl('logo', logoFile, removeLogo, r && r.logo_url),
       location_visual_mode: locVisualMode,
@@ -550,6 +620,14 @@ window.AdminViews.settings = (function () {
     sounds_enabled: null,       // app-level toggle — no page / no language
     transition_enabled: null,   // app-level toggle — no page / no language
     transition_color: null,     // app-level — no single public page owns it
+
+    catalog_label_en:    { page: 'products', target: 'catalog-heading', lang: 'en' },
+    catalog_label_ar:    { page: 'products', target: 'catalog-heading', lang: 'ar' },
+    featured_title_en:   { page: 'home',     target: 'featured',        lang: 'en' },
+    featured_title_ar:   { page: 'home',     target: 'featured',        lang: 'ar' },
+    catalog_heading_en:  { page: 'products', target: 'catalog-heading', lang: 'en' },
+    catalog_heading_ar:  { page: 'products', target: 'catalog-heading', lang: 'ar' },
+    business_type: null,        // metadata only — no public page/language owns it
   };
 
   // Resolve the focused element → a normalized context, or null.
@@ -697,7 +775,9 @@ window.AdminViews.settings = (function () {
       'phone', 'instagram', 'email', 'wa_message_ar', 'wa_message_en',
       'address_ar', 'address_en', 'map_directions', 'map_embed',
       'hours_weekdays_en', 'hours_weekdays_ar', 'hours_weekends_en', 'hours_weekends_ar',
-      'transition_color'];
+      'transition_color',
+      'catalog_label_en', 'catalog_label_ar', 'featured_title_en', 'featured_title_ar',
+      'catalog_heading_en', 'catalog_heading_ar'];
     for (var i = 0; i < FIELDS.length; i++) {
       if (norm(val(FIELDS[i])) !== norm(r[FIELDS[i]])) return true;
     }
@@ -706,6 +786,10 @@ window.AdminViews.settings = (function () {
     if ((soundsEl ? soundsEl.checked : true) !== (r.sounds_enabled !== false)) return true;
     var transEnabledEl = $('transition_enabled');
     if ((transEnabledEl ? transEnabledEl.checked : true) !== (r.transition_enabled !== false)) return true;
+    // Column may not exist yet on a pre-migration-005 DB (r.business_type
+    // undefined) — the same 'restaurant' default populateForm() itself uses,
+    // so an untouched select never reads as dirty against a missing column.
+    if (norm(val('business_type')) !== norm(r.business_type || 'restaurant')) return true;
     return false;
   }
 
@@ -1214,6 +1298,10 @@ window.AdminViews.settings = (function () {
           : (restaurant.transition_enabled !== false),
         transition_style: transitionStyle,
         transition_color: TRANSITION_COLOR_RE.test(fieldVal('transition_color')) ? fieldVal('transition_color') : TRANSITION_DEFAULT_COLOR,
+        business_type: BUSINESS_TYPES.has(fieldVal('business_type')) ? fieldVal('business_type') : 'restaurant',
+        catalog_label_en: fieldVal('catalog_label_en'), catalog_label_ar: fieldVal('catalog_label_ar'),
+        featured_title_en: fieldVal('featured_title_en'), featured_title_ar: fieldVal('featured_title_ar'),
+        catalog_heading_en: fieldVal('catalog_heading_en'), catalog_heading_ar: fieldVal('catalog_heading_ar'),
       };
 
       // Lightweight optimistic concurrency (1O §10/§11): if a second
@@ -1279,6 +1367,15 @@ window.AdminViews.settings = (function () {
       var savedColorEl = $('transition_color');
       if (savedColorEl) savedColorEl.value = payload.transition_color;
       syncTransitionColorPicker(payload.transition_color);
+      restaurant.business_type = payload.business_type;
+      var savedBizTypeEl = $('business_type');
+      if (savedBizTypeEl) savedBizTypeEl.value = payload.business_type;
+      restaurant.catalog_label_en = payload.catalog_label_en;
+      restaurant.catalog_label_ar = payload.catalog_label_ar;
+      restaurant.featured_title_en = payload.featured_title_en;
+      restaurant.featured_title_ar = payload.featured_title_ar;
+      restaurant.catalog_heading_en = payload.catalog_heading_en;
+      restaurant.catalog_heading_ar = payload.catalog_heading_ar;
 
       heroFile = logoFile = locationFile = null;
       removeHero = removeLogo = removeLocation = false;
@@ -1361,12 +1458,20 @@ window.AdminViews.settings = (function () {
     ['name_ar', 'name_en', 'tagline_ar', 'tagline_en', 'description_ar', 'description_en',
      'phone', 'whatsapp', 'instagram', 'email', 'wa_message_ar', 'wa_message_en',
      'address_ar', 'address_en', 'map_directions', 'map_embed',
-     'hours_weekdays_en', 'hours_weekdays_ar', 'hours_weekends_en', 'hours_weekends_ar'].forEach(function (f) {
+     'hours_weekdays_en', 'hours_weekdays_ar', 'hours_weekends_en', 'hours_weekends_ar',
+     'catalog_label_en', 'catalog_label_ar', 'featured_title_en', 'featured_title_ar',
+     'catalog_heading_en', 'catalog_heading_ar'].forEach(function (f) {
       var elx = $(f);
       if (elx && r[f] !== undefined && r[f] !== null) elx.value = r[f];
     });
     var soundsEl = $('sounds_enabled');
     if (soundsEl) soundsEl.checked = r.sounds_enabled !== false;
+
+    // Pre-migration-005 DB → r.business_type is undefined; the <select>'s
+    // own first <option value="restaurant"> would already coincide, but
+    // set it explicitly so this never silently depends on markup order.
+    var businessTypeEl = $('business_type');
+    if (businessTypeEl) businessTypeEl.value = r.business_type || 'restaurant';
 
     var transEnabledEl = $('transition_enabled');
     if (transEnabledEl) transEnabledEl.checked = r.transition_enabled !== false;
