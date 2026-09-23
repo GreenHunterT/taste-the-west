@@ -64,12 +64,29 @@ window.LivePreview = (function () {
     let _focusRaf = 0;                 // rAF handle: coalesces rapid focus requests to one send per frame
     let _focusQueued = null;
     let _catalogDraft = null;          // { products:[ { id, isDraft, patch } ] } — unsaved menu overlay; null = none
+    // Transition config THIS Preview demonstrates (milestone 1R.1) — the
+    // CURRENT unsaved Settings draft, pushed by the editor via
+    // setTransitionConfig() (mirrors setDraft() for the restaurant draft).
+    // Never persisted, never customer-facing — purely what the two demo
+    // entry points below (playTransitionDemo / the showPage({demo:true})
+    // path) read. Defaults match the public site's own back-compat default
+    // (js/app.js normTransitionCfg) so a view that never calls
+    // setTransitionConfig (e.g. Menu) still demonstrates the REAL saved
+    // restaurant's transition — the shell seeds this right after mount and
+    // resets it on ctx.setPreviewToSaved() (see admin-shell.js).
+    let _transitionCfg = { enabled: true, style: 'portal', color: '#d4af65' };
 
     // ── Double-buffered frames ──────────────────────────────────────────
     let _stage    = root.querySelector ? root.querySelector('#lp-stage')    : document.getElementById('lp-stage');
     let _viewport = root.querySelector ? root.querySelector('#lp-viewport') : document.getElementById('lp-viewport');
     let _frames   = Array.prototype.slice.call(
       (root.querySelectorAll ? root : document).querySelectorAll('.preview-frame'));
+    // ── Preview Transition demo overlay (milestone 1R) — a decorative demo
+    // drawn in THIS document, never inside the iframe (see admin.css's own
+    // "PREVIEW TRANSITION DEMO" comment for why). Purely additive: every
+    // other capability above is untouched.
+    let _demoEl    = root.querySelector ? root.querySelector('#lp-transition-demo') : document.getElementById('lp-transition-demo');
+    let _demoTimers = [];
     let _activeFrame   = null;                 // frame currently shown (null until first promotion)
     let _incomingFrame = _frames[0] || null;   // frame loading a page during a switch / first load
     // Monotonic navigation generation. Baked into each preview URL as
@@ -431,6 +448,18 @@ window.LivePreview = (function () {
       applyScale();                            // pre-size so it appears at the right dimensions
       incoming.src = _src(page, _navId);
       _notifyState();                          // requested page changed
+
+      // 1R.1 §1 — an EXPLICIT page switch (the Page control, or a nav link
+      // clicked inside the preview iframe — see the two call sites that
+      // pass demo:true) demonstrates the currently selected unsaved
+      // transition over this switch. Context-aware auto-navigation (editors
+      // jumping the Preview to a field's page while the owner is merely
+      // typing/focusing elsewhere) never passes demo:true and stays exactly
+      // as fast/undemonstrated as before — see applyContext() in
+      // views/settings.js. The real frame swap below (completeNavigation,
+      // driven by the untouched READY/DATA/APPLIED handshake) is unaffected
+      // either way; the demo only overlays it.
+      if (o.demo) _playNavigationDemo();
     }
 
     // Incoming frame is ready (matched PREVIEW_APPLIED): promote it over the
@@ -558,8 +587,9 @@ window.LivePreview = (function () {
         if (fromActive) _emit('stat-click', { previewId: msg.previewId });
       } else if (msg.type === 'PREVIEW_NAVIGATE') {
         // Same-site nav link clicked inside the ACTIVE preview. Validated
-        // against the page allow-list; arbitrary paths are ignored.
-        if (fromActive && PAGES[msg.page]) { _emit('navigate', { page: msg.page }); showPage(msg.page); }
+        // against the page allow-list; arbitrary paths are ignored. An
+        // explicit switch (1R.1 §1) — demonstrates the selected transition.
+        if (fromActive && PAGES[msg.page]) { _emit('navigate', { page: msg.page }); showPage(msg.page, { demo: true }); }
       } else if (msg.type === 'PREVIEW_LANGUAGE_CHANGE') {
         // Real in-iframe language toggle — keep the parent Language control in
         // sync. Child already applied it; no re-send.
@@ -630,6 +660,147 @@ window.LivePreview = (function () {
       if (wasActive) _postToActive({ type: 'PREVIEW_LOCATION_EDIT', on: false });
     }
 
+    // ── Preview Transition demo (milestone 1R, extended 1R.1) ───────────
+    // Demonstrates the CURRENTLY selected (possibly unsaved) transition
+    // entirely inside this stage. Two entry points share ONE animator
+    // (_demoClose/_demoOpenAndCleanup — 1R.1 §3, "avoid maintaining two
+    // separate demo implementations"):
+    //   playTransitionDemo(cfg)  — the Settings "Preview Transition" button;
+    //     no real navigation involved, just close → show a style badge →
+    //     hold → open.
+    //   _playNavigationDemo()    — an explicit Live Preview page switch
+    //     (showPage({demo:true}) — see that function); close → wait for the
+    //     REAL frame swap (the existing, untouched READY/DATA/APPLIED
+    //     handshake) → open. Real Admin Preview navigation stays exactly as
+    //     isolated from the customer transition as it always has been
+    //     (§33) — this overlay is drawn in THIS document, never the iframe.
+    // Re-entrant safe throughout: a new demo clears any pending timers from
+    // the previous one and restarts cleanly rather than stacking.
+    function _clearDemoTimers() {
+      _demoTimers.forEach(function (id) { clearTimeout(id); });
+      _demoTimers = [];
+    }
+    function _demoAfter(ms, fn) {
+      _demoTimers.push(setTimeout(fn, ms));
+    }
+    const DEMO_LABELS = {
+      portal: 'Portal Waves · أمواج البوابة',
+      fade:   'Fade · تلاشي',
+      slide:  'Slide · انزلاق',
+      off:    'Transitions are OFF — pages load instantly · الانتقالات متوقفة — تنتقل الصفحات فوراً',
+    };
+
+    // 1R.1 §2 — Admin-only inspection timing. Mirrors js/app.js's own
+    // per-style PORTAL/FADE/SLIDE close(+hold) constants — that file is the
+    // single source of truth for the REAL public timing; these are a
+    // manually kept-in-sync COPY, since the public iframe document and this
+    // Admin document are two separate JS contexts with no shared import
+    // (grep js/app.js for CLOSE_MS_NORMAL / FADE_CLOSE_MS_NORMAL /
+    // SLIDE_CLOSE_MS_NORMAL if either ever changes). Scaled by
+    // ADMIN_DEMO_MULT so a store owner can clearly inspect the shape of the
+    // transition; the public site's own timing is completely untouched by
+    // this — it lives only in js/app.js/css/style.css, neither of which
+    // this file reads from or writes to.
+    const PUBLIC_TIMING = {
+      portal: { close: 650, hold: 70, closeReduced: 330, holdReduced: 40 },
+      fade:   { close: 280, hold: 0,  closeReduced: 90,  holdReduced: 0  },
+      slide:  { close: 320, hold: 0,  closeReduced: 90,  holdReduced: 0  },
+    };
+    const ADMIN_DEMO_MULT = 1.4;   // within the requested 1.3x-1.5x range
+    function _demoTiming(style, reduced) {
+      const base = PUBLIC_TIMING[style] || PUBLIC_TIMING.portal;
+      const close = Math.round((reduced ? base.closeReduced : base.close) * ADMIN_DEMO_MULT);
+      const hold  = Math.round((reduced ? base.holdReduced  : base.hold)  * ADMIN_DEMO_MULT);
+      return { close: close, hold: hold, open: close };   // open mirrors close, same as the public site (css/style.css)
+    }
+
+    // Applies the color + style classes and starts the CLOSE transition;
+    // calls onClosed(timing) once the close duration has elapsed (the
+    // "fully covered" moment). The one reusable admin-preview transition
+    // helper both entry points build on.
+    function _demoClose(style, color, onClosed) {
+      if (!_demoEl) return null;
+      const reduced = _reducedMotion();
+      const timing = _demoTiming(style, reduced);
+      const r = parseInt(color.slice(1, 3), 16), g = parseInt(color.slice(3, 5), 16), b = parseInt(color.slice(5, 7), 16);
+      _demoEl.style.setProperty('--tpv-color-rgb', r + ',' + g + ',' + b);
+      _demoEl.style.setProperty('--tpv-dur', timing.close + 'ms');
+      _demoEl.classList.remove('style-portal', 'style-fade', 'style-slide', 'is-closed', 'show-badge');
+      _demoEl.classList.add('is-active', 'style-' + style);
+      // One rAF before closing, same reason js/app.js defers its own Portal
+      // sound one rAF: the class add above must actually paint before the
+      // transform transition it triggers starts, or the browser can coalesce
+      // "add then immediately animate" into one frame with no visible motion.
+      requestAnimationFrame(function () {
+        _demoEl.classList.add('is-closed');
+        _demoAfter(timing.close, function () { onClosed(timing); });
+      });
+      return timing;
+    }
+    function _demoOpenAndCleanup(style, openMs) {
+      _demoEl.classList.remove('is-closed', 'show-badge');
+      _demoAfter(openMs, function () {
+        _demoEl.classList.remove('is-active', 'style-' + style);
+      });
+    }
+
+    function playTransitionDemo(cfg) {
+      if (!_demoEl) return;
+      cfg = cfg || _transitionCfg;
+      const enabled = cfg.enabled !== false;
+      const style = (cfg.style === 'fade' || cfg.style === 'slide') ? cfg.style : 'portal';
+      const color = (typeof cfg.color === 'string' && /^#[0-9a-fA-F]{6}$/.test(cfg.color)) ? cfg.color : '#d4af65';
+      const badge = document.getElementById('lp-transition-demo-badge');
+
+      _clearDemoTimers();
+
+      if (!enabled) {
+        if (badge) badge.textContent = DEMO_LABELS.off;
+        _demoEl.classList.add('is-active', 'show-badge');
+        _demoAfter(900, function () { _demoEl.classList.remove('is-active', 'show-badge'); });
+        return;
+      }
+
+      _demoClose(style, color, function (timing) {
+        if (badge) badge.textContent = DEMO_LABELS[style] || DEMO_LABELS.portal;
+        _demoEl.classList.add('show-badge');
+        _demoAfter(timing.hold, function () { _demoOpenAndCleanup(style, timing.open); });
+      });
+    }
+
+    // Bounded wait for the REAL frame swap (completeNavigation) to finish —
+    // polls the same `pendingNav` the handshake itself clears, so the
+    // overlay's reveal never happens before the destination is actually
+    // ready, without touching that handshake at all.
+    const DEMO_SWAP_MAX_WAIT = 2500, DEMO_SWAP_POLL = 60, DEMO_SWAP_SETTLE = 120;
+    function _waitForSwap(waited, done) {
+      if (!pendingNav || waited >= DEMO_SWAP_MAX_WAIT) { done(); return; }
+      _demoAfter(DEMO_SWAP_POLL, function () { _waitForSwap(waited + DEMO_SWAP_POLL, done); });
+    }
+    function _playNavigationDemo() {
+      if (!_demoEl || !_transitionCfg.enabled) return;   // OFF → the existing fast crossfade IS the whole effect
+      _clearDemoTimers();
+      const style = _transitionCfg.style, color = _transitionCfg.color;
+      _demoClose(style, color, function (timing) {
+        _waitForSwap(0, function () {
+          // A brief settle so "closed" always reads as a real beat, even
+          // when the destination was already ready the instant we closed.
+          _demoAfter(DEMO_SWAP_SETTLE, function () { _demoOpenAndCleanup(style, timing.open); });
+        });
+      });
+    }
+
+    // Pushes the current UNSAVED Settings draft so both demo entry points
+    // above reflect it immediately — mirrors setDraft() for the restaurant
+    // draft, but this value is never sent to the iframe at all (1R §4).
+    function setTransitionConfig(cfg) {
+      cfg = cfg || {};
+      const enabled = cfg.enabled !== false;
+      const style = (cfg.style === 'fade' || cfg.style === 'slide') ? cfg.style : 'portal';
+      const color = (typeof cfg.color === 'string' && /^#[0-9a-fA-F]{6}$/.test(cfg.color)) ? cfg.color : '#d4af65';
+      _transitionCfg = { enabled: enabled, style: style, color: color };
+    }
+
     function getState() {
       return {
         page: _page, activePage: _activePage, navigating: !!pendingNav,
@@ -642,6 +813,7 @@ window.LivePreview = (function () {
       if (_focusRaf) { try { cancelAnimationFrame(_focusRaf); } catch (e) {} _focusRaf = 0; }
       _focusQueued = null; _pendingFocus = null;
       _catalogDraft = null;
+      _clearDemoTimers();
       _teardown.splice(0).forEach(function (fn) { try { fn(); } catch (e) {} });
       try { _frames.forEach(function (f) { f.src = 'about:blank'; }); } catch (e) {}
       _handlers = {};
@@ -652,7 +824,9 @@ window.LivePreview = (function () {
     function _wireControls() {
       const scope = root.querySelectorAll ? root : document;
       scope.querySelectorAll('.lp-seg__btn[data-page]').forEach(function (b) {
-        _bind(b, 'click', function () { showPage(b.dataset.page); });
+        // 1R.1 §1 — an explicit Page-control click demonstrates the
+        // selected transition; see showPage()'s own comment on demo:true.
+        _bind(b, 'click', function () { showPage(b.dataset.page, { demo: true }); });
       });
       scope.querySelectorAll('.lp-seg__btn[data-device]').forEach(function (b) {
         _bind(b, 'click', function () { setDevice(b.dataset.device); });
@@ -707,6 +881,8 @@ window.LivePreview = (function () {
       startLocationImageEdit: startLocationImageEdit,
       updateLocationImageEdit: updateLocationImageEdit,
       stopLocationImageEdit: stopLocationImageEdit,
+      playTransitionDemo: playTransitionDemo,
+      setTransitionConfig: setTransitionConfig,
       on: on,
       off: _offOne,
       getState: getState,

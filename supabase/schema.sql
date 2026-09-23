@@ -3,11 +3,13 @@
 --  Run this entire file in the Supabase SQL Editor (one shot).
 --  Project: https://supabase.com/dashboard/project/<your-project>
 --
---  This file represents the FINAL state after migrations 001–003 (see
+--  This file represents the FINAL state after migrations 001–004 (see
 --  supabase/migrations/) — a fresh project built from this file alone
 --  lands directly in the same hardened shape as the live, already-migrated
---  TasteTheWest project, including the restaurants_public view (001) and
---  the least-privilege RLS/grant model (003). The already-applied
+--  TasteTheWest project, including the restaurants_public view (001), the
+--  least-privilege RLS/grant model (003), and the page-transition settings
+--  columns (004 — NOT yet applied to the live project; see that file's own
+--  header for the exact SQL to run manually). The already-applied
 --  migrations are kept as an append-only historical record and are never
 --  rewritten; this file is the one that's kept in sync with them.
 -- =================================================================
@@ -67,6 +69,14 @@ CREATE TABLE IF NOT EXISTS restaurants (
   -- App behaviour
   sounds_enabled   BOOLEAN       DEFAULT true,
 
+  -- Public page-transition (milestone 1R). style ∈ {portal,fade,slide};
+  -- color is hex, used by 'portal' only. No CHECK constraints — clamped by
+  -- the app on write (admin/js/views/settings.js) and read (js/app.js),
+  -- matching this table's existing minimal style (see location_image_fit).
+  transition_enabled BOOLEAN     DEFAULT true,
+  transition_style   TEXT        DEFAULT 'portal',
+  transition_color   TEXT        DEFAULT '#d4af65',
+
   -- Homepage highlights: [{value, label, labelAr}]
   highlights       JSONB         DEFAULT '[]'::jsonb,
 
@@ -88,7 +98,10 @@ ALTER TABLE restaurants
   ADD COLUMN IF NOT EXISTS location_image_position_x NUMERIC DEFAULT 50,
   ADD COLUMN IF NOT EXISTS location_image_position_y NUMERIC DEFAULT 50,
   ADD COLUMN IF NOT EXISTS location_image_zoom       NUMERIC DEFAULT 1,
-  ADD COLUMN IF NOT EXISTS location_image_height     TEXT    DEFAULT 'standard';
+  ADD COLUMN IF NOT EXISTS location_image_height     TEXT    DEFAULT 'standard',
+  ADD COLUMN IF NOT EXISTS transition_enabled        BOOLEAN DEFAULT true,
+  ADD COLUMN IF NOT EXISTS transition_style          TEXT    DEFAULT 'portal',
+  ADD COLUMN IF NOT EXISTS transition_color          TEXT    DEFAULT '#d4af65';
 
 
 -- ── CATEGORIES ───────────────────────────────────────────────────
@@ -209,7 +222,8 @@ SELECT
   hours_weekdays_en, hours_weekdays_ar, hours_weekends_en, hours_weekends_ar,
   hero_image_url, logo_url,
   wa_message_ar, wa_message_en,
-  sounds_enabled, highlights
+  sounds_enabled, highlights,
+  transition_enabled, transition_style, transition_color
 FROM public.restaurants
 WHERE id = '57ee591f-39fb-4320-af05-fec66ebd512a'::uuid;
 

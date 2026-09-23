@@ -100,6 +100,19 @@
                       referrerpolicy="same-origin"></iframe>
               <iframe class="preview-frame" data-slot="b" title="Website preview" aria-hidden="true"
                       referrerpolicy="same-origin"></iframe>
+
+              <!-- Preview Transition demo overlay (milestone 1R) — purely a
+                   visual demonstration drawn in the Admin's own DOM, never
+                   inside the iframe: the public preview pages intentionally
+                   never run the real customer transition (§33), and this
+                   keeps that isolation completely untouched. Driven entirely
+                   by js/live-preview.js toggling classes here. -->
+              <div class="tpv-demo" id="lp-transition-demo" aria-hidden="true">
+                <div class="tpv-demo__curtain tpv-demo__curtain--top"><span class="tpv-demo__edge"></span></div>
+                <div class="tpv-demo__curtain tpv-demo__curtain--bottom"><span class="tpv-demo__edge"></span></div>
+                <div class="tpv-demo__panel"></div>
+                <div class="tpv-demo__badge" id="lp-transition-demo-badge"></div>
+              </div>
             </div>
           </div>
         </div>

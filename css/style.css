@@ -32,6 +32,12 @@ ul { list-style: none; }
   --border:     #3c3830;
   --accent:     #d4af65;          /* brighter gold on dark */
   --gold-pale:  rgba(212,176,101,.1);
+  /* 1R — Portal Waves' configurable Transition Color, as an "R,G,B" triplet
+     (not a single color value) so rgba(var(--portal-rgb), <alpha>) can still
+     vary opacity per use — see .portal-wave-glow/-core below. Overwritten
+     inline on <html> by js/app.js / the <head> script from Staff Settings;
+     this is only the fallback, matching the default gold (#d4af65). */
+  --portal-rgb: 212,175,101;
 
   /* ─ Typography ─ */
   --f-display: 'Cormorant Garamond', Georgia, serif;
@@ -1362,7 +1368,13 @@ html::before {
 }
 .portal-wave-glow {
   fill: none;
-  stroke: rgba(212,175,101,.55);
+  /* 1R — the configurable Transition Color (Staff Settings). `--portal-rgb`
+     is an "R,G,B" triplet set by js/app.js (applyTransitionConfig) and, for
+     the very first paint of an arriving transition, by the <head> script
+     from its sessionStorage cache — never hardcoded here. Falls back to the
+     original gold (212,175,101 = #d4af65) if that property is ever unset,
+     so a JS failure still renders exactly today's look. */
+  stroke: rgba(var(--portal-rgb, 212,175,101), .55);
   stroke-width: 5;
   stroke-linecap: round;
   vector-effect: non-scaling-stroke;
@@ -1374,7 +1386,7 @@ html::before {
   stroke-width: 2;
   stroke-linecap: round;
   vector-effect: non-scaling-stroke;
-  filter: drop-shadow(0 0 2px rgba(212,175,101,.7));
+  filter: drop-shadow(0 0 2px rgba(var(--portal-rgb, 212,175,101), .7));
 }
 
 @media not (prefers-reduced-motion: reduce) {
@@ -1552,6 +1564,57 @@ html::before {
      block above, so simply adding no reduced-motion rule for it here is
      sufficient — #page-content stays fully stable, and the curtains
      alone (now that they actually travel) do all the covering/revealing. */
+}
+
+/* ── CONFIGURABLE TRANSITION STYLE (milestone 1R) ────────────────────
+   Fade and Slide are ADD-ONLY overrides — not one existing Portal rule
+   above is touched or reordered. `html.tx-fade` / `html.tx-slide` is set
+   by js/app.js (applyTransitionConfig) and, for an arriving transition's
+   very first paint, by the <head> script from its sessionStorage cache.
+   No class at all = Portal, unchanged — today's exact default. The shared
+   is-page-leaving/is-page-entering/is-page-sealed/ptfx-instant markers stay
+   the ONE routing architecture for every style (per the "PAGE TRANSITIONS"
+   comment above) — only what they visually DRIVE differs here.
+   Reduced motion needs no bespoke rules for these two: the blanket
+   `transition-duration: .01ms !important` a few blocks up already applies
+   (nothing below raises specificity against it the way the Portal curtains
+   do), so Fade/Slide simply collapse to a near-instant, still-correct swap
+   — content is never left mid-transition or stuck invisible. */
+
+/* No curtains, no waves, no Portal sound (js/app.js gates that separately)
+   for either style — the decorative FX layer plays no part at all. */
+html.tx-fade #page-transition-fx,
+html.tx-slide #page-transition-fx {
+  display: none;
+}
+
+@media not (prefers-reduced-motion: reduce) {
+  /* FADE — simple, professional cross-page fade. Reuses #page-content's own
+     existing base `transition: opacity .70s ease-out, …` (unscoped, above)
+     for the OPEN by fully replacing only the LEAVING end-state + its own
+     timing; no scale/blur depth cue (that's a Portal-specific touch). */
+  html.tx-fade.is-page-leaving #page-content {
+    transform: none; opacity: 0; filter: none;
+    transition: opacity .28s ease;
+  }
+  html.tx-fade.is-page-entering #page-content {
+    transform: none; opacity: 0; filter: none;
+  }
+
+  /* SLIDE — clean directional page transition: the leaving page slides out
+     toward the reading direction's "forward" edge, the arriving page starts
+     from the opposite edge and slides to rest. Small, layout-safe percentage
+     (transform never affects layout/scroll width) — subtle, not a full
+     off-screen swipe. */
+  html.tx-slide.is-page-leaving #page-content {
+    transform: translateX(-5%); opacity: 0; filter: none;
+    transition: transform .32s ease, opacity .32s ease;
+  }
+  html.tx-slide.is-page-entering #page-content {
+    transform: translateX(4%); opacity: 0; filter: none;
+  }
+  html.tx-slide[dir="rtl"].is-page-leaving #page-content { transform: translateX(5%); }
+  html.tx-slide[dir="rtl"].is-page-entering #page-content { transform: translateX(-4%); }
 }
 
 /* ── RTL OVERRIDES ───────────────────────────────────────────────── */

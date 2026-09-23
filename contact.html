@@ -16,13 +16,27 @@
   <script>!function(){var l=localStorage.getItem('souqsite_language')||'ar';document.documentElement.lang=l;document.documentElement.dir=l==='ar'?'rtl':'ltr';
   /* 1N-v4 i18n pre-paint guard + 1N-v3 gate prepaint — see index.html for the full explanation. Site has one canonical design, no theme switch. */
   if(l==='ar')document.documentElement.classList.add('i18n-pending');
-  var enter=false;
-  try{if(sessionStorage.getItem('ttw_page_transition')==='1'){sessionStorage.removeItem('ttw_page_transition');enter=true;}}catch(e){}
   /* Admin Preview check, computed once — see index.html for the full explanation. */
   var isPreview=false;
   try{isPreview=new URLSearchParams(location.search).has('adminPreview');}catch(e){}
-  /* 1P.1 Back/Forward destination entry — see index.html for the full explanation. Never fires under Admin Preview or on a BFCache restore. */
-  if(!enter){
+  /* 1R — cached page-transition settings, written by js/app.js on every load once the real restaurant row is known — see index.html for the full explanation. Missing/invalid cache = today's exact default (enabled, Portal, gold). */
+  var txCfg=null;
+  try{var _txRaw=sessionStorage.getItem('ttw_transition_cfg');if(_txRaw)txCfg=JSON.parse(_txRaw);}catch(e){}
+  var txEnabled=!txCfg||txCfg.enabled!==false;
+  var txStyle=(txCfg&&(txCfg.style==='fade'||txCfg.style==='slide'))?txCfg.style:'portal';
+  var txColor=(txCfg&&typeof txCfg.color==='string'&&/^#[0-9a-fA-F]{6}$/.test(txCfg.color))?txCfg.color:'#d4af65';
+  if(!isPreview){
+    if(txStyle!=='portal')document.documentElement.classList.add('tx-'+txStyle);
+    var _r=parseInt(txColor.slice(1,3),16),_g=parseInt(txColor.slice(3,5),16),_b=parseInt(txColor.slice(5,7),16);
+    document.documentElement.style.setProperty('--portal-rgb',_r+','+_g+','+_b);
+  }
+  var enter=false;
+  try{
+    var m=sessionStorage.getItem('ttw_page_transition');
+    if(m==='portal'||m==='fade'||m==='slide'){sessionStorage.removeItem('ttw_page_transition');enter=true;}
+  }catch(e){}
+  /* 1P.1 Back/Forward destination entry — see index.html for the full explanation. Never fires under Admin Preview, on a BFCache restore, or with transitions OFF (1R). */
+  if(!enter&&txEnabled){
     try{
       var navEntries=performance&&performance.getEntriesByType&&performance.getEntriesByType('navigation');
       var navType=navEntries&&navEntries[0]&&navEntries[0].type;
@@ -30,9 +44,9 @@
     }catch(e){}
   }
   if(enter)document.documentElement.classList.add('is-page-entering','is-page-sealed');
-  /* 1P.3 BFCache seal-before-freeze / open-on-restore — see index.html for the full explanation. Never fires under Admin Preview. */
+  /* 1P.3 BFCache seal-before-freeze / open-on-restore — see index.html for the full explanation. Never fires under Admin Preview or with transitions OFF (1R). */
   addEventListener('pagehide',function(e){
-    if(isPreview)return;
+    if(isPreview||!txEnabled)return;
     if(!e.persisted)return;
     var html=document.documentElement;
     if(html.classList.contains('is-page-leaving'))return;
@@ -45,7 +59,7 @@
     }
     document.documentElement.classList.remove('i18n-pending');
     try{sessionStorage.removeItem('ttw_page_transition');}catch(x){}
-    if(isPreview){
+    if(isPreview||!txEnabled){
       document.documentElement.classList.remove('is-page-leaving','is-page-entering','is-page-sealed','ptfx-instant');
       return;
     }

@@ -82,6 +82,21 @@
     };
   }
 
+  // The SAVED restaurant's transition config, in the shape live-preview.js's
+  // setTransitionConfig() expects. Separate from buildPublicRestaurantDraft()
+  // above on purpose (1R.1 §1) — that whitelist is the draft actually SENT to
+  // the iframe; this one only feeds the Admin-local demo overlay
+  // (js/live-preview.js), never the iframe, so it stays a distinct transport
+  // with its own setter rather than getting folded into the public draft.
+  function transitionCfgFromRow(r) {
+    r = r || {};
+    return {
+      enabled: r.transition_enabled !== false,
+      style: (r.transition_style === 'fade' || r.transition_style === 'slide') ? r.transition_style : 'portal',
+      color: /^#[0-9a-fA-F]{6}$/.test(r.transition_color || '') ? r.transition_color : '#d4af65',
+    };
+  }
+
   // ── Boot ─────────────────────────────────────────────────────────
   if (!window.LivePreview || typeof window.LivePreview.mount !== 'function') {
     console.error('[shell] LivePreview controller missing — check the <script> order in admin/index.html');
@@ -264,6 +279,13 @@
   ctx.setPreviewToSaved = function () {
     if (ctx.restaurantLoadState === 'ready' && ctx.restaurant) {
       ctx.preview.setDraft(buildPublicRestaurantDraft(ctx.restaurant));
+      // Also drop any unsaved transition-demo config a view (Settings) may
+      // have pushed — a Page-control switch after leaving Settings without
+      // Saving should demonstrate the SAVED transition, not the discarded
+      // draft (1R.1 §1).
+      if (typeof ctx.preview.setTransitionConfig === 'function') {
+        ctx.preview.setTransitionConfig(transitionCfgFromRow(ctx.restaurant));
+      }
     }
   };
 
@@ -299,6 +321,12 @@
   // ── Seed the Preview with the SAVED public restaurant (ready only) ──
   if (restaurantLoadState === 'ready') {
     ctx.preview.setDraft(buildPublicRestaurantDraft(restaurant));
+    // So a Page-control switch demonstrates the REAL saved transition even
+    // when Settings has never been mounted this session (e.g. landing
+    // directly on #menu) — see transitionCfgFromRow()'s own comment.
+    if (typeof ctx.preview.setTransitionConfig === 'function') {
+      ctx.preview.setTransitionConfig(transitionCfgFromRow(restaurant));
+    }
   }
 
   // ── Router (hash) ──────────────────────────────────────────────

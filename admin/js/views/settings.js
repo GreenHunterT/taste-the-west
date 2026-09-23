@@ -40,7 +40,7 @@ window.AdminViews.settings = (function () {
     'phone', 'whatsapp', 'instagram', 'email', 'wa_message_ar', 'wa_message_en',
     'address_ar', 'address_en', 'map_directions', 'map_embed',
     'hours_weekdays_en', 'hours_weekdays_ar', 'hours_weekends_en', 'hours_weekends_ar',
-    'sounds_enabled',
+    'sounds_enabled', 'transition_enabled', 'transition_color',
   ];
 
   // ── Per-mount state (reset by resetState() at the top of mount()) ──
@@ -62,6 +62,8 @@ window.AdminViews.settings = (function () {
   var locVisualMode, locFit, locPosX, locPosY, locZoom, locHeight;
   var locEditActive, locEditPending, locEditSnapshot;
   var editedFields;
+  var transitionStyle;         // 'portal' | 'fade' | 'slide' — own state var, same pattern as locVisualMode
+  var transitionDemoTimer;     // pending Preview Transition demo auto re-enable, cleared on unmount
 
   function resetState() {
     teardownFns = [];
@@ -79,6 +81,7 @@ window.AdminViews.settings = (function () {
     locEditActive = locEditPending = false;
     locEditSnapshot = null;
     editedFields = new Set();
+    if (transitionDemoTimer) { clearTimeout(transitionDemoTimer); transitionDemoTimer = null; }
 
     var r = (ctx && ctx.restaurant) || null;
     locVisualMode = (r && r.location_visual_mode === 'image') ? 'image' : 'map';
@@ -87,6 +90,7 @@ window.AdminViews.settings = (function () {
     locPosY = numOr(r && r.location_image_position_y, 0, 100, 50);
     locZoom = numOr(r && r.location_image_zoom, 1, 1.6, 1);
     locHeight = (r && (r.location_image_height === 'short' || r.location_image_height === 'tall')) ? r.location_image_height : 'standard';
+    transitionStyle = (r && (r.transition_style === 'fade' || r.transition_style === 'slide')) ? r.transition_style : 'portal';
   }
 
   // ── Listener bookkeeping ─────────────────────────────────────────
@@ -380,6 +384,49 @@ window.AdminViews.settings = (function () {
       '    </div>',
       '  </div>',
       '',
+      '  <!-- Page Transition -->',
+      '  <div class="acard mt-2" id="transition-acard">',
+      '    <div class="acard-title">Page Transition <span class="bilingual-hint bilingual-hint--inline" dir="rtl" lang="ar">انتقال الصفحة</span></div>',
+      '    <div class="toggle-row">',
+      '      <div class="toggle-info">',
+      '        <strong>Enable Transitions <span class="bilingual-hint bilingual-hint--inline" dir="rtl" lang="ar">تفعيل الانتقالات</span></strong>',
+      '        <span>Play an animated hand-off between pages on the public site.</span>',
+      '        <span class="bilingual-hint" dir="rtl" lang="ar">تفعيل الانتقال المتحرك بين صفحات الموقع العام</span>',
+      '      </div>',
+      '      <label class="toggle">',
+      '        <input type="checkbox" id="transition_enabled" name="transition_enabled" />',
+      '        <span class="toggle-track"></span>',
+      '      </label>',
+      '    </div>',
+      '    <div class="form-row single">',
+      '      <div class="form-group">',
+      '        <label id="transition-style-label">Transition Style <span class="bilingual-hint bilingual-hint--inline" dir="rtl" lang="ar">نمط الانتقال</span></label>',
+      '        <div class="lp-seg" role="group" aria-labelledby="transition-style-label" id="transition-style-seg">',
+      '          <button type="button" class="lp-seg__btn is-active" data-transition-style="portal" aria-pressed="true">Portal Waves <span class="bilingual-hint bilingual-hint--inline" dir="rtl" lang="ar">أمواج البوابة</span></button>',
+      '          <button type="button" class="lp-seg__btn" data-transition-style="fade" aria-pressed="false">Fade <span class="bilingual-hint bilingual-hint--inline" dir="rtl" lang="ar">تلاشي</span></button>',
+      '          <button type="button" class="lp-seg__btn" data-transition-style="slide" aria-pressed="false">Slide <span class="bilingual-hint bilingual-hint--inline" dir="rtl" lang="ar">انزلاق</span></button>',
+      '        </div>',
+      '      </div>',
+      '    </div>',
+      '    <div class="form-row single">',
+      '      <div class="form-group">',
+      '        <label for="transition_color">Transition Color <span class="bilingual-hint bilingual-hint--inline" dir="rtl" lang="ar">لون الانتقال</span></label>',
+      '        <div class="color-field">',
+      '          <input type="color" id="transition_color_picker" value="#d4af65" aria-label="Transition color picker" />',
+      '          <input type="text" id="transition_color" name="transition_color" placeholder="#d4af65" maxlength="7" pattern="^#[0-9A-Fa-f]{6}$" aria-label="Transition color (hex)" />',
+      '        </div>',
+      '        <p class="field-hint">Used by Portal Waves only. Must be a valid hex color, e.g. #d4af65 — invalid values fall back to the default gold on Save.</p>',
+      '        <p class="field-hint bilingual-hint" dir="rtl" lang="ar">يُستخدم في نمط أمواج البوابة فقط. يجب أن يكون لوناً سداسياً صحيحاً، مثل ‎#d4af65‎ — القيم غير الصحيحة تعود تلقائياً إلى الذهبي الافتراضي عند الحفظ.</p>',
+      '      </div>',
+      '    </div>',
+      '    <div class="stats-toolbar">',
+      '      <button type="button" class="btn btn-secondary btn-sm" id="transition-preview-btn">Preview Transition <span class="bilingual-hint bilingual-hint--inline" dir="rtl" lang="ar">معاينة الانتقال</span></button>',
+      '      <span class="field-hint" id="transition-preview-hint">Demonstrates the transition above inside the Live Preview — nothing is sent to your public site.',
+      '        <span class="bilingual-hint" dir="rtl" lang="ar">يعرض هذا زر معاينة الانتقال أعلاه داخل المعاينة المباشرة فقط — لا يُرسل شيء إلى موقعك العام.</span>',
+      '      </span>',
+      '    </div>',
+      '  </div>',
+      '',
       '  <div class="settings-view__foot">',
       '    <button type="submit" class="btn btn-primary" id="save-btn-bottom">Save Changes</button>',
       '  </div>',
@@ -500,7 +547,9 @@ window.AdminViews.settings = (function () {
     'location-file':   { page: 'location', target: 'location-visual' },
     'location-remove': { page: 'location', target: 'location-visual' },
 
-    sounds_enabled: null,   // app-level toggle — no page / no language
+    sounds_enabled: null,       // app-level toggle — no page / no language
+    transition_enabled: null,   // app-level toggle — no page / no language
+    transition_color: null,     // app-level — no single public page owns it
   };
 
   // Resolve the focused element → a normalized context, or null.
@@ -647,13 +696,16 @@ window.AdminViews.settings = (function () {
     var FIELDS = ['name_ar', 'name_en', 'tagline_ar', 'tagline_en', 'description_ar', 'description_en',
       'phone', 'instagram', 'email', 'wa_message_ar', 'wa_message_en',
       'address_ar', 'address_en', 'map_directions', 'map_embed',
-      'hours_weekdays_en', 'hours_weekdays_ar', 'hours_weekends_en', 'hours_weekends_ar'];
+      'hours_weekdays_en', 'hours_weekdays_ar', 'hours_weekends_en', 'hours_weekends_ar',
+      'transition_color'];
     for (var i = 0; i < FIELDS.length; i++) {
       if (norm(val(FIELDS[i])) !== norm(r[FIELDS[i]])) return true;
     }
     if (val('whatsapp').replace(/\D/g, '') !== norm(r.whatsapp).replace(/\D/g, '')) return true;  // Save stores digits only
     var soundsEl = $('sounds_enabled');
     if ((soundsEl ? soundsEl.checked : true) !== (r.sounds_enabled !== false)) return true;
+    var transEnabledEl = $('transition_enabled');
+    if ((transEnabledEl ? transEnabledEl.checked : true) !== (r.transition_enabled !== false)) return true;
     return false;
   }
 
@@ -679,6 +731,8 @@ window.AdminViews.settings = (function () {
       if (locPosX !== numOr(r.location_image_position_x, 0, 100, 50)) return true;
       if (locPosY !== numOr(r.location_image_position_y, 0, 100, 50)) return true;
       if (locZoom !== numOr(r.location_image_zoom, 1, 1.6, 1)) return true;
+      var savedStyle = (r.transition_style === 'fade' || r.transition_style === 'slide') ? r.transition_style : 'portal';
+      if (transitionStyle !== savedStyle) return true;
     }
     return false;
   }
@@ -1129,6 +1183,7 @@ window.AdminViews.settings = (function () {
 
       var highlights = normStats(statisticsState);
       var soundsEl = $('sounds_enabled');
+      var transEnabledEl = $('transition_enabled');
       var payload = {
         name_ar: fieldVal('name_ar'), name_en: fieldVal('name_en'),
         tagline_ar: fieldVal('tagline_ar'), tagline_en: fieldVal('tagline_en'),
@@ -1154,6 +1209,11 @@ window.AdminViews.settings = (function () {
         sounds_enabled: (editedFields.has('sounds_enabled'))
           ? (soundsEl ? soundsEl.checked : true)
           : (restaurant.sounds_enabled !== false),
+        transition_enabled: (editedFields.has('transition_enabled'))
+          ? (transEnabledEl ? transEnabledEl.checked : true)
+          : (restaurant.transition_enabled !== false),
+        transition_style: transitionStyle,
+        transition_color: TRANSITION_COLOR_RE.test(fieldVal('transition_color')) ? fieldVal('transition_color') : TRANSITION_DEFAULT_COLOR,
       };
 
       // Lightweight optimistic concurrency (1O §10/§11): if a second
@@ -1210,6 +1270,15 @@ window.AdminViews.settings = (function () {
       restaurant.location_image_height = locHeight;
       restaurant.highlights = highlights;
       restaurant.sounds_enabled = payload.sounds_enabled;
+      restaurant.transition_enabled = payload.transition_enabled;
+      restaurant.transition_style = payload.transition_style;
+      restaurant.transition_color = payload.transition_color;
+      // An invalid typed hex was silently clamped to the default above —
+      // reflect that correction back into the field so it never reads as
+      // still-dirty against the just-saved value.
+      var savedColorEl = $('transition_color');
+      if (savedColorEl) savedColorEl.value = payload.transition_color;
+      syncTransitionColorPicker(payload.transition_color);
 
       heroFile = logoFile = locationFile = null;
       removeHero = removeLogo = removeLocation = false;
@@ -1286,6 +1355,8 @@ window.AdminViews.settings = (function () {
     updateUndoBtn();
     recomputeDirty();
   }
+  var TRANSITION_COLOR_RE = /^#[0-9A-Fa-f]{6}$/;
+  var TRANSITION_DEFAULT_COLOR = '#d4af65';
   function populateForm(r) {
     ['name_ar', 'name_en', 'tagline_ar', 'tagline_en', 'description_ar', 'description_en',
      'phone', 'whatsapp', 'instagram', 'email', 'wa_message_ar', 'wa_message_en',
@@ -1296,7 +1367,45 @@ window.AdminViews.settings = (function () {
     });
     var soundsEl = $('sounds_enabled');
     if (soundsEl) soundsEl.checked = r.sounds_enabled !== false;
+
+    var transEnabledEl = $('transition_enabled');
+    if (transEnabledEl) transEnabledEl.checked = r.transition_enabled !== false;
+    syncSeg('data-transition-style', transitionStyle);
+    var colorEl = $('transition_color');
+    var color = TRANSITION_COLOR_RE.test(r.transition_color || '') ? r.transition_color : TRANSITION_DEFAULT_COLOR;
+    if (colorEl) colorEl.value = color;
+    syncTransitionColorPicker(color);
+    pushTransitionConfig();
+
     initStats(r);
+  }
+  // Keeps the native <input type="color"> swatch mirroring whatever the hex
+  // text field currently holds — invalid/partial typing simply leaves the
+  // swatch at its last valid color instead of erroring.
+  function syncTransitionColorPicker(hex) {
+    var picker = $('transition_color_picker');
+    if (picker && TRANSITION_COLOR_RE.test(hex || '')) picker.value = hex;
+  }
+  // The current UNSAVED editor state as a {enabled,style,color} config —
+  // read fresh from the DOM/transitionStyle var every time, never cached.
+  function currentTransitionCfg() {
+    var enabledEl = $('transition_enabled');
+    var colorNow = val('transition_color');
+    return {
+      enabled: enabledEl ? enabledEl.checked : true,
+      style: transitionStyle,
+      color: TRANSITION_COLOR_RE.test(colorNow) ? colorNow : TRANSITION_DEFAULT_COLOR,
+    };
+  }
+  // Pushes the current unsaved draft to the shared Live Preview (1R.1 §1) so
+  // an explicit page switch there — the Page control, or a nav link clicked
+  // inside the preview iframe — demonstrates it immediately, same as the
+  // Preview Transition button already does. Mirrors postPreviewData() for
+  // the restaurant draft, but this never reaches the iframe (1R §4) — only
+  // live-preview.js's own local demo state.
+  function pushTransitionConfig() {
+    if (!ctx || !ctx.preview || typeof ctx.preview.setTransitionConfig !== 'function') return;
+    ctx.preview.setTransitionConfig(currentTransitionCfg());
   }
 
   // =================================================================
@@ -1370,6 +1479,50 @@ window.AdminViews.settings = (function () {
     if (locEditBtn) on(locEditBtn, 'click', startLocImageEdit);
     refreshLocCompose();
 
+    // Page Transition — style seg + color picker/text sync + demo button.
+    // transition_enabled / transition_color are plain form fields, already
+    // covered by the generic form input/change wiring further below (same
+    // as every other scalar field); style buttons aren't <input>s, so they
+    // get the same dedicated wiring loc-visual/loc-fit above use.
+    root.querySelectorAll('.lp-seg__btn[data-transition-style]').forEach(function (btn) {
+      on(btn, 'click', function () {
+        var v = btn.dataset.transitionStyle;
+        transitionStyle = (v === 'fade' || v === 'slide') ? v : 'portal';
+        syncSeg('data-transition-style', transitionStyle);
+        pushTransitionConfig();
+        recomputeDirty();
+      });
+    });
+    var transColorPicker = $('transition_color_picker');
+    if (transColorPicker) {
+      on(transColorPicker, 'input', function () {
+        var colorEl = $('transition_color');
+        if (colorEl) colorEl.value = transColorPicker.value;
+        editedFields.add('transition_color');
+        postPreviewData();
+        pushTransitionConfig();
+        recomputeDirty();
+      });
+    }
+    var transColorText = $('transition_color');
+    if (transColorText) {
+      on(transColorText, 'input', function () { syncTransitionColorPicker(val('transition_color')); });
+    }
+    var transPreviewBtn = $('transition-preview-btn');
+    if (transPreviewBtn) {
+      on(transPreviewBtn, 'click', function () {
+        if (!ctx.preview || typeof ctx.preview.playTransitionDemo !== 'function') return;
+        transPreviewBtn.disabled = true;
+        ctx.preview.playTransitionDemo(currentTransitionCfg());
+        if (transitionDemoTimer) clearTimeout(transitionDemoTimer);
+        // Generous upper bound — the longest style (Portal) runs close+hold+
+        // open at the admin-scaled ~1.4x multiplier (~1920ms); see
+        // live-preview.js's own PUBLIC_TIMING/ADMIN_DEMO_MULT for the exact
+        // per-style numbers this re-enable delay only needs to outlast.
+        transitionDemoTimer = setTimeout(function () { transPreviewBtn.disabled = false; transitionDemoTimer = null; }, 2000);
+      });
+    }
+
     // Statistics toolbar + delegated card events
     var addB = $('stats-add'); if (addB) on(addB, 'click', addStat);
     var undoB = $('stats-undo'); if (undoB) on(undoB, 'click', undo);
@@ -1390,9 +1543,19 @@ window.AdminViews.settings = (function () {
     var noteEdit = function (e) {
       if (e.target && SAVED_FIELD_IDS.indexOf(e.target.id) !== -1) editedFields.add(e.target.id);
     };
+    // transition_enabled / transition_color are plain form fields (native
+    // checkbox + text input) already routed through the generic input/change
+    // wiring below — this just ALSO re-pushes the Live Preview demo config
+    // (1R.1 §1) whenever either one changes, same trigger noteEdit() itself
+    // uses. The style seg buttons and the color picker aren't real form
+    // fields, so they call pushTransitionConfig() directly at their own
+    // dedicated listeners above.
+    var maybePushTransitionConfig = function (e) {
+      if (e && e.target && (e.target.id === 'transition_enabled' || e.target.id === 'transition_color')) pushTransitionConfig();
+    };
     if (form) {
-      on(form, 'input', function (e) { enterContext(e); noteEdit(e); postPreviewData(); recomputeDirty(); });
-      on(form, 'change', function (e) { enterContext(e); noteEdit(e); postPreviewData(); recomputeDirty(); });
+      on(form, 'input', function (e) { enterContext(e); noteEdit(e); postPreviewData(); maybePushTransitionConfig(e); recomputeDirty(); });
+      on(form, 'change', function (e) { enterContext(e); noteEdit(e); postPreviewData(); maybePushTransitionConfig(e); recomputeDirty(); });
       on(form, 'submit', handleSave);
       on(form, 'focusin', enterContext);   // context-aware Preview (§9–16)
     }
@@ -1429,6 +1592,7 @@ window.AdminViews.settings = (function () {
   function unmount() {
     // End any open Location image edit (overlay goes away with the transport)
     try { if ((locEditActive || locEditPending) && ctx && ctx.preview) ctx.preview.stopLocationImageEdit(); } catch (e) {}
+    if (transitionDemoTimer) { clearTimeout(transitionDemoTimer); transitionDemoTimer = null; }
 
     teardownFns.forEach(function (fn) { try { fn(); } catch (e) {} });
     teardownFns = [];

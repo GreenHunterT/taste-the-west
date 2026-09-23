@@ -154,8 +154,65 @@
         whatsappMessageEn: r.wa_message_en || '',
       },
       sounds: r.sounds_enabled !== false,
+      transitions: normTransitionCfg(r),
       categories: [], // populated after categories fetch
     };
+  }
+
+  // ── PAGE TRANSITION CONFIG (milestone 1R) ─────────────────────────
+  // Clamped/validated the same way location_image_fit etc. already are —
+  // no CHECK constraint on the DB side (see supabase/schema.sql). Missing/
+  // invalid values fall back to exactly TasteTheWest's pre-1R behaviour:
+  // enabled, Portal Waves, the existing gold.
+  var TRANSITION_STYLES = { portal: 1, fade: 1, slide: 1 };
+  var TRANSITION_COLOR_RE = /^#[0-9a-fA-F]{6}$/;
+  var TRANSITION_DEFAULT_COLOR = '#d4af65';
+  function normTransitionCfg(r) {
+    r = r || {};
+    return {
+      enabled: r.transition_enabled !== false,
+      style: Object.prototype.hasOwnProperty.call(TRANSITION_STYLES, r.transition_style) ? r.transition_style : 'portal',
+      color: (typeof r.transition_color === 'string' && TRANSITION_COLOR_RE.test(r.transition_color))
+        ? r.transition_color : TRANSITION_DEFAULT_COLOR,
+    };
+  }
+
+  // Live config this pageview navigates with — starts at exactly the
+  // back-compat default (enabled, Portal, gold) so a click that somehow
+  // lands before real data has loaded still behaves like current
+  // TasteTheWest, never like "transitions off". Reassigned wholesale (never
+  // mutated in place) once the real restaurant row is known — see the two
+  // call sites in boot()/loadFromSupabase().
+  var _transitionCfg = { enabled: true, style: 'portal', color: TRANSITION_DEFAULT_COLOR };
+  var TRANSITION_CFG_KEY = 'ttw_transition_cfg';
+  // Applies the resolved {enabled,style,color} to THIS document (the html
+  // class that selects the Fade/Slide CSS override + the --portal-rgb custom
+  // property the Portal wave strokes render with) and caches it in
+  // sessionStorage — the exact same "same-session public data handoff"
+  // pattern as SNAPSHOT_KEY above, just for this one small config, so the
+  // <head> script's synchronous pre-paint code (which has no network access
+  // and runs before this file even loads) can render the NEXT navigation's
+  // arrival correctly instead of always assuming Portal.
+  function applyTransitionConfig(cfg) {
+    cfg = cfg || {};
+    var enabled = cfg.enabled !== false;
+    var style = Object.prototype.hasOwnProperty.call(TRANSITION_STYLES, cfg.style) ? cfg.style : 'portal';
+    var color = (typeof cfg.color === 'string' && TRANSITION_COLOR_RE.test(cfg.color)) ? cfg.color : TRANSITION_DEFAULT_COLOR;
+    _transitionCfg = { enabled: enabled, style: style, color: color };
+
+    var html = document.documentElement;
+    html.classList.remove('tx-fade', 'tx-slide');
+    if (style === 'fade')  html.classList.add('tx-fade');
+    if (style === 'slide') html.classList.add('tx-slide');
+    // No class at all (the default) = Portal — css/style.css's existing
+    // Portal rules are entirely unguarded/unchanged, so this is also the
+    // safe fallback if this function is never reached.
+
+    var hex = color.slice(1);
+    var r = parseInt(hex.slice(0, 2), 16), g = parseInt(hex.slice(2, 4), 16), b = parseInt(hex.slice(4, 6), 16);
+    html.style.setProperty('--portal-rgb', r + ',' + g + ',' + b);
+
+    try { sessionStorage.setItem(TRANSITION_CFG_KEY, JSON.stringify(_transitionCfg)); } catch (e) {}
   }
 
   function mapProduct(p) {
@@ -214,6 +271,7 @@
     if (typeof SHOP_SETTINGS !== 'undefined') {
       SHOP_SETTINGS.sounds = restaurantRaw.sounds_enabled !== false;
     }
+    applyTransitionConfig(window.SHOP.transitions);
   }
 
   // Public catalog read — categories + available products for RESTAURANT_ID,
@@ -760,6 +818,7 @@
   // '/', './', 'index.html' and an absolute URL all resolve identically.
   function isPublicInternalNavigation(link, ev) {
     if (PREVIEW) return false;   // §33 — Admin Preview never intercepts page nav
+    if (!_transitionCfg.enabled) return false;   // 1R — Settings: transitions OFF → plain browser navigation
     if (!link || link.tagName !== 'A') return false;
     if (link.target && link.target !== '_self') return false;
     if (link.hasAttribute('download')) return false;
@@ -801,30 +860,55 @@
   var CLOSE_MS_NORMAL = 650, HOLD_MS_NORMAL = 70;
   var CLOSE_MS_REDUCED = 330, HOLD_MS_REDUCED = 40;
 
-  // Close the Portal, then navigate. A plain timeout, not an
+  // Fade / Slide (1R) — no curtains, no meet-in-the-middle hold, so a
+  // single shorter close is enough; MUST stay in sync with the matching
+  // `html.tx-fade` / `html.tx-slide` #page-content transition durations in
+  // css/style.css, same rule as the Portal constants above.
+  var FADE_CLOSE_MS_NORMAL = 280, FADE_CLOSE_MS_REDUCED = 90;
+  var SLIDE_CLOSE_MS_NORMAL = 320, SLIDE_CLOSE_MS_REDUCED = 90;
+  // Resolve {close, hold} (ms) for the CURRENTLY configured style + motion
+  // preference. The one place beginPageExit()/playPortalTransitionSound()
+  // derive timing from — never a second, independently-guessed number.
+  function transitionTiming() {
+    var reduced = reducedMotion();
+    if (_transitionCfg.style === 'fade')  return { close: reduced ? FADE_CLOSE_MS_REDUCED  : FADE_CLOSE_MS_NORMAL,  hold: 0 };
+    if (_transitionCfg.style === 'slide') return { close: reduced ? SLIDE_CLOSE_MS_REDUCED : SLIDE_CLOSE_MS_NORMAL, hold: 0 };
+    return { close: reduced ? CLOSE_MS_REDUCED : CLOSE_MS_NORMAL, hold: reduced ? HOLD_MS_REDUCED : HOLD_MS_NORMAL };
+  }
+
+  // Close the transition, then navigate. A plain timeout, not an
   // animationend/transitionend listener: an event that might not fire is
-  // exactly the kind of fragility that broke the very first attempt.
+  // exactly the kind of fragility that broke the very first attempt. Only
+  // ever reached when isPublicInternalNavigation() has already confirmed
+  // transitions are enabled — the STYLE (which class css/style.css reacts
+  // to is chosen by applyTransitionConfig(), already applied to <html>
+  // before this can run) decides Portal curtains vs. a plain Fade/Slide of
+  // #page-content; is-page-leaving/is-page-entering stay the one shared
+  // routing marker for every style (1R) — never a parallel mechanism.
   function beginPageExit(url, ev) {
     if (pageTransitioning) { if (ev) ev.preventDefault(); return; }   // §14/§44 — ignore rapid re-clicks
     pageTransitioning = true;
-    try { sessionStorage.setItem('ttw_page_transition', '1'); } catch (e) {}
+    try { sessionStorage.setItem('ttw_page_transition', _transitionCfg.style); } catch (e) {}
     if (ev) ev.preventDefault();
     document.documentElement.classList.add('is-page-leaving');
     // 1Q.1 — the Portal sound REPLACES the generic 'tap' click sound for a
-    // genuine navigation (the click handler skips 'tap' for this branch —
-    // see the delegated listener); gated by the SAME pageTransitioning
-    // lock above, so a rapid re-click can never double it, no separate
-    // debounce needed. Deferred one rAF past the class add: adding
-    // is-page-leaving synchronously here invalidates style, but the CSS
-    // transition it triggers doesn't visually start interpolating until
-    // the browser's NEXT style/paint pass — starting the audio in the
-    // same synchronous tick as the class add would make it begin one
-    // frame BEFORE the curtains actually move. One rAF (not a guessed
-    // delay) aligns the audio's scheduled start with that same next
-    // frame — real frame timing, not an assumption.
-    requestAnimationFrame(function () { playPortalTransitionSound(); });
-    var delay = reducedMotion() ? (CLOSE_MS_REDUCED + HOLD_MS_REDUCED) : (CLOSE_MS_NORMAL + HOLD_MS_NORMAL);
-    setTimeout(function () { window.location.href = url; }, delay);
+    // genuine Portal navigation only (the click handler skips 'tap' for
+    // that branch — see the delegated listener); Fade/Slide play no special
+    // sound at all (1R §3). Gated by the SAME pageTransitioning lock above,
+    // so a rapid re-click can never double it, no separate debounce needed.
+    // Deferred one rAF past the class add: adding is-page-leaving
+    // synchronously here invalidates style, but the CSS transition it
+    // triggers doesn't visually start interpolating until the browser's
+    // NEXT style/paint pass — starting the audio in the same synchronous
+    // tick as the class add would make it begin one frame BEFORE the
+    // curtains actually move. One rAF (not a guessed delay) aligns the
+    // audio's scheduled start with that same next frame — real frame
+    // timing, not an assumption.
+    if (_transitionCfg.style === 'portal') {
+      requestAnimationFrame(function () { playPortalTransitionSound(); });
+    }
+    var timing = transitionTiming();
+    setTimeout(function () { window.location.href = url; }, timing.close + timing.hold);
   }
 
   // Called once this document's own content is ready to be seen (end of
@@ -1051,14 +1135,16 @@
     // §15 of the 1N-v2 redo ("do not play two navigation sounds"). 1Q: for
     // a GENUINE (different-page) Portal navigation that one sound is now
     // the swoosh, not 'tap' — played from inside beginPageExit() itself —
-    // so 'tap' is skipped for that branch only; every other match on this
-    // selector (filters, WhatsApp, same-page clicks, external/staff links,
-    // anything isPublicInternalNavigation() doesn't accept) keeps 'tap'
-    // exactly as before.
+    // so 'tap' is skipped for that branch only when Portal is the active
+    // style. Fade/Slide (1R) have no special sound of their own, so 'tap'
+    // still plays for them, same as every other match on this selector
+    // (filters, WhatsApp, same-page clicks, external/staff links, anything
+    // isPublicInternalNavigation() doesn't accept).
     document.addEventListener('click', e => {
       const hit = e.target.closest('.btn, .filter-btn, .nav-toggle, .nav-link, .wa-float');
       if (!hit) return;
       if (isPublicInternalNavigation(hit, e) && !isSamePublicPageHref(hit.getAttribute('href'))) {
+        if (_transitionCfg.style !== 'portal') playUISound('tap');
         beginPageExit(hit.href, e);
         return;
       }
@@ -2450,6 +2536,7 @@
         window.SHOP = snap.shop;
         window.PRODUCTS = snap.products;
         if (typeof SHOP_SETTINGS !== 'undefined') SHOP_SETTINGS.sounds = snap.shop.sounds !== false;
+        applyTransitionConfig(snap.shop.transitions);
         renderShell(lang);
         releaseI18nGuard();   // real translations are on screen now — safe to reveal
         initReveal(arrivedSilently);

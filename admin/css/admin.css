@@ -389,6 +389,96 @@ img { max-width: 100%; display: block; }
   .preview-frame { transition: none; }
 }
 
+/* ── PREVIEW TRANSITION DEMO (milestone 1R) ──────────────────────────
+   Drawn entirely in the Admin's own DOM, on top of (never inside) the
+   preview iframes — the public preview pages intentionally never run the
+   real customer transition (§33), and this keeps that isolation untouched.
+   js/live-preview.js drives it purely by toggling these classes + setting
+   `--tpv-color-rgb`; it is never wired to real iframe navigation. */
+.tpv-demo {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  pointer-events: none;
+  overflow: hidden;
+  opacity: 0;
+  transition: opacity .15s ease;
+}
+.tpv-demo.is-active { opacity: 1; }
+
+/* Portal Waves — two simplified curtain bars + a glowing seam, tinted with
+   whatever Transition Color is currently selected (even unsaved). */
+.tpv-demo__curtain {
+  position: absolute;
+  left: 0; right: 0;
+  height: 51%;
+  background: linear-gradient(180deg, rgba(14,13,11,.97), rgba(28,24,18,.9));
+  /* `--tpv-dur` is set inline (js/live-preview.js, _demoClose) to the
+     admin-scaled close/open duration for the style currently playing —
+     falls back to .5s only if that JS never ran. */
+  transition: transform var(--tpv-dur, .5s) cubic-bezier(.42,0,.58,1);
+}
+.tpv-demo__curtain--top    { top: 0;    transform: translateY(-100%); }
+.tpv-demo__curtain--bottom { bottom: 0; transform: translateY(100%); }
+.tpv-demo__edge {
+  position: absolute;
+  left: 0; right: 0;
+  height: 3px;
+  background: rgb(var(--tpv-color-rgb, 212, 175, 101));
+  box-shadow: 0 0 10px 1px rgba(var(--tpv-color-rgb, 212, 175, 101), .8);
+}
+.tpv-demo__curtain--top    .tpv-demo__edge { bottom: -1px; }
+.tpv-demo__curtain--bottom .tpv-demo__edge { top: -1px; }
+.tpv-demo.style-portal.is-closed .tpv-demo__curtain { transform: translateY(0); }
+
+/* Fade / Slide — one plain panel; Slide tints it with the same color so the
+   two remain visually distinct even though both are just a panel. */
+.tpv-demo__panel {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  background: #14120f;
+  transition: opacity var(--tpv-dur, .4s) ease, transform var(--tpv-dur, .4s) ease;
+}
+.tpv-demo.style-fade.is-closed .tpv-demo__panel { opacity: .95; }
+.tpv-demo.style-slide .tpv-demo__panel {
+  background: rgba(var(--tpv-color-rgb, 212, 175, 101), .22);
+  transform: translateX(-100%);
+  opacity: 1;
+}
+.tpv-demo.style-slide.is-closed .tpv-demo__panel { transform: translateX(0); }
+
+.tpv-demo__badge {
+  position: absolute;
+  left: 50%; bottom: 16px;
+  transform: translateX(-50%);
+  max-width: calc(100% - 24px);
+  background: rgba(13,15,19,.92);
+  color: var(--atext);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--aborder);
+  opacity: 0;
+  transition: opacity .2s ease;
+  text-align: center;
+  /* Bilingual label ("Portal Waves · أمواج البوابة") — long enough on
+     narrow/mobile stages to need wrapping rather than the single-line
+     `nowrap` this pill used before it carried Arabic too. */
+  white-space: normal;
+}
+.tpv-demo.show-badge .tpv-demo__badge { opacity: 1; }
+
+@media (prefers-reduced-motion: reduce) {
+  .tpv-demo,
+  .tpv-demo__curtain,
+  .tpv-demo__panel,
+  .tpv-demo__badge {
+    transition-duration: .05s !important;
+  }
+}
+
 /* Settings view: unsaved-state badge (rendered by views/settings.js). */
 .stats-dirty { font-size: 12px; font-weight: 600; white-space: nowrap; }
 .stats-dirty.is-dirty { color: var(--awarning); }
@@ -715,6 +805,51 @@ select option { background: var(--acard); }
   color: var(--amuted);
   margin-top: 3px;
 }
+/* Secondary Arabic label alongside/under an English one (Page Transition
+   settings) — deliberately lightweight rather than a full Admin i18n
+   retrofit: the rest of Admin stays English-only (confirmed by audit —
+   no TRANSLATIONS/locale mechanism exists anywhere under admin/), this just
+   gives the new fields a bilingual label as asked, without changing
+   Admin's overall LTR chrome or introducing a second language-preference
+   system. Default: its own line, under longer descriptive text (hints,
+   paragraphs). `--inline` variant: same line, for short labels/buttons
+   (segmented control options, the acard title, "Enable Transitions",
+   "Preview Transition") where a second full line would feel cramped.
+   `dir="rtl" lang="ar"` on each instance (set inline in the markup) keeps
+   the Arabic glyphs correctly shaped/ordered without flipping the
+   surrounding LTR control — a segmented button, toggle or color field
+   never becomes an RTL layout, only the Arabic text inside it does. */
+.bilingual-hint {
+  display: block;
+  font-size: 11px;
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--amuted);
+  margin-top: 1px;
+}
+.bilingual-hint--inline {
+  display: inline;
+  margin-top: 0;
+  margin-inline-start: 6px;
+  opacity: .8;
+}
+/* Inside an active/selected segmented button the English label already
+   flips to a dark bg + bold text (.lp-seg__btn.is-active) — the Arabic
+   half must follow, not stay at the muted admin-on-dark color. */
+.lp-seg__btn.is-active .bilingual-hint--inline { color: inherit; opacity: .75; }
+
+/* Page Transition color field: native swatch + hex text input side by side */
+.color-field { display: flex; align-items: center; gap: 10px; }
+.color-field input[type="color"] {
+  width: 40px; height: 36px; padding: 2px;
+  border: 1px solid var(--ainput-bd);
+  border-radius: var(--radius-sm);
+  background: var(--ainput);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.color-field input[type="text"] { flex: 1 1 auto; }
 
 /* Toggle switch */
 .toggle-row {
