@@ -27,6 +27,7 @@
      desktop Live Preview derives its sticky offset from these, so there is no
      duplicated magic number to keep in sync. */
   --admin-header-h:   52px;
+  --admin-modebar-h:  46px;   /* narrow-screen Edit | Preview bar (1W: Settings save bar sticks below it) */
   --admin-content-gap: 20px;
 
   --radius:       10px;
@@ -43,6 +44,12 @@
   --admin-danger-soft:  rgba(239, 68, 68, .12);
   --admin-danger-text:  #f0938d;
 }
+
+/* `hidden` always hides (1W). Component rules such as `.btn { display:
+   inline-flex }` / `.img-preview-wide { display: block }` otherwise beat the
+   browser's own [hidden] rule, so a hidden "Remove image" button or empty
+   image preview was still being shown. */
+[hidden] { display: none !important; }
 
 html {
   font-size: 16px;
@@ -332,6 +339,11 @@ img { max-width: 100%; display: block; }
 }
 .live-preview__title { font-size: 15px; font-weight: 600; color: var(--atext); }
 .live-preview__hint { font-size: 11.5px; color: var(--amuted); flex: 1 1 auto; }
+.live-preview__draft {
+  font-size: 11px; font-weight: 700; color: var(--awarning);
+  padding: 2px 8px; border: 1px solid rgba(245, 158, 11, .45); border-radius: 999px;
+  white-space: nowrap;
+}
 
 /* Grouped, labelled preview controls (Page / Device / Language).
    Wrap cleanly; never one giant unreadable row. */
@@ -597,6 +609,7 @@ img { max-width: 100%; display: block; }
 
 .admin-shell__modebar {
   grid-column: 1 / -1;
+  min-height: var(--admin-modebar-h); box-sizing: border-box;
   display: flex; align-items: center; justify-content: flex-start;
   flex-wrap: wrap; gap: 8px 12px;
   position: sticky; top: var(--admin-header-h); z-index: 5;
@@ -665,6 +678,18 @@ img { max-width: 100%; display: block; }
   flex-wrap: wrap;
   margin-bottom: 4px;
 }
+/* Narrow screens (1W): keep Save + the saved/unsaved status in reach while
+   scrolling the long Settings form, just below the sticky Edit | Preview bar. */
+@media (max-width: 1179px) {
+  .settings-view__bar {
+    position: sticky;
+    top: calc(var(--admin-header-h) + var(--admin-modebar-h));
+    z-index: 4;
+    background: var(--abg);
+    padding: 8px 0;
+  }
+}
+.stats-dirty.is-dirty { font-weight: 700; }
 /* Sticky save/dirty bar only where the editor column scrolls on its own —
    wide screens, where the shell modebar is hidden. Sits flush under the
    sticky top app bar. */
@@ -828,6 +853,7 @@ input[type="email"],
 input[type="tel"],
 input[type="number"],
 input[type="password"],
+input[type="search"],   /* 1W: the Menu search box was rendering as an unstyled white field */
 textarea,
 select {
   background: var(--ainput);
@@ -847,6 +873,7 @@ input:focus, textarea:focus, select:focus {
   box-shadow: 0 0 0 3px rgba(201,168,76,.15);
 }
 input::placeholder, textarea::placeholder { color: var(--amuted); opacity: .7; }
+[aria-invalid="true"] { border-color: var(--aerror) !important; box-shadow: 0 0 0 3px rgba(239, 68, 68, .15) !important; }
 textarea { resize: vertical; min-height: 80px; line-height: 1.6; }
 select { cursor: pointer; }
 select option { background: var(--acard); }
@@ -1048,6 +1075,7 @@ html.admin-i18n-boot body { visibility: hidden; }
   min-width: 180px;
   max-width: 320px;
 }
+.table-toolbar select { flex: 0 1 auto; min-width: 0; max-width: 100%; }
 .table-search input { padding-left: 36px; }
 .table-search-icon {
   position: absolute;
@@ -1306,6 +1334,40 @@ html.admin-i18n-boot body { visibility: hidden; }
 }
 .data-table tr.menu-group-row strong { color: var(--atext); font-weight: 600; margin-inline-end: 6px; }
 .data-table tr.menu-group-row span { direction: rtl; unicode-bidi: isolate; }
+/* ── MENU ITEMS TABLE — usability pass (1W) ──────────────────────────
+   Labeled actions (Edit / Hide|Show) + a separated red Delete. When the
+   table's own box is narrow (desktop editor column, tablets, phones) a
+   container query folds Price + Status into the name cell and stacks the
+   actions, so nothing important is ever pushed off-screen. */
+#products-table-wrap { container-type: inline-size; }
+.data-table .col-thumb { width: 52px; }
+.data-table .col-actions { width: 1%; white-space: nowrap; }
+.row-actions .btn-delete { margin-inline-start: 6px; }
+.status-badges { display: flex; flex-wrap: wrap; gap: 4px; }
+.product-name-cell > span { display: block; }
+.product-name-cell > span[dir="rtl"] { text-align: left; }   /* keep the Arabic name under the English one */
+.cell-meta { display: none; flex-wrap: wrap; align-items: center; gap: 4px 6px; margin-top: 4px; }
+.cell-meta .cell-price { font-size: 12.5px; color: var(--atext); }
+@container (max-width: 640px) {
+  .data-table .col-thumb, .data-table .col-price, .data-table .col-status { display: none; }
+  .data-table th, .data-table td { padding-left: 8px; padding-right: 8px; }
+  .cell-meta { display: flex; }
+}
+@container (max-width: 470px) {
+  .row-actions { flex-direction: column; align-items: stretch; gap: 4px; }
+  .row-actions .btn { justify-content: center; padding-left: 10px; padding-right: 10px; min-width: 72px; }
+  .row-actions .btn-delete { margin-inline-start: 0; }
+}
+/* Smallest phones (≈320px): tighten so the actions never need a sideways scroll. */
+@container (max-width: 260px) {
+  .data-table th, .data-table td { padding-left: 5px; padding-right: 5px; }
+  .row-actions .btn { min-width: 58px; padding-left: 6px; padding-right: 6px; font-size: 12px; }
+}
+
+/* The Menu workspace header + tabs already name the section — the child
+   views' own page titles would repeat it ("Menu Items" twice). (1W) */
+.menu-workspace .admin-page-title { display: none; }
+
 /* ── HOMEPAGE FEATURED (1V) ──────────────────────────────────────────
    Three numbered homepage slots above the Menu Items list. Reuses the 1U
    drag handle / arrow styles; its order is independent of the menu order. */
@@ -1493,8 +1555,6 @@ html.admin-i18n-boot body { visibility: hidden; }
 
   .data-table { font-size: 12.5px; }
   .data-table th, .data-table td { padding: 9px 10px; }
-  .data-table th:nth-child(4),
-  .data-table td:nth-child(4) { display: none; } /* hide category col on small screens (4th since the 1U reorder column) */
 
   .toast-container { left: 16px; right: 16px; bottom: 16px; }
   .toast { min-width: 0; max-width: 100%; }

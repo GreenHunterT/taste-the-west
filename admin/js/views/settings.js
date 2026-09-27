@@ -143,6 +143,13 @@ window.AdminViews.settings = (function () {
     if (!node) return;
     try { node.focus({ preventScroll: true }); } catch (e) { node.focus(); }
   }
+  // Mark required fields that failed validation (red outline via
+  // [aria-invalid]) and bring the first one into view (1W).
+  function flagInvalid(ids) {
+    ids.forEach(function (id) { var e = $(id); if (e) e.setAttribute('aria-invalid', 'true'); });
+    var first = $(ids[0]);
+    if (first) { first.scrollIntoView({ block: 'center', behavior: prefersReducedMotion() ? 'auto' : 'smooth' }); softFocus(first); }
+  }
   function el(tag, cls, text) {
     var n = document.createElement(tag);
     if (cls) n.className = cls;
@@ -239,45 +246,6 @@ window.AdminViews.settings = (function () {
       '    </div>',
       '  </div>',
       '',
-      '  <!-- Content Labels -->',
-      '  <div class="acard mt-2" id="content-labels-acard">',
-      '    <div class="acard-title" data-i18n="set.labels">Content Labels</div>',
-      '    <p class="field-hint" data-i18n="set.labelsHint">Leave any field blank to keep the current wording shown below it.</p>',
-      '    <div class="form-row mt-2" data-pv-page="products" data-pv-target="catalog-heading">',
-      '      <div class="form-group">',
-      '        <label for="catalog_label_en" data-i18n="set.catalogLabelEn">Catalog Label (English)</label>',
-      '        <input type="text" id="catalog_label_en" name="catalog_label_en" placeholder="Menu (default)" />',
-      '      </div>',
-      '      <div class="form-group">',
-      '        <label for="catalog_label_ar" data-i18n="set.catalogLabelAr">Catalog Label (Arabic)</label>',
-      '        <input type="text" id="catalog_label_ar" name="catalog_label_ar" dir="rtl" placeholder="القائمة (افتراضي)" />',
-      '      </div>',
-      '    </div>',
-      '    <p class="field-hint" data-i18n="set.catalogLabelHint">Used for the main navigation link and the catalog page\'s eyebrow label. Examples: Menu, Products, Services, Collection.</p>',
-      '    <div class="form-row mt-2" data-pv-page="home" data-pv-target="featured">',
-      '      <div class="form-group">',
-      '        <label for="featured_title_en" data-i18n="set.featuredTitleEn">Featured Section Title (English)</label>',
-      '        <input type="text" id="featured_title_en" name="featured_title_en" placeholder="Featured Dishes (default)" />',
-      '      </div>',
-      '      <div class="form-group">',
-      '        <label for="featured_title_ar" data-i18n="set.featuredTitleAr">Featured Section Title (Arabic)</label>',
-      '        <input type="text" id="featured_title_ar" name="featured_title_ar" dir="rtl" placeholder="أطباق مميزة (افتراضي)" />',
-      '      </div>',
-      '    </div>',
-      '    <p class="field-hint" data-i18n="set.featuredTitleHint">Shown above the homepage\'s highlighted items. Examples: Featured Dishes, Featured Products, Featured Services.</p>',
-      '    <div class="form-row mt-2" data-pv-page="products" data-pv-target="catalog-heading">',
-      '      <div class="form-group">',
-      '        <label for="catalog_heading_en" data-i18n="set.catalogHeadingEn">Catalog Page Heading (English)</label>',
-      '        <input type="text" id="catalog_heading_en" name="catalog_heading_en" placeholder="Full Menu (default)" />',
-      '      </div>',
-      '      <div class="form-group">',
-      '        <label for="catalog_heading_ar" data-i18n="set.catalogHeadingAr">Catalog Page Heading (Arabic)</label>',
-      '        <input type="text" id="catalog_heading_ar" name="catalog_heading_ar" dir="rtl" placeholder="القائمة الكاملة (افتراضي)" />',
-      '      </div>',
-      '    </div>',
-      '    <p class="field-hint" data-i18n="set.catalogHeadingHint">The main heading at the top of the full catalog page.</p>',
-      '  </div>',
-      '',
       '  <!-- Contact -->',
       '  <div class="acard mt-2" data-pv-page="contact" data-pv-target="contact">',
       '    <div class="acard-title" data-i18n="set.contact">Contact</div>',
@@ -309,6 +277,32 @@ window.AdminViews.settings = (function () {
       '      <div class="form-group">',
       '        <label for="wa_message_en" data-i18n="set.waEn">WhatsApp Pre-fill (English)</label>',
       '        <input type="text" id="wa_message_en" name="wa_message_en" placeholder="Hi! I\'d like to order…" />',
+      '      </div>',
+      '    </div>',
+      '    <p class="field-hint" data-i18n="set.waHint">The message that appears ready to send when a customer taps your WhatsApp button.</p>',
+      '  </div>',
+      '',
+      '  <!-- Opening Hours -->',
+      '  <div class="acard mt-2" data-pv-page="location" data-pv-target="hours">',
+      '    <div class="acard-title" data-i18n="set.hours">Opening Hours</div>',
+      '    <div class="form-row">',
+      '      <div class="form-group">',
+      '        <label for="hours_weekdays_en" data-i18n="set.weekdaysEn">Weekdays (English)</label>',
+      '        <input type="text" id="hours_weekdays_en" name="hours_weekdays_en" placeholder="12:00 PM – 12:00 AM" />',
+      '      </div>',
+      '      <div class="form-group">',
+      '        <label for="hours_weekdays_ar" data-i18n="set.weekdaysAr">Weekdays (Arabic)</label>',
+      '        <input type="text" id="hours_weekdays_ar" name="hours_weekdays_ar" dir="rtl" placeholder="١٢:٠٠ ظهراً – ١٢:٠٠ منتصف الليل" />',
+      '      </div>',
+      '    </div>',
+      '    <div class="form-row">',
+      '      <div class="form-group">',
+      '        <label for="hours_weekends_en" data-i18n="set.weekendsEn">Weekends (English)</label>',
+      '        <input type="text" id="hours_weekends_en" name="hours_weekends_en" placeholder="12:00 PM – 1:00 AM" />',
+      '      </div>',
+      '      <div class="form-group">',
+      '        <label for="hours_weekends_ar" data-i18n="set.weekendsAr">Weekends (Arabic)</label>',
+      '        <input type="text" id="hours_weekends_ar" name="hours_weekends_ar" dir="rtl" placeholder="١٢:٠٠ ظهراً – ١:٠٠ فجراً" />',
       '      </div>',
       '    </div>',
       '  </div>',
@@ -377,31 +371,6 @@ window.AdminViews.settings = (function () {
       '    </div>',
       '  </div>',
       '',
-      '  <!-- Opening Hours -->',
-      '  <div class="acard mt-2" data-pv-page="location" data-pv-target="hours">',
-      '    <div class="acard-title" data-i18n="set.hours">Opening Hours</div>',
-      '    <div class="form-row">',
-      '      <div class="form-group">',
-      '        <label for="hours_weekdays_en" data-i18n="set.weekdaysEn">Weekdays (English)</label>',
-      '        <input type="text" id="hours_weekdays_en" name="hours_weekdays_en" placeholder="12:00 PM – 12:00 AM" />',
-      '      </div>',
-      '      <div class="form-group">',
-      '        <label for="hours_weekdays_ar" data-i18n="set.weekdaysAr">Weekdays (Arabic)</label>',
-      '        <input type="text" id="hours_weekdays_ar" name="hours_weekdays_ar" dir="rtl" placeholder="١٢:٠٠ ظهراً – ١٢:٠٠ منتصف الليل" />',
-      '      </div>',
-      '    </div>',
-      '    <div class="form-row">',
-      '      <div class="form-group">',
-      '        <label for="hours_weekends_en" data-i18n="set.weekendsEn">Weekends (English)</label>',
-      '        <input type="text" id="hours_weekends_en" name="hours_weekends_en" placeholder="12:00 PM – 1:00 AM" />',
-      '      </div>',
-      '      <div class="form-group">',
-      '        <label for="hours_weekends_ar" data-i18n="set.weekendsAr">Weekends (Arabic)</label>',
-      '        <input type="text" id="hours_weekends_ar" name="hours_weekends_ar" dir="rtl" placeholder="١٢:٠٠ ظهراً – ١:٠٠ فجراً" />',
-      '      </div>',
-      '    </div>',
-      '  </div>',
-      '',
       '  <!-- Images -->',
       '  <div class="acard mt-2" data-pv-page="home" data-pv-target="hero">',
       '    <div class="acard-title" data-i18n="set.images">Images</div>',
@@ -447,9 +416,48 @@ window.AdminViews.settings = (function () {
       '    <p class="field-hint mt-1" id="stats-max-hint" hidden data-i18n="stats.max" data-i18n-vars=\'{"max":6}\'>Maximum of 6 statistics.</p>',
       '  </div>',
       '',
+      '  <!-- Content Labels -->',
+      '  <div class="acard mt-2" id="content-labels-acard">',
+      '    <div class="acard-title" data-i18n="set.labels">Content Labels</div>',
+      '    <p class="field-hint" data-i18n="set.labelsHint">Leave any field blank to keep the current wording shown below it.</p>',
+      '    <div class="form-row mt-2" data-pv-page="products" data-pv-target="catalog-heading">',
+      '      <div class="form-group">',
+      '        <label for="catalog_label_en" data-i18n="set.catalogLabelEn">Catalog Label (English)</label>',
+      '        <input type="text" id="catalog_label_en" name="catalog_label_en" placeholder="Menu (default)" />',
+      '      </div>',
+      '      <div class="form-group">',
+      '        <label for="catalog_label_ar" data-i18n="set.catalogLabelAr">Catalog Label (Arabic)</label>',
+      '        <input type="text" id="catalog_label_ar" name="catalog_label_ar" dir="rtl" placeholder="القائمة (افتراضي)" />',
+      '      </div>',
+      '    </div>',
+      '    <p class="field-hint" data-i18n="set.catalogLabelHint">Used for the main navigation link and the catalog page\'s eyebrow label. Examples: Menu, Products, Services, Collection.</p>',
+      '    <div class="form-row mt-2" data-pv-page="home" data-pv-target="featured">',
+      '      <div class="form-group">',
+      '        <label for="featured_title_en" data-i18n="set.featuredTitleEn">Featured Section Title (English)</label>',
+      '        <input type="text" id="featured_title_en" name="featured_title_en" placeholder="Featured Dishes (default)" />',
+      '      </div>',
+      '      <div class="form-group">',
+      '        <label for="featured_title_ar" data-i18n="set.featuredTitleAr">Featured Section Title (Arabic)</label>',
+      '        <input type="text" id="featured_title_ar" name="featured_title_ar" dir="rtl" placeholder="أطباق مميزة (افتراضي)" />',
+      '      </div>',
+      '    </div>',
+      '    <p class="field-hint" data-i18n="set.featuredTitleHint">Shown above the homepage\'s highlighted items. Examples: Featured Dishes, Featured Products, Featured Services.</p>',
+      '    <div class="form-row mt-2" data-pv-page="products" data-pv-target="catalog-heading">',
+      '      <div class="form-group">',
+      '        <label for="catalog_heading_en" data-i18n="set.catalogHeadingEn">Catalog Page Heading (English)</label>',
+      '        <input type="text" id="catalog_heading_en" name="catalog_heading_en" placeholder="Full Menu (default)" />',
+      '      </div>',
+      '      <div class="form-group">',
+      '        <label for="catalog_heading_ar" data-i18n="set.catalogHeadingAr">Catalog Page Heading (Arabic)</label>',
+      '        <input type="text" id="catalog_heading_ar" name="catalog_heading_ar" dir="rtl" placeholder="القائمة الكاملة (افتراضي)" />',
+      '      </div>',
+      '    </div>',
+      '    <p class="field-hint" data-i18n="set.catalogHeadingHint">The main heading at the top of the full catalog page.</p>',
+      '  </div>',
+      '',
       '  <!-- App settings -->',
       '  <div class="acard mt-2">',
-      '    <div class="acard-title" data-i18n="set.app">App Settings</div>',
+      '    <div class="acard-title" data-i18n="set.app">Website Sounds</div>',
       '    <div class="toggle-row">',
       '      <div class="toggle-info">',
       '        <strong data-i18n="set.sounds">Customer Site Sounds</strong>',
@@ -768,6 +776,7 @@ window.AdminViews.settings = (function () {
   function statsChanged() { return JSON.stringify(normStats(statisticsState)) !== savedBaseline; }
   function recomputeDirty() {
     var dirty = isDirty();
+    if (ctx && typeof ctx.notifyDirty === 'function') ctx.notifyDirty();
     root.querySelectorAll('.stats-dirty').forEach(function (el2) {
       I18N.set(el2, dirty ? 'set.dirty' : 'set.clean');
       el2.classList.toggle('is-dirty', dirty);
@@ -1241,6 +1250,7 @@ window.AdminViews.settings = (function () {
 
     try {
       if (!fieldVal('name_ar') || !fieldVal('name_en')) {
+        flagInvalid(['name_ar', 'name_en'].filter(function (f) { return !fieldVal(f); }));
         showToast(t('set.nameRequired'), 'error');
         return;
       }
@@ -1446,6 +1456,7 @@ window.AdminViews.settings = (function () {
     var prev = $(previewId);
     var hasImage = !!pickedFile || (prev && !prev.hidden && !!prev.getAttribute('src'));
     btn.hidden = !hasImage;
+    if (typeof syncUploadArea === 'function') syncUploadArea(btnId.replace('-remove', '-file'), hasImage);
   }
 
   // ── Form population ─────────────────────────────────────────────
@@ -1666,6 +1677,17 @@ window.AdminViews.settings = (function () {
     var maybePushTransitionConfig = function (e) {
       if (e && e.target && (e.target.id === 'transition_enabled' || e.target.id === 'transition_color')) pushTransitionConfig();
     };
+    // Google Maps "Embed a map" copies a whole <iframe …> snippet; the site
+    // needs only its src link. Accept either — extract the link on paste/typing
+    // (target phase, so the draft/dirty handlers below see the clean value).
+    var mapEmbedEl = $('map_embed');
+    if (mapEmbedEl) on(mapEmbedEl, 'input', function () {
+      var m = /<iframe[^>]*\ssrc\s*=\s*["']([^"']+)["']/i.exec(mapEmbedEl.value);
+      if (m) mapEmbedEl.value = m[1].replace(/&amp;/g, '&').trim();
+    });
+    if (form) on(form, 'input', function (e) {
+      if (e.target && e.target.getAttribute && e.target.getAttribute('aria-invalid') === 'true' && String(e.target.value).trim()) e.target.removeAttribute('aria-invalid');
+    });
     if (form) {
       on(form, 'input', function (e) { enterContext(e); noteEdit(e); postPreviewData(); maybePushTransitionConfig(e); recomputeDirty(); });
       on(form, 'change', function (e) { enterContext(e); noteEdit(e); postPreviewData(); maybePushTransitionConfig(e); recomputeDirty(); });

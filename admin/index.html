@@ -49,7 +49,7 @@
         <!-- Text label on wider screens; icon-only (same translated accessible
              name) at ≤560px so the header still fits one row in Arabic (1T). -->
         <a href="../index.html" target="_blank" rel="noopener noreferrer" class="btn btn-ghost btn-sm admin-appbar__util"
-           aria-label="View Site" title="View Site" data-i18n-aria-label="shell.viewSite" data-i18n-title="shell.viewSite">
+           aria-label="View Site" title="Open your website in a new tab" data-i18n-aria-label="shell.viewSite" data-i18n-title="shell.viewSiteTitle">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
           <span class="admin-appbar__util-label" data-i18n="shell.viewSite">View Site</span>
         </a>
@@ -83,7 +83,9 @@
         <div class="live-preview" id="live-preview">
           <div class="live-preview__head">
             <h2 class="live-preview__title" data-i18n="preview.title">Live Preview</h2>
-            <span class="live-preview__hint" data-i18n="preview.hint">Shows your saved public site.</span>
+            <span class="live-preview__hint" data-i18n="preview.hint">Updates as you edit. Changes go live only after you Save.</span>
+            <!-- Shown while the current editor holds unsaved changes (1W). -->
+            <span class="live-preview__draft" id="lp-draft-chip" role="status" hidden data-i18n="preview.unsaved">Showing unsaved changes</span>
           </div>
 
           <div class="live-preview__controls">

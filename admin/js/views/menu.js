@@ -347,20 +347,18 @@ window.AdminViews.menu = (function () {
     var reorderOk = canReorder();
     var lastGroup = null;
     var rows = list.map(function (p) {
-      var cat = p.categories;
-      var catName = cat ? cat.name_en : '—';
       var imgSrc = p.image_url || PLACEHOLDER;
       var avBadge = p.available
         ? '<span class="badge badge-success"' + i18nAttr('menu.badgeActive') + '>' + esc(t('menu.badgeActive')) + '</span>'
         : '<span class="badge badge-muted"' + i18nAttr('menu.badgeHidden') + '>' + esc(t('menu.badgeHidden')) + '</span>';
-      var ftBadge = p.featured ? '<span class="badge badge-gold" style="margin-left:4px"' + i18nAttr('menu.badgeFeatured') + '>' + esc(t('menu.badgeFeatured')) + '</span>' : '';
+      var ftBadge = p.featured ? '<span class="badge badge-gold"' + i18nAttr('menu.badgeFeatured') + '>' + esc(t('menu.badgeFeatured')) + '</span>' : '';
       var toggleKey = p.available ? 'menu.hide' : 'menu.show';
       // Category group header (All categories view) — items reorder WITHIN it.
       var g = groupKey(p);
       var head = '';
       if (!qcat && g !== lastGroup) {
         var gc = catById(g);
-        head = '<tr class="menu-group-row"><td colspan="7">' +
+        head = '<tr class="menu-group-row"><td colspan="6">' +
           (gc ? '<strong>' + esc(gc.name_en || '—') + '</strong> <span>' + esc(gc.name_ar || '') + '</span>'
               : '<strong' + i18nAttr('menu.uncategorized') + '>' + esc(t('menu.uncategorized')) + '</strong>') +
           '</td></tr>';
@@ -380,15 +378,19 @@ window.AdminViews.menu = (function () {
               '<button type="button" class="reorder-btn" data-role="down" data-pid="' + esc(p.id) + '" title="' + esc(t('common.moveDown')) + '" aria-label="' + esc(t('common.moveDown')) + '" data-i18n-title="common.moveDown" data-i18n-aria-label="common.moveDown"' + dis(pos === -1 || pos >= full.length - 1) + '>↓</button>' +
             '</span>' +
           '</div></td>' +
-          '<td><img src="' + esc(imgSrc) + '" class="product-thumb" alt="" onerror="this.src=\'' + PLACEHOLDER + '\'" /></td>' +
-          '<td class="product-name-cell"><strong>' + esc(p.name_en) + '</strong><span>' + esc(p.name_ar) + '</span></td>' +
-          '<td>' + esc(catName) + '</td>' +
-          '<td>' + esc(p.price) + '</td>' +
-          '<td>' + avBadge + ftBadge + '</td>' +
-          '<td><div class="row-actions">' +
-            '<button class="btn btn-ghost btn-sm btn-edit" type="button" data-id="' + esc(p.id) + '" title="' + esc(t('common.edit')) + '" aria-label="' + esc(t('common.edit')) + '" data-i18n-title="common.edit" data-i18n-aria-label="common.edit">✏</button>' +
-            '<button class="btn btn-ghost btn-sm btn-toggle" type="button" data-id="' + esc(p.id) + '" data-available="' + (p.available ? 'true' : 'false') + '" title="' + esc(t(toggleKey)) + '" aria-label="' + esc(t(toggleKey)) + '" data-i18n-title="' + toggleKey + '" data-i18n-aria-label="' + toggleKey + '">' + (p.available ? '👁' : '🚫') + '</button>' +
-            '<button class="btn btn-danger btn-sm btn-delete" type="button" data-id="' + esc(p.id) + '" data-name="' + esc(p.name_en) + '" title="' + esc(t('common.delete')) + '" aria-label="' + esc(t('common.delete')) + '" data-i18n-title="common.delete" data-i18n-aria-label="common.delete">🗑</button>' +
+          '<td class="col-thumb"><img src="' + esc(imgSrc) + '" class="product-thumb" alt="" onerror="this.onerror=null;this.src=\'' + PLACEHOLDER + '\'" /></td>' +
+          // Name cell also carries price + status for the compact (narrow) table,
+          // where the Price / Status columns are hidden by a container query.
+          '<td class="product-name-cell"><strong>' + esc(p.name_en) + '</strong><span dir="rtl">' + esc(p.name_ar) + '</span>' +
+            '<div class="cell-meta"><span class="cell-price">' + esc(p.price) + '</span>' + avBadge + ftBadge + '</div></td>' +
+          '<td class="col-price">' + esc(p.price) + '</td>' +
+          '<td class="col-status"><div class="status-badges">' + avBadge + ftBadge + '</div></td>' +
+          // Labeled actions (1W): Edit / Hide|Show as words, Delete visually
+          // separated + red. The toggle's title explains exactly what it does.
+          '<td class="col-actions"><div class="row-actions">' +
+            '<button class="btn btn-ghost btn-sm btn-edit" type="button" data-id="' + esc(p.id) + '"' + i18nAttr('common.edit') + '>' + esc(t('common.edit')) + '</button>' +
+            '<button class="btn btn-ghost btn-sm btn-toggle" type="button" data-id="' + esc(p.id) + '" data-available="' + (p.available ? 'true' : 'false') + '" title="' + esc(t(toggleKey + 'Title')) + '" data-i18n-title="' + toggleKey + 'Title"' + i18nAttr(toggleKey) + '>' + esc(t(toggleKey)) + '</button>' +
+            '<button class="btn btn-danger btn-sm btn-delete" type="button" data-id="' + esc(p.id) + '" data-name="' + esc(p.name_en) + '" title="' + esc(t('menu.deleteItem')) + '" aria-label="' + esc(t('menu.deleteItem')) + '" data-i18n-title="menu.deleteItem" data-i18n-aria-label="menu.deleteItem"><span' + i18nAttr('common.delete') + '>' + esc(t('common.delete')) + '</span></button>' +
           '</div></td>' +
         '</tr>';
     }).join('');
@@ -396,12 +398,11 @@ window.AdminViews.menu = (function () {
     wrap.innerHTML =
       '<table class="data-table"><thead><tr>' +
       '<th class="reorder-cell"></th>' +
-      '<th style="width:52px"></th>' +
+      '<th class="col-thumb"></th>' +
       '<th' + i18nAttr('menu.col.name') + '>' + esc(t('menu.col.name')) + '</th>' +
-      '<th' + i18nAttr('menu.col.category') + '>' + esc(t('menu.col.category')) + '</th>' +
-      '<th' + i18nAttr('menu.col.price') + '>' + esc(t('menu.col.price')) + '</th>' +
-      '<th' + i18nAttr('menu.col.status') + '>' + esc(t('menu.col.status')) + '</th>' +
-      '<th style="width:130px"' + i18nAttr('menu.col.actions') + '>' + esc(t('menu.col.actions')) + '</th>' +
+      '<th class="col-price"' + i18nAttr('menu.col.price') + '>' + esc(t('menu.col.price')) + '</th>' +
+      '<th class="col-status"' + i18nAttr('menu.col.status') + '>' + esc(t('menu.col.status')) + '</th>' +
+      '<th class="col-actions"' + i18nAttr('menu.col.actions') + '>' + esc(t('menu.col.actions')) + '</th>' +
       '</tr></thead><tbody>' + rows + '</tbody></table>';
   }
 
@@ -565,6 +566,8 @@ window.AdminViews.menu = (function () {
   }
 
   function onModalField(e) {
+    var tg = e.target;
+    if (e.type === 'input' && tg && tg.getAttribute && tg.getAttribute('aria-invalid') === 'true' && String(tg.value).trim()) tg.removeAttribute('aria-invalid');
     if (!menuReady || !editingId) return;
     var id = (e.target && e.target.id) || '';
     applyProductContext(editingId, langForField(id));
@@ -629,6 +632,7 @@ window.AdminViews.menu = (function () {
     var prev = q('#p-image-preview');
     var hasImage = !!editImageFile || (prev && !prev.hidden && !!prev.getAttribute('src'));
     btn.hidden = !hasImage;
+    if (typeof syncUploadArea === 'function') syncUploadArea('p-image-file', hasImage);
   }
 
   // =================================================================
@@ -638,6 +642,7 @@ window.AdminViews.menu = (function () {
   function resetModalForm() {
     var form = q('#product-form');
     if (form) form.reset();
+    if (form) form.querySelectorAll('[aria-invalid]').forEach(function (n) { n.removeAttribute('aria-invalid'); });
     setVal('product-id', '');
     var prev = q('#p-image-preview'); if (prev) { prev.src = ''; prev.hidden = true; }
     var fi = q('#p-image-file'); if (fi) fi.value = '';
@@ -655,6 +660,7 @@ window.AdminViews.menu = (function () {
   function hideModalDom() {
     var m = q('#product-modal');
     if (m) m.classList.remove('open');
+    if (ctx && typeof ctx.notifyDirty === 'function') ctx.notifyDirty();
   }
   function cancelModal() {
     editingId = null;
@@ -729,8 +735,14 @@ window.AdminViews.menu = (function () {
       return;
     }
     var nameEn = fv('p-name-en'), nameAr = fv('p-name-ar'), price = fv('p-price');
-    if (!nameEn || !nameAr) { showToast(t('menu.nameRequired'), 'error'); return; }
-    if (!price) { showToast(t('menu.priceRequired'), 'error'); return; }
+    // Mark every missing required field (red outline) and focus the first (1W).
+    var missing = ['p-name-ar', 'p-name-en', 'p-price'].filter(function (id) { return !fv(id); });
+    if (missing.length) {
+      missing.forEach(function (id) { var el = q('#' + id); if (el) el.setAttribute('aria-invalid', 'true'); });
+      softFocus(q('#' + missing[0]));
+      showToast(t(missing.indexOf('p-price') !== -1 && missing.length === 1 ? 'menu.priceRequired' : 'menu.requiredMissing'), 'error');
+      return;
+    }
     var wantFeatured = !!(q('#p-featured') || {}).checked;
     if (wantFeatured && !(editingRow && editingRow.featured) && featuredRows().length >= FEATURED_MAX) {
       showToast(t('feat.full'), 'warning', 5000);

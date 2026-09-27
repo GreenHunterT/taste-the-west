@@ -411,6 +411,17 @@
     try { return !!mountedView.api.isDirty(); } catch (e) { return false; }
   }
 
+  // Live Preview "Showing unsaved changes" chip (1W) — the Preview renders the
+  // editor's draft, so say so whenever that draft differs from what is saved.
+  // Views call ctx.notifyDirty() after state changes; generic input / click
+  // events re-check too (after the view's own handlers ran).
+  const draftChip = document.getElementById('lp-draft-chip');
+  function syncDraftChip() { if (draftChip) draftChip.hidden = !viewIsDirty(); }
+  ctx.notifyDirty = syncDraftChip;
+  ['input', 'change', 'click'].forEach(function (type) {
+    document.addEventListener(type, function () { setTimeout(syncDraftChip, 0); });
+  });
+
   // ── Shell-owned "Unsaved changes" dialog ───────────────────────
   // Replaces window.confirm() for IN-APP navigation (route change, Menu
   // subsection change, Back/Forward, Sign Out). ONE native <dialog>, one
@@ -519,6 +530,7 @@
       mountedView = { name: name, api: api };
       try {
         await api.mount(ctx, host);
+        syncDraftChip();
         if (seq !== routeSeq && typeof api.unmount === 'function') {
           try { api.unmount(); } catch (e) {}   // a newer route change already superseded us
         }

@@ -80,6 +80,11 @@ function friendlyDbError(err, fallback) {
   const raw = (err && err.message) ? String(err.message) : String(err || '');
   if (raw.indexOf('OWNER_MSG:') === 0) return raw.slice('OWNER_MSG:'.length);
   const low = raw.toLowerCase();
+  // uploadToStorage() failures (1W) — say what actually went wrong.
+  if (low.indexOf('upload failed') === 0) {
+    return (low.indexOf('failed to fetch') !== -1 || low.indexOf('network') !== -1)
+      ? adminT('err.network') : adminT('err.upload');
+  }
   if (low.indexOf('duplicate key') !== -1 || low.indexOf('already exists') !== -1) {
     return adminT('err.duplicate');
   }
@@ -190,6 +195,15 @@ async function deleteFromStorage(url) {
     console.warn('[storage] delete threw for', key, '—', err && err.message);
     return { status: 'error', key, error: err };
   }
+}
+
+// Upload area wording follows the state (1W): "Click to upload" when empty,
+// "Click to replace the image" when an image is already chosen / saved.
+function syncUploadArea(inputId, hasImage) {
+  const input = document.getElementById(inputId);
+  const strong = input && input.closest('.img-upload-area') && input.closest('.img-upload-area').querySelector('[data-i18n^="upload."]');
+  if (!strong || !window.AdminI18n) return;
+  window.AdminI18n.set(strong, hasImage ? 'upload.replace' : 'upload.click');
 }
 
 // Wire up a file input → preview image + validate.

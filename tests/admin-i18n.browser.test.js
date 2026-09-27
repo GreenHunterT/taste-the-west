@@ -63,7 +63,7 @@ test('A. English Admin: English chrome, Arabic content fields still visible, pre
   await resetStorage();
   await openSettings();
   assert.equal(await adminLang(), 'en');
-  assert.deepEqual((await cardTitles()).slice(0, 5), ['Identity', 'Content Labels', 'Contact', 'Location', 'Opening Hours']);
+  assert.deepEqual((await cardTitles()).slice(0, 5), ['Identity', 'Contact', 'Opening Hours', 'Location', 'Images']);
   assert.ok((await cardTitles()).includes('Page Transition'));
   assert.ok((await cardTitles()).includes('Homepage Statistics'));
   assert.equal(await labelFor('hours_weekdays_en'), 'Weekdays (English)');
@@ -93,7 +93,7 @@ test('B. Arabic Admin: Arabic chrome, English fields visible, RTL text, layout f
   assert.equal(await adminLang(), 'ar');
 
   const titles = await cardTitles();
-  assert.deepEqual(titles.slice(0, 5), ['الهوية', 'تسميات المحتوى', 'معلومات التواصل', 'الموقع', 'ساعات العمل']);
+  assert.deepEqual(titles.slice(0, 5), ['الهوية', 'معلومات التواصل', 'ساعات العمل', 'الموقع', 'الصور']);
   assert.ok(titles.includes('انتقال الصفحات'));
   assert.ok(titles.includes('إحصائيات الصفحة الرئيسية'));
   assert.equal(await labelFor('hours_weekdays_en'), 'أيام الأسبوع (الإنجليزية)');
@@ -107,7 +107,7 @@ test('B. Arabic Admin: Arabic chrome, English fields visible, RTL text, layout f
   assert.equal(await text('.stat-card-ed__title'), 'الإحصائية 1');
   // Only ONE language shown: no leftover English in translated chrome.
   const englishLeft = await page.$$eval('#admin-view [data-i18n]', (els) =>
-    els.filter((e) => e.offsetParent !== null && /[A-Za-z]{4,}/.test(e.textContent.replace(/JPG|PNG|WebP|Google|Portal|src|WhatsApp/g, '')))
+    els.filter((e) => e.offsetParent !== null && /[A-Za-z]{4,}/.test(e.textContent.replace(/JPG|PNG|WebP|Google|Portal|src|WhatsApp|HTML/g, '')))
       .map((e) => e.getAttribute('data-i18n') + ': ' + e.textContent.trim()));
   assert.deepEqual(englishLeft, []);
 
@@ -263,7 +263,7 @@ test('Menu regression: table, add/edit/delete/availability and categories in Ara
   await openMenu();
   assert.equal(await adminLang(), 'ar');
   assert.deepEqual(await page.$$eval('.data-table th', (e) => e.map((x) => x.textContent.trim()).filter(Boolean)),
-    ['الاسم', 'الفئة', 'السعر', 'الحالة', 'الإجراءات']);
+    ['الاسم', 'السعر', 'الحالة', 'الإجراءات']);
   assert.equal(await text('.menu-tab[data-section="items"]'), 'أصناف القائمة');
   // Business data shown as-is (both names).
   assert.match(await text('tr[data-id="p1"] .product-name-cell'), /Classic Margherita.*مارغريتا كلاسيك/);
@@ -299,7 +299,7 @@ test('Menu regression: table, add/edit/delete/availability and categories in Ara
 
   // Availability toggle → update.
   await page.waitForSelector('tr[data-id="p1"] .btn-toggle');
-  assert.equal(await page.$eval('tr[data-id="p1"] .btn-toggle', (e) => e.getAttribute('title')), 'إخفاء');
+  assert.equal(await page.$eval('tr[data-id="p1"] .btn-toggle', (e) => e.textContent.trim()), 'إخفاء');
   await page.click('tr[data-id="p1"] .btn-toggle');
   await page.waitForFunction(() => window.__writes.some((w) => w.table === 'products' && w.op === 'update' && w.payload.available === false));
 
