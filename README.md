@@ -94,6 +94,43 @@ public site. Each file's own header states exactly when it is safe to run.
 
 ---
 
+## Owner Guide (Admin)
+
+Plain-language guide for the business owner. No passwords belong in this file.
+
+- **Open the Admin:** go to `your-site-address/admin/` and sign in with the
+  owner email and password you were given. Use **EN / عربي** in the top bar to
+  switch the Admin's own language (it doesn't change your website's language).
+- **Menu vs Settings:** *Menu* is your items, categories and homepage Featured
+  items. *Settings* is your business details — name, contact, hours, location,
+  images, homepage statistics, wording, sounds and page transitions.
+- **Add an item:** Menu → **+ Add Item** → fill in both the English and Arabic
+  name, a price and a category → **Save Item**.
+- **Change an item or its photo:** press **Edit** on the item. Click the photo
+  area to upload or replace a picture (JPG, PNG or WebP, max 5 MB) →
+  **Save Item**.
+- **Hide / show an item:** press **Hide** (it disappears from your website but
+  is kept) and **Show** to bring it back. **Delete** removes it permanently
+  and asks you to confirm first.
+- **Change the order:** drag the **⠿** handle, or use **↑ / ↓**. Items move
+  within their own category; categories are ordered on the **Categories** tab.
+  Order changes save straight away.
+- **Homepage Featured:** the card at the top of Menu Items. Choose up to 3
+  items, drag or use ↑ / ↓ to set their order, **✕** to remove one. This order
+  is separate from the menu order.
+- **Business information:** Settings → edit any field → **Save Changes**. The
+  bar at the top always says whether everything is saved; if you try to leave
+  with unsaved changes you'll be asked first.
+- **Live Preview:** the panel on the right shows your website *with your
+  unsaved changes*. It shows "Showing unsaved changes" until you save. Use its
+  Page / Device / Language buttons to look around. On a phone, switch between
+  **Edit** and **Preview** at the top.
+- **View Site** opens your real website in a new tab. **Sign Out** logs you out.
+- **Forgot your password?** Contact your developer — they can send a reset
+  link from Supabase (there is no self-service reset page yet).
+
+---
+
 ## Local Usage
 
 This is no longer a pure `file://`-safe static site — Admin's routing and
@@ -116,7 +153,8 @@ beyond the bundled placeholder content to appear.
 
 1. Connect the GitHub repo to Vercel.
 2. Framework preset: **Other** (no build command, no output directory).
-3. Deploy. `vercel.json` rewrites `/admin` → `/admin/index.html` and adds
+3. Deploy. `vercel.json` redirects `/admin` → `/admin/` (the Admin loads its
+   files relative to that folder, so it must be served *at* `/admin/`) and adds
    `noindex`/frame/content-type headers to every `/admin/*` route.
 
 ### GitHub Pages
@@ -125,6 +163,44 @@ Works for the public pages, but GitHub Pages has no equivalent to
 `vercel.json`'s rewrites/headers — visiting `/admin` (without `index.html`)
 will 404, and the Admin will not get the `noindex`/frame-protection headers.
 Vercel is the supported target for the full site including Admin.
+
+---
+
+## Launch checklist (manual — dashboards can't be checked from this repo)
+
+**Supabase**
+- [ ] It's the production project `cblnagqjmlzismkojxud` (matches `config/supabase.js`).
+- [ ] Migrations **004–007 are all applied** (Admin saves need 005's and 007's
+      columns). Quick check: in Table Editor, `restaurants` has
+      `catalog_label_en` and `products` has `featured_order`.
+- [ ] **Authentication → Sign In / Providers → "Allow new users to sign up" is OFF.**
+      The app has no sign-up screen, but the Supabase API does unless this is
+      off; any signed-up stranger could then upload files into the public
+      bucket under their own `branding/<their-id>-…` path (they still can't
+      read or change your data).
+- [ ] Authentication → Users: only the owner account (+ yours, if intended);
+      the owner's email is correct and reachable.
+- [ ] Authentication → URL Configuration: **Site URL** is the production
+      domain (password-recovery emails link there).
+- [ ] Storage → `restaurant-media` is **Public**; set an upload limit of about
+      **5 MB** and allowed types `image/jpeg, image/png, image/webp` (the Admin
+      checks this too, but the server should enforce it).
+- [ ] Storage → Policies: only the four `restaurant_media_owner_*` policies
+      from `supabase/schema.sql` — no older bucket-wide
+      "authenticated can do anything" policy left behind.
+- [ ] Database → Policies / Roles match `supabase/schema.sql`: RLS enabled on
+      `restaurants`, `categories`, `products`; anon has SELECT only on
+      `products`, `categories`, `restaurants_public`.
+- [ ] **Never run `supabase/schema.sql` on the live project** (it's for new
+      projects; its demo seed now refuses to run over an existing restaurant).
+
+**Vercel**
+- [ ] Project is connected to the correct GitHub repo; production branch is `main`.
+- [ ] The production domain is the one customers will use; the latest
+      production deployment is "Ready".
+- [ ] No leftover environment variables (this site uses none).
+- [ ] `https://<domain>/admin` redirects to `/admin/` and the Admin loads styled.
+- [ ] `https://<domain>/some/missing/page` shows the styled 404 page.
 
 ---
 
@@ -184,7 +260,7 @@ To add a language (e.g. Urdu):
       prices/contact details presented as if real
 
 **Admin**
-- [ ] `/admin` while signed out redirects to `/admin/login.html`
+- [ ] `/admin` while signed out redirects to `/admin/` and then `/admin/login.html`
 - [ ] Wrong password shows a generic error (never reveals whether the email exists)
 - [ ] Sign in → Menu / Settings load; Sign Out returns to a signed-out state
 - [ ] Save a Settings field → Admin Preview and the public site both reflect it

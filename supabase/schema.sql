@@ -3,16 +3,17 @@
 --  Run this entire file in the Supabase SQL Editor (one shot).
 --  Project: https://supabase.com/dashboard/project/<your-project>
 --
---  This file represents the FINAL state after migrations 001–005 (see
+--  FOR A NEW, EMPTY SUPABASE PROJECT ONLY. Never run this file against the
+--  live TasteTheWest project — changes to an existing database go through
+--  supabase/migrations/ (run in order, each file's header says when).
+--
+--  This file represents the FINAL state after migrations 001–007 (see
 --  supabase/migrations/) — a fresh project built from this file alone
---  lands directly in the same hardened shape as the live, already-migrated
---  TasteTheWest project, including the restaurants_public view (001), the
---  least-privilege RLS/grant model (003), the page-transition settings
---  columns (004), and the business-identity/niche-label columns (005 —
---  004/005 NOT yet applied to the live project; see each file's own header
---  for the exact SQL to run manually). The already-applied migrations are
---  kept as an append-only historical record and are never rewritten; this
---  file is the one that's kept in sync with them.
+--  lands directly in the same hardened shape as the live project:
+--  restaurants_public view (001), least-privilege RLS/grants (003),
+--  page transitions (004), business identity/labels (005), catalog order
+--  (006) and homepage Featured order (007). The migrations are kept as an
+--  append-only historical record; this file is kept in sync with them.
 -- =================================================================
 
 
@@ -510,7 +511,8 @@ CREATE POLICY restaurant_media_owner_delete
 --   3. Replace <OWNER_USER_ID> on the line below with that UUID.
 --   4. Run this entire block in SQL Editor.
 --
--- This block is safe to re-run — it deletes old demo data first.
+-- DEMO DATA FOR A NEW PROJECT ONLY. It refuses to run if the restaurant row
+-- already exists, so it can never wipe a live menu (launch audit, 1X).
 -- After running: verify config/supabase.js has RESTAURANT_ID =
 -- '57ee591f-39fb-4320-af05-fec66ebd512a' (already set).
 -- =================================================================
@@ -529,7 +531,12 @@ BEGIN
     RAISE EXCEPTION 'Replace <OWNER_USER_ID> with the real auth user UUID before running.';
   END IF;
 
-  -- Clean slate for demo (safe to re-run)
+  -- Never overwrite real data: this block DELETEs everything for _rid below.
+  IF EXISTS (SELECT 1 FROM restaurants WHERE id = _rid) THEN
+    RAISE EXCEPTION 'Restaurant % already exists — refusing to reseed demo data over a real menu. Delete it manually first only if you are certain.', _rid;
+  END IF;
+
+  -- Clean slate (only reachable on a project with no restaurant row yet)
   DELETE FROM products   WHERE restaurant_id = _rid;
   DELETE FROM categories WHERE restaurant_id = _rid;
   DELETE FROM restaurants WHERE id = _rid;
