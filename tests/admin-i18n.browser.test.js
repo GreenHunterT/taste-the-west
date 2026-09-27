@@ -1,7 +1,7 @@
 // Admin interface i18n (milestone 1T) — real-browser integration tests.
 //
 // Drives the real admin/index.html in headless Chrome against an offline
-// fake Supabase (tests/fixtures/fake-supabase.js + mocked REST), so it never
+// fake Supabase (tests/fixtures/harness.js + fake-supabase.js + mocked REST), so it never
 // touches the live project. Every DB write (client or REST) is recorded, which
 // is how "switching language never writes" is proven.
 //
@@ -15,85 +15,19 @@
 const test = require('node:test');
 const { before, after } = test;
 const assert = require('node:assert/strict');
-const fs = require('node:fs');
 const path = require('node:path');
-const http = require('node:http');
-const { chromium } = require('playwright-core');
+const { startHarness } = require('./fixtures/harness');
 
-const ROOT = path.join(__dirname, '..');
-const FAKE_SUPABASE = fs.readFileSync(path.join(__dirname, 'fixtures/fake-supabase.js'), 'utf8');
-const CHROME = process.env.CHROME_PATH || 'C:/Program Files/Google/Chrome/Application/chrome.exe';
 const SHOT_DIR = process.env.SHOT_DIR || '';
 
-const PRODUCTS = [
-  { id: 'p1', restaurant_id: 'r1', name_en: 'Classic Margherita', name_ar: 'مارغريتا كلاسيك',
-    description_en: '', description_ar: '', price: '39', category_id: 'c1',
-    categories: { id: 'c1', slug: 'pizza', name_en: 'Pizza', name_ar: 'بيتزا' },
-    image_url: '', featured: true, available: true, sort_order: 0 },
-  { id: 'p2', restaurant_id: 'r1', name_en: 'Lemon Mint', name_ar: 'ليمون بالنعناع',
-    description_en: '', description_ar: '', price: '12', category_id: 'c2',
-    categories: { id: 'c2', slug: 'drinks', name_en: 'Drinks', name_ar: 'مشروبات' },
-    image_url: '', featured: false, available: false, sort_order: 1 },
-];
-const CATEGORIES = [
-  { id: 'c1', restaurant_id: 'r1', slug: 'pizza', name_en: 'Pizza', name_ar: 'بيتزا', sort_order: 0 },
-  { id: 'c2', restaurant_id: 'r1', slug: 'drinks', name_en: 'Drinks', name_ar: 'مشروبات', sort_order: 1 },
-];
-
-const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml',
-  '.json': 'application/json', '.png': 'image/png', '.jpg': 'image/jpeg', '.webp': 'image/webp', '.mp3': 'audio/mpeg' };
-
-let server, base, browser, context, page;
-// First-paint knobs (1T.1): stall the CDN script / break i18n.js on demand.
-let cdnDelayMs = 0;
-let blockI18n = false;
-const netWrites = [];
-const pageErrors = [];
+let H, page, base, netWrites, pageErrors;
 
 before(async () => {
-  server = http.createServer((req, res) => {
-    const u = decodeURIComponent(req.url.split('?')[0].split('#')[0]);
-    if (u === '/__blank') { res.writeHead(200, { 'content-type': 'text/html' }); res.end('<!doctype html><title>blank</title>'); return; }
-    let f = path.join(ROOT, u);
-    if (!f.startsWith(ROOT)) { res.writeHead(403); res.end(); return; }
-    if (fs.existsSync(f) && fs.statSync(f).isDirectory()) f = path.join(f, 'index.html');
-    if (!fs.existsSync(f)) { res.writeHead(404); res.end(); return; }
-    res.writeHead(200, { 'content-type': MIME[path.extname(f)] || 'application/octet-stream' });
-    fs.createReadStream(f).pipe(res);
-  });
-  await new Promise((r) => server.listen(0, '127.0.0.1', r));
-  base = 'http://127.0.0.1:' + server.address().port;
-
-  browser = await chromium.launch({ executablePath: fs.existsSync(CHROME) ? CHROME : undefined });
-  context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
-  await context.route('**/*', async (route) => {
-    const req = route.request();
-    const url = req.url();
-    if (url.startsWith(base)) {
-      if (blockI18n && url.endsWith('/admin/js/i18n.js')) return route.abort();
-      return route.continue();
-    }
-    if (url.includes('supabase-js')) {
-      if (cdnDelayMs) await new Promise((r) => setTimeout(r, cdnDelayMs));
-      return route.fulfill({ status: 200, contentType: 'text/javascript', body: FAKE_SUPABASE });
-    }
-    if (/\.supabase\.co\//.test(url)) {
-      if (req.method() !== 'GET') { netWrites.push(req.method() + ' ' + url); return route.fulfill({ status: 403, body: '{}' }); }
-      let body = [];
-      if (url.includes('/products')) body = PRODUCTS;
-      else if (url.includes('/categories')) body = CATEGORIES;
-      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
-    }
-    return route.abort();   // fonts / anything external
-  });
-  page = await context.newPage();
-  page.on('pageerror', (e) => pageErrors.push(String(e && e.message || e)));
+  H = await startHarness();
+  ({ page, base, netWrites, pageErrors } = H);
 });
 
-after(async () => {
-  if (browser) await browser.close();
-  if (server) server.close();
-});
+after(async () => { if (H) await H.stop(); });
 
 // ── helpers ─────────────────────────────────────────────────────────
 async function openSettings() {
@@ -474,34 +408,34 @@ async function setStoredAdminLang(l) {
 
 test('First paint A: saved Arabic never paints English (slow CDN)', async () => {
   await setStoredAdminLang('ar');
-  cdnDelayMs = 1500;
+  H.knobs.cdnDelayMs = 1500;
   try {
     await page.goto(base + '/admin/index.html#settings', { waitUntil: 'commit' });
     const seen = await samplePaint(25, 50);
     assert.ok(!seen.includes('Settings'), 'English frame was painted: ' + seen.join(','));
     assert.ok(seen.includes('الإعدادات'), 'Arabic visible while the CDN is still loading: ' + seen.join(','));
-  } finally { cdnDelayMs = 0; }
+  } finally { H.knobs.cdnDelayMs = 0; }
   await page.waitForFunction(() => document.querySelector('#name_en') && document.querySelector('#name_en').value === 'Taste The West');
   assert.equal(await adminLang(), 'ar');
 });
 
 test('First paint B: saved English paints English immediately, never hidden', async () => {
   await setStoredAdminLang('en');
-  cdnDelayMs = 1500;
+  H.knobs.cdnDelayMs = 1500;
   try {
     await page.goto(base + '/admin/index.html#settings', { waitUntil: 'commit' });
     const seen = (await samplePaint(25, 50)).filter((x) => x !== 'no-dom' && x !== 'nav');
     assert.ok(seen.length && seen.every((x) => x === 'Settings'), seen.join(','));
-  } finally { cdnDelayMs = 0; }
+  } finally { H.knobs.cdnDelayMs = 0; }
 });
 
 test('First paint fail-safe: Admin becomes visible even if i18n.js fails to load', async () => {
   await setStoredAdminLang('ar');
-  blockI18n = true;
+  H.knobs.blockI18n = true;
   try {
     await page.goto(base + '/admin/index.html#settings', { waitUntil: 'domcontentloaded' });
     await page.waitForFunction(() => getComputedStyle(document.body).visibility === 'visible', null, { timeout: 3000 });
-  } finally { blockI18n = false; }
+  } finally { H.knobs.blockI18n = false; }
   pageErrors.length = 0;   // the shell is expected to error without i18n.js
   await setStoredAdminLang('en');
 });

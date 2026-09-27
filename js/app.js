@@ -227,6 +227,37 @@
     try { sessionStorage.setItem(TRANSITION_CFG_KEY, JSON.stringify(_transitionCfg)); } catch (e) {}
   }
 
+  // ── CATALOG ORDER (1U) ────────────────────────────────────────────
+  // Categories: sort_order ASC. Items: category order first, then the item's
+  // own sort_order WITHIN that category. Ties / null (legacy) values fall back
+  // to created_at, then id, so the order is always deterministic. Products
+  // without a (known) category go last. Used by the live load AND the Admin
+  // Preview overlay, so both render the exact same order. Homepage Featured
+  // keeps its rule (first 3 featured) — it simply reads this same order.
+  function orderNum(v) {
+    const n = (typeof v === 'number') ? v : parseFloat(v);
+    return isFinite(n) ? n : Infinity;
+  }
+  function compareOrder(a, b) {
+    const d = orderNum(a && a.sort_order) - orderNum(b && b.sort_order);
+    if (d) return d;
+    const ca = String((a && a._created) || ''), cb = String((b && b._created) || '');
+    if (ca !== cb) return ca < cb ? -1 : 1;
+    const ia = String((a && a.id) || ''), ib = String((b && b.id) || '');
+    return ia < ib ? -1 : (ia > ib ? 1 : 0);
+  }
+  function sortCatalogProducts(products, categories) {
+    const rank = {};
+    sortCategoryList(categories).forEach(function (c, i) { if (c && c.slug) rank[c.slug] = i; });
+    return (products || []).slice().sort(function (a, b) {
+      const ra = (a && a.category && rank.hasOwnProperty(a.category)) ? rank[a.category] : Infinity;
+      const rb = (b && b.category && rank.hasOwnProperty(b.category)) ? rank[b.category] : Infinity;
+      if (ra !== rb) return ra < rb ? -1 : 1;
+      return compareOrder(a, b);
+    });
+  }
+  function sortCategoryList(categories) { return (categories || []).slice().sort(compareOrder); }
+
   function mapProduct(p) {
     return {
       id:            p.id,
@@ -239,7 +270,9 @@
       image:         p.image_url        || '',
       featured:      !!p.featured,
       available:     p.available !== false,
-      sort_order:    p.sort_order       || 0,
+      // Position WITHIN its category (1U). null/legacy kept as null → sorts last.
+      sort_order:    (p.sort_order == null) ? null : p.sort_order,
+      _created:      p.created_at       || '',
       _catNameAr:    p.categories ? p.categories.name_ar : '',
       _catNameEn:    p.categories ? p.categories.name_en : '',
     };
@@ -293,25 +326,27 @@
   // a network-level failure rejects and is handled by the caller.
   async function fetchCatalog(base, h) {
     const [cRes, pRes] = await Promise.all([
-      fetch(base + '/categories?restaurant_id=eq.' + RESTAURANT_ID + '&order=sort_order', { headers: h }),
+      fetch(base + '/categories?restaurant_id=eq.' + RESTAURANT_ID + '&order=sort_order.asc.nullslast,created_at.asc,id.asc', { headers: h }),
       fetch(
         base + '/products?restaurant_id=eq.' + RESTAURANT_ID +
-        '&available=eq.true&order=sort_order' +
+        '&available=eq.true&order=sort_order.asc.nullslast,created_at.asc,id.asc' +
         '&select=*,categories(id,slug,name_ar,name_en)',
         { headers: h }
       ),
     ]);
     const catsRaw  = cRes.ok ? await cRes.json() : [];
     const prodsRaw = pRes.ok ? await pRes.json() : [];
+    const categories = sortCategoryList((catsRaw || []).map(c => ({
+      id:         c.id,
+      slug:       c.slug,
+      nameAr:     c.name_ar,
+      nameEn:     c.name_en,
+      sort_order: (c.sort_order == null) ? null : c.sort_order,
+      _created:   c.created_at || '',
+    })));
     return {
-      products: (prodsRaw || []).map(mapProduct),
-      categories: (catsRaw || []).map(c => ({
-        id:         c.id,
-        slug:       c.slug,
-        nameAr:     c.name_ar,
-        nameEn:     c.name_en,
-        sort_order: c.sort_order || 0,
-      })),
+      products: sortCatalogProducts((prodsRaw || []).map(mapProduct), categories),
+      categories: categories,
     };
   }
 
@@ -419,7 +454,7 @@
       var patch = (c && c.id != null) ? patchById[String(c.id)] : null;
       if (!patch) return c;
       return {
-        id: c.id, slug: c.slug,
+        id: c.id, slug: c.slug, _created: c._created,
         nameEn:     ('name_en' in patch)    ? patch.name_en    : c.nameEn,
         nameAr:     ('name_ar' in patch)    ? patch.name_ar    : c.nameAr,
         sort_order: ('sort_order' in patch) ? patch.sort_order : (c.sort_order || 0),
@@ -432,8 +467,7 @@
         sort_order: ('sort_order' in row.patch) ? row.patch.sort_order : 9999,
       });
     });
-    out.sort(function (a, b) { return (a.sort_order || 0) - (b.sort_order || 0); });
-    return out;
+    return sortCategoryList(out);
   }
 
   function blankPreviewProduct(id) {
@@ -510,8 +544,7 @@
       out.push(refreshCatNames(np));
     });
 
-    out.sort(function (a, b) { return (a.sort_order || 0) - (b.sort_order || 0); });
-    return out;
+    return sortCatalogProducts(out, previewCategoriesMerged());
   }
 
   // ── LOADING OVERLAY ───────────────────────────────────────────────
@@ -1455,7 +1488,7 @@
       PRODUCTS.forEach(function (p) { if (p && p.category) present[p.category] = 1; });
       var ordered = [];
       var cats = (typeof SHOP !== 'undefined' && Array.isArray(SHOP.categories)) ? SHOP.categories.slice() : [];
-      cats.sort(function (a, b) { return (a.sort_order || 0) - (b.sort_order || 0); });
+      cats.sort(compareOrder);
       cats.forEach(function (c) {
         if (c && c.slug && present[c.slug]) { ordered.push(c.slug); delete present[c.slug]; }
       });

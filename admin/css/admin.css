@@ -1238,6 +1238,79 @@ html.admin-i18n-boot body { visibility: hidden; }
   user-select: none;
 }
 .cat-drag-handle:active { cursor: grabbing; }
+
+/* ── DRAG-TO-REORDER (1U) ───────────────────────────────────────────
+   Shared by the Categories list and the Menu Items table. The handle is a
+   real <button> (focusable; ArrowUp/ArrowDown move it) and owns the touch
+   gesture (`touch-action: none`) so a touch drag never scrolls instead. */
+.cat-drag-handle,
+.drag-handle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  min-height: 32px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--amuted);
+  font-size: 16px;
+  line-height: 1;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.cat-drag-handle:hover:not(:disabled),
+.drag-handle:hover:not(:disabled) { color: var(--atext); background: var(--acard-hover); }
+.cat-drag-handle:focus-visible,
+.drag-handle:focus-visible,
+.reorder-btn:focus-visible { outline: 2px solid var(--aaccent); outline-offset: 1px; }
+.cat-drag-handle:disabled,
+.drag-handle:disabled { opacity: .35; cursor: default; }
+.is-sorting, .is-sorting * { cursor: grabbing !important; user-select: none; }
+.cat-item.is-dragging,
+.data-table tr.is-dragging td {
+  background: var(--aaccent-dim);
+  box-shadow: inset 0 0 0 1px rgba(201, 168, 76, .45);
+}
+.cat-item.is-dragging { position: relative; z-index: 1; }
+
+.reorder-cell { width: 44px; padding-left: 4px !important; padding-right: 0 !important; }
+.reorder-ctl { display: flex; align-items: center; gap: 0; }
+.reorder-ctl .drag-handle { min-width: 22px; }
+/* A wide table scrolls inside its card instead of spilling past it. */
+#products-table-wrap { overflow-x: auto; }
+.reorder-arrows { display: flex; flex-direction: column; }
+.reorder-btn {
+  width: 20px;
+  height: 16px;
+  padding: 0;
+  border: 0;
+  border-radius: 3px;
+  background: none;
+  color: var(--amuted);
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+}
+.reorder-btn:hover:not(:disabled) { color: var(--atext); background: var(--acard-hover); }
+.reorder-btn:disabled { opacity: .3; cursor: default; }
+.reorder-hint { margin: -6px 0 10px; }
+.data-table tr.menu-group-row td {
+  padding: 14px 14px 6px;
+  font-size: 12px;
+  color: var(--amuted);
+  border-bottom: 1px solid var(--aborder);
+  background: none !important;
+}
+.data-table tr.menu-group-row strong { color: var(--atext); font-weight: 600; margin-inline-end: 6px; }
+.data-table tr.menu-group-row span { direction: rtl; unicode-bidi: isolate; }
+/* Small phones: the category row had zero spare width before the (larger,
+   touch-friendly) handle — tighten its spacing instead of shrinking targets. */
+@media (max-width: 480px) {
+  .cat-item { gap: 8px; padding: 12px 10px; }
+}
 .cat-info { flex: 1; }
 .cat-name-en { font-weight: 600; font-size: 14px; }
 .cat-name-ar { font-size: 12.5px; color: var(--amuted); direction: rtl; }
@@ -1386,8 +1459,8 @@ html.admin-i18n-boot body { visibility: hidden; }
 
   .data-table { font-size: 12.5px; }
   .data-table th, .data-table td { padding: 9px 10px; }
-  .data-table th:nth-child(3),
-  .data-table td:nth-child(3) { display: none; } /* hide category col on small screens */
+  .data-table th:nth-child(4),
+  .data-table td:nth-child(4) { display: none; } /* hide category col on small screens (4th since the 1U reorder column) */
 
   .toast-container { left: 16px; right: 16px; bottom: 16px; }
   .toast { min-width: 0; max-width: 100%; }

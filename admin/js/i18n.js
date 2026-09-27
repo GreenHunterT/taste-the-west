@@ -133,7 +133,6 @@ window.AdminI18n = (function () {
     'menu.price': 'Price (﷼)',
     'menu.pricePh': 'e.g. 39 or 18.5',
     'menu.category': 'Category',
-    'menu.sort': 'Sort Order',
     'menu.image': 'Product Image',
     'menu.imageNote': '(JPG · PNG · WebP · max 5 MB)',
     'menu.imageHint': '600×450 px recommended',
@@ -172,6 +171,14 @@ window.AdminI18n = (function () {
     'menu.hiddenToast': 'Item hidden from menu.',
     'menu.visibleToast': 'Item is now visible.',
     'menu.deleted': 'Item deleted.',
+    'menu.uncategorized': 'No category',
+
+    // Ordering (1U)
+    'order.handle': 'Drag to reorder',
+    'order.menuHint': 'Drag ⠿ or use ↑ ↓ to reorder items within their category.',
+    'order.searchHint': 'Clear the search to reorder items.',
+    'order.saved': 'Order saved.',
+    'order.failed': 'Could not save the new order. The previous order was restored.',
 
     // Categories
     'cat.desc': 'Categories let customers filter your menu. Renames preview live and go public when you Save.',
@@ -180,7 +187,7 @@ window.AdminI18n = (function () {
     'cat.nameEn': 'Category Name (English)',
     'cat.nameAr': 'Category Name (Arabic)',
     'cat.existing': 'Existing Categories',
-    'cat.existingHint': '(Edit to rename · ↑ ↓ to reorder)',
+    'cat.existingHint': '(Edit to rename · drag ⠿ or ↑ ↓ to reorder)',
     'cat.loadingDesc': 'Fetching your categories.',
     'cat.deleteTitle': 'Delete category?',
     'cat.deleteMsg': 'Products in this category will have their category cleared but will not be deleted.',
@@ -195,7 +202,6 @@ window.AdminI18n = (function () {
     'cat.renameFailed': 'Rename failed. Please try again.',
     'cat.added': 'Category added.',
     'cat.addFailed': 'Could not add category. Please try again.',
-    'cat.reorderFailed': 'Reorder failed. Please try again.',
     'cat.deleted': 'Category deleted.',
     'cat.loadFailed': 'Categories could not be loaded. Reload to retry.',
 
@@ -457,7 +463,6 @@ window.AdminI18n = (function () {
     'menu.price': 'السعر (﷼)',
     'menu.pricePh': 'مثال: 39 أو 18.5',
     'menu.category': 'الفئة',
-    'menu.sort': 'ترتيب العرض',
     'menu.image': 'صورة المنتج',
     'menu.imageNote': '(JPG · PNG · WebP · بحد أقصى 5 ميغابايت)',
     'menu.imageHint': 'المقاس المقترح 600×450 بكسل',
@@ -496,6 +501,13 @@ window.AdminI18n = (function () {
     'menu.hiddenToast': 'تم إخفاء الصنف من القائمة.',
     'menu.visibleToast': 'أصبح الصنف ظاهراً الآن.',
     'menu.deleted': 'تم حذف الصنف.',
+    'menu.uncategorized': 'بدون فئة',
+
+    'order.handle': 'اسحب لإعادة الترتيب',
+    'order.menuHint': 'اسحب ⠿ أو استخدم ↑ ↓ لإعادة ترتيب الأصناف داخل فئتها.',
+    'order.searchHint': 'امسح البحث لإعادة ترتيب الأصناف.',
+    'order.saved': 'تم حفظ الترتيب.',
+    'order.failed': 'تعذّر حفظ الترتيب الجديد. تمت استعادة الترتيب السابق.',
 
     'cat.desc': 'تتيح الفئات لعملائك تصفية قائمتك. تظهر إعادة التسمية في المعاينة مباشرة وتُنشر عند الحفظ.',
     'cat.readOnly': 'الفئات للقراءة فقط — تعذّر تحميل بيانات المطعم. أعد تحميل الصفحة.',
@@ -503,7 +515,7 @@ window.AdminI18n = (function () {
     'cat.nameEn': 'اسم الفئة (الإنجليزية)',
     'cat.nameAr': 'اسم الفئة (العربية)',
     'cat.existing': 'الفئات الحالية',
-    'cat.existingHint': '(«تعديل» لإعادة التسمية · ↑ ↓ لإعادة الترتيب)',
+    'cat.existingHint': '(«تعديل» لإعادة التسمية · اسحب ⠿ أو استخدم ↑ ↓ لإعادة الترتيب)',
     'cat.loadingDesc': 'جارٍ جلب فئاتك.',
     'cat.deleteTitle': 'حذف الفئة؟',
     'cat.deleteMsg': 'ستُزال هذه الفئة من المنتجات التابعة لها، لكن المنتجات نفسها لن تُحذف.',
@@ -518,7 +530,6 @@ window.AdminI18n = (function () {
     'cat.renameFailed': 'تعذّرت إعادة التسمية. يُرجى المحاولة مرة أخرى.',
     'cat.added': 'تمت إضافة الفئة.',
     'cat.addFailed': 'تعذّرت إضافة الفئة. يُرجى المحاولة مرة أخرى.',
-    'cat.reorderFailed': 'تعذّرت إعادة الترتيب. يُرجى المحاولة مرة أخرى.',
     'cat.deleted': 'تم حذف الفئة.',
     'cat.loadFailed': 'تعذّر تحميل الفئات. أعد التحميل للمحاولة مجدداً.',
 

@@ -26,6 +26,7 @@ window.AdminViews.categories = (function () {
   // Admin interface i18n (1T). Owner-entered category names are never translated.
   var I18N = window.AdminI18n;
   var t = I18N.t;
+  var SORT = window.AdminSortable;   // drag-to-reorder + order persistence (1U)
 
   // ── Per-mount state (reset by resetState() at the top of mount()) ──
   var ctx, root;
@@ -216,7 +217,9 @@ window.AdminViews.categories = (function () {
       if (loadAbort && typeof query.abortSignal === 'function') query = query.abortSignal(loadAbort.signal);
       var res = await query;
       if (res.error) throw new Error(res.error.message);
-      categories = res.data || [];
+      // Canonical order (sort_order → created_at → id): ties / legacy nulls
+      // render deterministically, exactly like the public site (1U).
+      categories = SORT.sortRows(res.data || []);
       render();
     } catch (err) {
       var msg = String((err && err.message) || err || '');
@@ -253,7 +256,11 @@ window.AdminViews.categories = (function () {
   function buildRowItem(c, idx) {
     var li = el('li', 'cat-item');
     li.dataset.id = c.id;
-    li.appendChild(el('span', 'cat-drag-handle', '⠿'));
+    // Real drag handle (1U): pointer drag (mouse / touch / pen) or ArrowUp /
+    // ArrowDown when focused. Disabled while a rename is open or a reorder saves.
+    var handle = mkIconBtn('cat-drag-handle', '⠿', 'order.handle', { role: 'drag' });
+    handle.disabled = !canReorder();
+    li.appendChild(handle);
 
     var info = el('div', 'cat-info');
     info.appendChild(el('div', 'cat-name-en', c.name_en || ''));
@@ -265,9 +272,9 @@ window.AdminViews.categories = (function () {
     I18N.set(editBtn, 'common.edit');
     actions.appendChild(editBtn);
     var up = mkIconBtn('btn btn-ghost btn-sm', '↑', 'common.moveUp', { role: 'up', idx: idx });
-    if (idx === 0) up.disabled = true;
+    if (idx === 0 || !canReorder()) up.disabled = true;
     var down = mkIconBtn('btn btn-ghost btn-sm', '↓', 'common.moveDown', { role: 'down', idx: idx });
-    if (idx === categories.length - 1) down.disabled = true;
+    if (idx === categories.length - 1 || !canReorder()) down.disabled = true;
     actions.appendChild(up);
     actions.appendChild(down);
     actions.appendChild(mkIconBtn('btn btn-danger btn-sm', '🗑', 'common.delete', { role: 'delete', id: c.id, name: c.name_en || '' }));
@@ -426,13 +433,13 @@ window.AdminViews.categories = (function () {
     try {
       var res = await ctx.db.from('categories').insert({
         restaurant_id: RID, slug: makeUniqueSlug(slugBase, categories),
-        name_en: nameEn, name_ar: nameAr, sort_order: categories.length,
+        name_en: nameEn, name_ar: nameAr, sort_order: SORT.nextOrder(categories),   // appended at the end (1U)
       }).select('id');
       if (res.error && isSlugConflict(res.error)) {
         // Extremely rare cross-tab race — resolve it ourselves, never ask the owner.
         res = await ctx.db.from('categories').insert({
           restaurant_id: RID, slug: slugBase + '-' + uniqueToken().slice(0, 6),
-          name_en: nameEn, name_ar: nameAr, sort_order: categories.length,
+          name_en: nameEn, name_ar: nameAr, sort_order: SORT.nextOrder(categories),
         }).select('id');
       }
       if (res.error) throw new Error(res.error.message);
@@ -460,37 +467,68 @@ window.AdminViews.categories = (function () {
   }
 
   // =================================================================
-  //  Reorder  (persists immediately — the legacy model)
+  //  Reorder  (persists immediately — same model as before 1U; ↑ / ↓ and
+  //  drag share ONE path). Optimistic: the new order shows at once, only the
+  //  rows whose sort_order changes are written, and on failure the previous
+  //  order is restored locally AND re-read from the database so the list and
+  //  the DB never disagree.
   // =================================================================
-  async function moveCategory(idx, dir) {
-    if (reordering) return;
+  function canReorder() { return catsReady && !reordering && !editingCatId; }
+
+  // refocus: 'drag' | 'up' | 'down' — which control of the moved row gets
+  // keyboard focus back after the list re-renders (keyboard / ↑↓ users).
+  function moveCategory(idx, dir, refocus) {
     var newIdx = idx + dir;
-    if (newIdx < 0 || newIdx >= categories.length) return;
+    if (!canReorder() || newIdx < 0 || newIdx >= categories.length) return;
+    var ids = categories.map(function (c) { return c.id; });
+    var moved = ids.splice(idx, 1)[0];
+    ids.splice(newIdx, 0, moved);
+    reorderCategories(ids, moved, refocus);
+  }
+  function refocusRow(id, role) {
+    if (!role || !id) return;
+    var li = q('#cat-list li[data-id="' + CSS.escape(id) + '"]');
+    if (!li) return;
+    var b = li.querySelector('[data-role="' + role + '"]:not([disabled])') || li.querySelector('[data-role="drag"]');
+    if (b) softFocus(b);
+  }
+
+  async function reorderCategories(orderedIds, movedId, refocus) {
+    if (!canReorder()) { render(); return; }
+    var byId = {};
+    categories.forEach(function (c) { byId[c.id] = c; });
+    // The drop must describe exactly the loaded list — never a partial subset.
+    if (orderedIds.length !== categories.length || orderedIds.some(function (id) { return !byId[id]; })) { render(); return; }
+
+    var snapshot = categories.map(function (c) { return { row: c, sort_order: c.sort_order }; });
+    var ordered = orderedIds.map(function (id) { return byId[id]; });
+    var changes = SORT.plan(ordered);
+    if (!changes.length) { render(); return; }
+
     reordering = true;
-
-    var a = categories[idx], b = categories[newIdx];
-    categories[idx] = b;
-    categories[newIdx] = a;
-    render();   // optimistic
-
+    ordered.forEach(function (c, i) { c.sort_order = i; });
+    categories = ordered;
+    render();
     try {
-      // Each swapped row gets sort_order === its NEW array index, so the
-      // persisted order matches the visible order and survives reload.
-      var results = await Promise.all([
-        ctx.db.from('categories').update({ sort_order: idx }).eq('id', b.id),
-        ctx.db.from('categories').update({ sort_order: newIdx }).eq('id', a.id),
-      ]);
-      var bad = results.find(function (r) { return r.error; });
-      if (bad) { console.error('[categories view] reorder failed:', bad.error); showToast(friendlyDbError(bad.error, t('cat.reorderFailed')), 'error', 5500); await loadAll(); return; }
-      b.sort_order = idx;
-      a.sort_order = newIdx;
-      if (ctx && ctx.preview) ctx.preview.refreshCatalog();
+      var res = await SORT.persist(ctx.db, 'categories', changes);
+      if (!ctx) return;                                  // unmounted mid-save
+      if (!res.ok) throw res.error;
+      showToast(t('order.saved'), 'success', 1800);
+      if (ctx.preview) ctx.preview.refreshCatalog(movedId ? { focus: { type: 'category', id: movedId } } : undefined);
     } catch (err) {
       console.error('[categories view] reorder failed:', err);
-      showToast(friendlyDbError(err, t('cat.reorderFailed')), 'error', 5500);
-      await loadAll();
+      snapshot.forEach(function (s) { s.row.sort_order = s.sort_order; });
+      categories = snapshot.map(function (s) { return s.row; });
+      showToast(t('order.failed'), 'error', 5500);
+      if (ctx && typeof ctx.sound === 'function') ctx.sound('warning');
+      reordering = false;
+      render();
+      await loadAll();                                   // re-sync with the database's truth
+      if (ctx && ctx.preview) ctx.preview.refreshCatalog();
     } finally {
       reordering = false;
+      render();
+      refocusRow(movedId, refocus);
     }
   }
 
@@ -539,6 +577,18 @@ window.AdminViews.categories = (function () {
     }
     var list = q('#cat-list');
     if (list) {
+      teardownFns.push(SORT.attach(list, {
+        item: 'li.cat-item[data-id]',
+        handle: '[data-role="drag"]',
+        id: function (n) { return n.dataset.id; },
+        group: function () { return 'categories'; },
+        disabled: function () { return !canReorder(); },
+        onDrop: function (g, ids, movedId) { reorderCategories(ids, movedId); },
+        onKey: function (n, dir) {
+          var idx = categories.findIndex(function (c) { return c.id === n.dataset.id; });
+          if (idx !== -1) moveCategory(idx, dir, 'drag');
+        },
+      }));
       on(list, 'click', onListClick);
       on(list, 'focusin', onListField);
       on(list, 'input', onListField);
@@ -555,8 +605,8 @@ window.AdminViews.categories = (function () {
     if (role === 'edit') enterCatEdit(btn.dataset.id);
     else if (role === 'cat-save') saveCatEdit(btn.dataset.id);
     else if (role === 'cat-cancel') cancelCatEdit();
-    else if (role === 'up') moveCategory(parseInt(btn.dataset.idx, 10), -1);
-    else if (role === 'down') moveCategory(parseInt(btn.dataset.idx, 10), 1);
+    else if (role === 'up') moveCategory(parseInt(btn.dataset.idx, 10), -1, 'up');
+    else if (role === 'down') moveCategory(parseInt(btn.dataset.idx, 10), 1, 'down');
     else if (role === 'delete') askDelete(btn.dataset.id, btn.dataset.name || '');
   }
 
@@ -592,6 +642,7 @@ window.AdminViews.categories = (function () {
     await loadAll();
     if (myToken !== mountToken) return;   // superseded by a newer mount / an unmount
     catsReady = true;
+    render();                             // enable the reorder controls now that the list is live
   }
 
   // Unsaved-changes contract for the shell's navigation guard (§5). Dirty while

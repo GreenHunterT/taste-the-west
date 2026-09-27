@@ -136,7 +136,7 @@ CREATE TABLE IF NOT EXISTS categories (
   slug          TEXT NOT NULL,   -- URL-safe key used as data-cat: 'pizza', 'drinks'
   name_ar       TEXT NOT NULL DEFAULT '',
   name_en       TEXT NOT NULL DEFAULT '',
-  sort_order    INTEGER      DEFAULT 0,
+  sort_order    INTEGER      DEFAULT 0,   -- category position (ASC); Admin drag / ↑↓ (1U, migration 006)
 
   created_at    TIMESTAMPTZ  DEFAULT NOW(),
 
@@ -159,7 +159,7 @@ CREATE TABLE IF NOT EXISTS products (
   image_url      TEXT          DEFAULT '',  -- public URL from Storage; empty = placeholder
   featured       BOOLEAN       DEFAULT false,
   available      BOOLEAN       DEFAULT true,  -- false = hidden from public site
-  sort_order     INTEGER       DEFAULT 0,
+  sort_order     INTEGER       DEFAULT 0,     -- position WITHIN its category (ASC); ties → created_at, id (1U, migration 006)
 
   created_at     TIMESTAMPTZ   DEFAULT NOW(),
   updated_at     TIMESTAMPTZ   DEFAULT NOW()

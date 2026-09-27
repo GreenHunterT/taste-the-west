@@ -26,6 +26,7 @@ window.AdminViews.menu = (function () {
   // Admin interface i18n (1T). Owner-entered data is never translated.
   var I18N = window.AdminI18n;
   var t = I18N.t;
+  var SORT = window.AdminSortable;   // drag-to-reorder + order persistence (1U)
   // An HTML-string attribute pair that stamps + pre-translates one element.
   function i18nAttr(key) { return ' data-i18n="' + key + '"' + (I18N.getLang() === 'ar' ? ' dir="rtl" lang="ar"' : ''); }
 
@@ -50,6 +51,7 @@ window.AdminViews.menu = (function () {
   var pendingDeleteId = null;
   var pendingDeleteImg = '';
   var loadAbort = null;
+  var reorderBusy = false;     // a reorder write is in flight (1U)
 
   function resetState() {
     teardownFns = [];
@@ -67,6 +69,7 @@ window.AdminViews.menu = (function () {
     pendingDeleteId = null;
     pendingDeleteImg = '';
     loadAbort = null;
+    reorderBusy = false;
   }
 
   // ── Small helpers ───────────────────────────────────────────────
@@ -130,6 +133,7 @@ window.AdminViews.menu = (function () {
       '      </div>',
       '      <select id="cat-filter" style="width:auto"><option value="" data-i18n="menu.allCategories">All categories</option></select>',
       '    </div>',
+      '    <p class="field-hint reorder-hint" id="menu-reorder-hint" data-i18n="order.menuHint">Drag ⠿ or use ↑ ↓ to reorder items within their category.</p>',
       '    <div id="products-table-wrap">',
       '      <div class="empty-state"><div class="empty-state-icon">🍕</div><h3 data-i18n="common.loading">Loading…</h3><p data-i18n="menu.loadingDesc">Fetching your menu items.</p></div>',
       '    </div>',
@@ -165,7 +169,7 @@ window.AdminViews.menu = (function () {
       '              <textarea id="p-desc-en" placeholder="Product description…" rows="2"></textarea>',
       '            </div>',
       '          </div>',
-      '          <div class="form-row triple">',
+      '          <div class="form-row">',
       '            <div class="form-group">',
       '              <label for="p-price" data-i18n="menu.price">Price (﷼) <span class="required">*</span></label>',
       '              <input type="text" id="p-price" placeholder="e.g. 39 or 18.5" data-i18n-placeholder="menu.pricePh" required />',
@@ -173,10 +177,6 @@ window.AdminViews.menu = (function () {
       '            <div class="form-group">',
       '              <label for="p-category" data-i18n="menu.category">Category</label>',
       '              <select id="p-category"><option value="" data-i18n="common.none">— None —</option></select>',
-      '            </div>',
-      '            <div class="form-group">',
-      '              <label for="p-sort" data-i18n="menu.sort">Sort Order</label>',
-      '              <input type="number" id="p-sort" value="0" min="0" />',
       '            </div>',
       '          </div>',
       '          <div class="form-group mb-2">',
@@ -255,8 +255,8 @@ window.AdminViews.menu = (function () {
         fetch(base + '/categories?restaurant_id=eq.' + RID + '&order=sort_order', { headers: h, signal: signal }),
       ]);
       var pRes = res[0], cRes = res[1];
-      allProducts   = pRes.ok ? await pRes.json() : [];
-      allCategories = cRes.ok ? await cRes.json() : [];
+      allCategories = SORT.sortRows(cRes.ok ? await cRes.json() : []);
+      allProducts   = sortProducts(pRes.ok ? await pRes.json() : []);
       populateCategoryControls();
       renderTable();
       if (!pRes.ok || !cRes.ok) showToast(t('menu.someNotLoaded'), 'warning', 5000);
@@ -302,6 +302,8 @@ window.AdminViews.menu = (function () {
 
     var qtext = (q('#table-search') ? q('#table-search').value.trim() : '');
     var qcat  = (q('#cat-filter') ? q('#cat-filter').value : '');
+    var hint = q('#menu-reorder-hint');
+    if (hint) I18N.set(hint, qtext ? 'order.searchHint' : 'order.menuHint');
 
     var list = allProducts.slice();
     if (qtext) {
@@ -325,6 +327,8 @@ window.AdminViews.menu = (function () {
     }
 
     var PLACEHOLDER = '../assets/images/product-placeholder.svg';
+    var reorderOk = canReorder();
+    var lastGroup = null;
     var rows = list.map(function (p) {
       var cat = p.categories;
       var catName = cat ? cat.name_en : '—';
@@ -334,8 +338,31 @@ window.AdminViews.menu = (function () {
         : '<span class="badge badge-muted"' + i18nAttr('menu.badgeHidden') + '>' + esc(t('menu.badgeHidden')) + '</span>';
       var ftBadge = p.featured ? '<span class="badge badge-gold" style="margin-left:4px"' + i18nAttr('menu.badgeFeatured') + '>' + esc(t('menu.badgeFeatured')) + '</span>' : '';
       var toggleKey = p.available ? 'menu.hide' : 'menu.show';
-      return '' +
-        '<tr data-id="' + esc(p.id) + '">' +
+      // Category group header (All categories view) — items reorder WITHIN it.
+      var g = groupKey(p);
+      var head = '';
+      if (!qcat && g !== lastGroup) {
+        var gc = catById(g);
+        head = '<tr class="menu-group-row"><td colspan="7">' +
+          (gc ? '<strong>' + esc(gc.name_en || '—') + '</strong> <span>' + esc(gc.name_ar || '') + '</span>'
+              : '<strong' + i18nAttr('menu.uncategorized') + '>' + esc(t('menu.uncategorized')) + '</strong>') +
+          '</td></tr>';
+      }
+      lastGroup = g;
+      // ↑ / ↓ bounds come from the FULL category group, never the visible subset.
+      var full = groupRows(g);
+      var pos = full.indexOf(p);
+      var dis = function (cond) { return (!reorderOk || cond) ? ' disabled' : ''; };
+      var handleAttrs = ' title="' + esc(t('order.handle')) + '" aria-label="' + esc(t('order.handle')) + '" data-i18n-title="order.handle" data-i18n-aria-label="order.handle"';
+      return head +
+        '<tr data-id="' + esc(p.id) + '" data-group="' + esc(g) + '">' +
+          '<td class="reorder-cell"><div class="reorder-ctl">' +
+            '<button type="button" class="drag-handle" data-role="drag" data-pid="' + esc(p.id) + '"' + handleAttrs + dis(full.length < 2) + '>⠿</button>' +
+            '<span class="reorder-arrows">' +
+              '<button type="button" class="reorder-btn" data-role="up" data-pid="' + esc(p.id) + '" title="' + esc(t('common.moveUp')) + '" aria-label="' + esc(t('common.moveUp')) + '" data-i18n-title="common.moveUp" data-i18n-aria-label="common.moveUp"' + dis(pos <= 0) + '>↑</button>' +
+              '<button type="button" class="reorder-btn" data-role="down" data-pid="' + esc(p.id) + '" title="' + esc(t('common.moveDown')) + '" aria-label="' + esc(t('common.moveDown')) + '" data-i18n-title="common.moveDown" data-i18n-aria-label="common.moveDown"' + dis(pos === -1 || pos >= full.length - 1) + '>↓</button>' +
+            '</span>' +
+          '</div></td>' +
           '<td><img src="' + esc(imgSrc) + '" class="product-thumb" alt="" onerror="this.src=\'' + PLACEHOLDER + '\'" /></td>' +
           '<td class="product-name-cell"><strong>' + esc(p.name_en) + '</strong><span>' + esc(p.name_ar) + '</span></td>' +
           '<td>' + esc(catName) + '</td>' +
@@ -351,6 +378,7 @@ window.AdminViews.menu = (function () {
 
     wrap.innerHTML =
       '<table class="data-table"><thead><tr>' +
+      '<th class="reorder-cell"></th>' +
       '<th style="width:52px"></th>' +
       '<th' + i18nAttr('menu.col.name') + '>' + esc(t('menu.col.name')) + '</th>' +
       '<th' + i18nAttr('menu.col.category') + '>' + esc(t('menu.col.category')) + '</th>' +
@@ -360,10 +388,115 @@ window.AdminViews.menu = (function () {
       '</tr></thead><tbody>' + rows + '</tbody></table>';
   }
 
+  // =================================================================
+  //  Item order  (1U) — products.sort_order = position WITHIN the category.
+  //  Canonical Admin order = category order, then item order (the same rule
+  //  the public site uses). Reorders persist immediately, like the existing
+  //  availability / delete row actions; nothing is written while dragging.
+  // =================================================================
+  function catById(id) {
+    for (var i = 0; i < allCategories.length; i++) if (allCategories[i].id === id) return allCategories[i];
+    return null;
+  }
+  // '' = uncategorized (no category / a category that no longer exists).
+  function groupKey(p) { return (p && p.category_id && catById(p.category_id)) ? p.category_id : ''; }
+  function sortProducts(list) {
+    var idx = {};
+    allCategories.forEach(function (c, i) { idx[c.id] = i; });
+    return (list || []).slice().sort(function (a, b) {
+      var ga = Object.prototype.hasOwnProperty.call(idx, a.category_id) ? idx[a.category_id] : Infinity;
+      var gb = Object.prototype.hasOwnProperty.call(idx, b.category_id) ? idx[b.category_id] : Infinity;
+      if (ga !== gb) return ga < gb ? -1 : 1;
+      return SORT.compare(a, b);
+    });
+  }
+  // The FULL ordered item list of one category — hidden (unavailable) items
+  // and items filtered out by search are always included.
+  function groupRows(key) { return allProducts.filter(function (p) { return groupKey(p) === key; }); }
+
+  // Position for a product being saved into `catId`: an edit that stays in
+  // its category keeps its place; a new product, or one moved to another
+  // category, goes to the END of the destination category.
+  function draftSortOrder(catId) {
+    catId = catId || '';
+    if (editingRow && (editingRow.category_id || '') === catId) return editingRow.sort_order == null ? null : editingRow.sort_order;
+    var key = catById(catId) ? catId : '';
+    return SORT.nextOrder(groupRows(key).filter(function (p) { return !editingRow || p.id !== editingRow.id; }));
+  }
+
+  // Search narrows the table to an arbitrary subset, so reordering is paused
+  // while it is active (a clear hint says why). A category filter is safe: it
+  // shows that category's complete list.
+  function searchActive() { return !!(q('#table-search') && q('#table-search').value.trim()); }
+  function canReorder() { return menuReady && !reorderBusy && !searchActive(); }
+
+  function moveProduct(id, dir, refocus) {
+    if (!canReorder()) return;
+    var p = allProducts.find(function (x) { return x.id === id; });
+    if (!p) return;
+    var key = groupKey(p);
+    var ids = groupRows(key).map(function (x) { return x.id; });
+    var i = ids.indexOf(id), j = i + dir;
+    if (i === -1 || j < 0 || j >= ids.length) return;
+    ids.splice(i, 1);
+    ids.splice(j, 0, id);
+    reorderGroup(key, ids, id, refocus);
+  }
+
+  function refocusRow(id, role) {
+    if (!role || !id) return;
+    var tr = q('#products-table-wrap tr[data-id="' + CSS.escape(id) + '"]');
+    if (!tr) return;
+    var b = tr.querySelector('[data-role="' + role + '"]:not([disabled])') || tr.querySelector('[data-role="drag"]:not([disabled])');
+    if (b) softFocus(b);
+  }
+
+  async function reorderGroup(key, orderedIds, movedId, refocus) {
+    if (!canReorder()) { renderTable(); return; }
+    var full = groupRows(key);
+    var byId = {};
+    full.forEach(function (p) { byId[p.id] = p; });
+    // Only ever apply an order that covers the WHOLE category exactly — a
+    // partial/filtered subset could otherwise scramble hidden items.
+    if (orderedIds.length !== full.length || orderedIds.some(function (id) { return !byId[id]; })) { renderTable(); return; }
+
+    var ordered = orderedIds.map(function (id) { return byId[id]; });
+    var changes = SORT.plan(ordered);
+    if (!changes.length) { renderTable(); return; }
+    var snapshot = full.map(function (p) { return { row: p, sort_order: p.sort_order }; });
+
+    reorderBusy = true;
+    ordered.forEach(function (p, i) { p.sort_order = i; });
+    allProducts = sortProducts(allProducts);
+    renderTable();
+    try {
+      var res = await SORT.persist(ctx.db, 'products', changes);
+      if (!ctx) return;                                  // unmounted mid-save
+      if (!res.ok) throw res.error;
+      showToast(t('order.saved'), 'success', 1800);
+      if (ctx.preview) ctx.preview.refreshCatalog({ focus: { type: 'product', id: movedId } });
+    } catch (err) {
+      console.error('[menu view] reorder failed:', err);
+      snapshot.forEach(function (s) { s.row.sort_order = s.sort_order; });
+      allProducts = sortProducts(allProducts);
+      showToast(t('order.failed'), 'error', 5500);
+      if (ctx && typeof ctx.sound === 'function') ctx.sound('warning');
+      reorderBusy = false;
+      renderTable();
+      await loadAll();                                   // re-sync with the database's truth
+      if (ctx && ctx.preview) ctx.preview.refreshCatalog();
+    } finally {
+      reorderBusy = false;
+      if (root) { renderTable(); refocusRow(movedId, refocus); }
+    }
+  }
+
   // Delegated — one listener for the whole table, survives every re-render.
   function onTableClick(e) {
     var addEmpty = e.target.closest('#add-product-btn-empty');
     if (addEmpty) { openAddModal(); return; }
+    var mv = e.target.closest('button[data-role="up"], button[data-role="down"]');
+    if (mv) { moveProduct(mv.dataset.pid, mv.dataset.role === 'up' ? -1 : 1, mv.dataset.role); return; }
     var btn = e.target.closest('button[data-id]');
     if (!btn) return;
     var id = btn.dataset.id;
@@ -407,7 +540,7 @@ window.AdminViews.menu = (function () {
       category_id: (q('#p-category') || {}).value || '',
       featured: !!(q('#p-featured') || {}).checked,
       available: !!(q('#p-available') || {}).checked,
-      sort_order: parseInt(fv('p-sort'), 10) || 0,
+      sort_order: draftSortOrder((q('#p-category') || {}).value || ''),
       image_url: currentDraftImageUrl(),
     };
     ctx.preview.setCatalogDraft({ products: [{ id: editingId, patch: patch }] });
@@ -551,7 +684,6 @@ window.AdminViews.menu = (function () {
     setVal('p-desc-en', p.description_en);
     setVal('p-price', p.price);
     setVal('p-category', p.category_id || '');
-    setVal('p-sort', p.sort_order || 0);
     var ft = q('#p-featured'); if (ft) ft.checked = !!p.featured;
     var av = q('#p-available'); if (av) av.checked = p.available !== false;
     if (p.image_url) { var prev = q('#p-image-preview'); if (prev) { prev.src = p.image_url; prev.hidden = false; } }
@@ -617,7 +749,7 @@ window.AdminViews.menu = (function () {
         image_url:      imageUrl || '',
         featured:       !!(q('#p-featured') || {}).checked,
         available:      !!(q('#p-available') || {}).checked,
-        sort_order:     parseInt(fv('p-sort'), 10) || 0,
+        sort_order:     draftSortOrder(catVal),   // same category → kept; new / moved → end of category (1U)
       };
 
       var savedId = editId;
@@ -729,7 +861,20 @@ window.AdminViews.menu = (function () {
     if (addBtn) on(addBtn, 'click', openAddModal);
 
     var wrap = q('#products-table-wrap');
-    if (wrap) on(wrap, 'click', onTableClick);
+    if (wrap) {
+      on(wrap, 'click', onTableClick);
+      // Drag inside ONE category group only — rows of other categories (and
+      // the group header rows) are never valid drop positions (1U).
+      teardownFns.push(SORT.attach(wrap, {
+        item: 'tr[data-id]',
+        handle: '[data-role="drag"]',
+        id: function (n) { return n.dataset.id; },
+        group: function (n) { return n.dataset.group || ''; },
+        disabled: function () { return !canReorder(); },
+        onDrop: function (g, ids, movedId) { reorderGroup(g, ids, movedId, null); },
+        onKey: function (n, dir) { moveProduct(n.dataset.id, dir, 'drag'); },
+      }));
+    }
 
     var mClose = q('#modal-close'); if (mClose) on(mClose, 'click', cancelModal);
     var mCancel = q('#modal-cancel'); if (mCancel) on(mCancel, 'click', cancelModal);
@@ -797,6 +942,7 @@ window.AdminViews.menu = (function () {
     await loadAll();
     if (myToken !== mountToken) return;         // a newer mount / an unmount superseded us
     menuReady = true;
+    renderTable();                               // enable the reorder controls now that the list is live
 
     if (pending === 'new') openAddModal();
   }
@@ -814,7 +960,6 @@ window.AdminViews.menu = (function () {
       if (fv('p-desc-ar') !== (editingRow.description_ar || '')) return true;
       if (fv('p-price') !== (editingRow.price || '')) return true;
       if (((q('#p-category') || {}).value || '') !== (editingRow.category_id || '')) return true;
-      if ((parseInt(fv('p-sort'), 10) || 0) !== (editingRow.sort_order || 0)) return true;
       if (!!(q('#p-featured') || {}).checked !== !!editingRow.featured) return true;
       if (!!(q('#p-available') || {}).checked !== (editingRow.available !== false)) return true;
       return !!(editImageFile || removeImage);

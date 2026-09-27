@@ -28,6 +28,9 @@ below.
   per-device preference (localStorage) that only changes the Admin's own
   labels. Bilingual content fields always stay visible, the Live Preview
   language stays independent, and the dashboard layout never mirrors
+- Owner-controlled catalog order: drag ⠿ (mouse / touch) or ↑ ↓ to reorder
+  categories and the items inside each category; saved immediately and
+  followed by the public site and Live Preview (see migration 006)
 
 ---
 
@@ -46,7 +49,7 @@ taste-the-west/
 │   ├── login.html         Sign-in
 │   └── js/                Shell, auth, Live Preview, Admin i18n (i18n.js), and the 3 admin views
 │
-├── tests/                Admin i18n tests (see the header of each file to run)
+├── tests/                Admin i18n + ordering tests (see the header of each file to run)
 │
 ├── config/
 │   ├── shop.js           Bundled placeholder restaurant + emergency fallback
