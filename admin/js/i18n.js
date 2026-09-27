@@ -824,6 +824,8 @@ window.AdminI18n = (function () {
   // Loaded at the end of <body>: the static markup is already parsed.
   syncRoot();
   apply(document);
+  // Translated → end the pre-paint hide set by js/i18n-boot.js (1T.1).
+  document.documentElement.classList.remove('admin-i18n-boot');
 
   return {
     LANGS: LANGS.slice(),

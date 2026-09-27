@@ -871,6 +871,10 @@ select option { background: var(--acard); }
    boxes. Arabic must never be letter-spaced or case-transformed (spacing
    breaks the joined script), so every lang="ar" node opts out. */
 [lang="ar"] { letter-spacing: 0 !important; text-transform: none !important; }
+/* Pre-paint guard (1T.1): only while Arabic is saved AND the English source
+   markup is not yet translated. Removed by js/i18n.js right after it
+   translates, or by js/i18n-boot.js's own timeout as a fail-safe. */
+html.admin-i18n-boot body { visibility: hidden; }
 
 /* Page Transition color field: native swatch + hex text input side by side */
 .color-field { display: flex; align-items: center; gap: 10px; }

@@ -44,6 +44,9 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css
   '.json': 'application/json', '.png': 'image/png', '.jpg': 'image/jpeg', '.webp': 'image/webp', '.mp3': 'audio/mpeg' };
 
 let server, base, browser, context, page;
+// First-paint knobs (1T.1): stall the CDN script / break i18n.js on demand.
+let cdnDelayMs = 0;
+let blockI18n = false;
 const netWrites = [];
 const pageErrors = [];
 
@@ -63,11 +66,17 @@ before(async () => {
 
   browser = await chromium.launch({ executablePath: fs.existsSync(CHROME) ? CHROME : undefined });
   context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
-  await context.route('**/*', (route) => {
+  await context.route('**/*', async (route) => {
     const req = route.request();
     const url = req.url();
-    if (url.startsWith(base)) return route.continue();
-    if (url.includes('supabase-js')) return route.fulfill({ status: 200, contentType: 'text/javascript', body: FAKE_SUPABASE });
+    if (url.startsWith(base)) {
+      if (blockI18n && url.endsWith('/admin/js/i18n.js')) return route.abort();
+      return route.continue();
+    }
+    if (url.includes('supabase-js')) {
+      if (cdnDelayMs) await new Promise((r) => setTimeout(r, cdnDelayMs));
+      return route.fulfill({ status: 200, contentType: 'text/javascript', body: FAKE_SUPABASE });
+    }
     if (/\.supabase\.co\//.test(url)) {
       if (req.method() !== 'GET') { netWrites.push(req.method() + ' ' + url); return route.fulfill({ status: 403, body: '{}' }); }
       let body = [];
@@ -437,6 +446,64 @@ test('Responsive: no overflow / overlap in either language from 1440px down to 3
   }
   await page.setViewportSize({ width: 1440, height: 900 });
   assert.deepEqual([...new Set(problems)], []);
+});
+
+// ── First paint (1T.1) ──────────────────────────────────────────────
+// Samples what is actually painted while the (slow) CDN script is still
+// loading: whenever the Admin chrome is visible it must already be in the
+// saved language — never an English frame first.
+async function samplePaint(n, gapMs) {
+  const seen = [];
+  for (let i = 0; i < n; i++) {
+    try {
+      seen.push(await page.evaluate(() => {
+        const nav = document.querySelector('.admin-navlink[data-route="settings"]');
+        if (!nav || !document.body) return 'no-dom';
+        const visible = getComputedStyle(document.body).visibility === 'visible';
+        return visible ? nav.textContent.trim() : 'hidden';
+      }));
+    } catch (e) { seen.push('nav'); }
+    await new Promise((r) => setTimeout(r, gapMs));
+  }
+  return seen;
+}
+async function setStoredAdminLang(l) {
+  await page.goto(base + '/__blank');
+  await page.evaluate((v) => localStorage.setItem('ttw_admin_ui', JSON.stringify({ adminLang: v, lang: 'en' })), l);
+}
+
+test('First paint A: saved Arabic never paints English (slow CDN)', async () => {
+  await setStoredAdminLang('ar');
+  cdnDelayMs = 1500;
+  try {
+    await page.goto(base + '/admin/index.html#settings', { waitUntil: 'commit' });
+    const seen = await samplePaint(25, 50);
+    assert.ok(!seen.includes('Settings'), 'English frame was painted: ' + seen.join(','));
+    assert.ok(seen.includes('الإعدادات'), 'Arabic visible while the CDN is still loading: ' + seen.join(','));
+  } finally { cdnDelayMs = 0; }
+  await page.waitForFunction(() => document.querySelector('#name_en') && document.querySelector('#name_en').value === 'Taste The West');
+  assert.equal(await adminLang(), 'ar');
+});
+
+test('First paint B: saved English paints English immediately, never hidden', async () => {
+  await setStoredAdminLang('en');
+  cdnDelayMs = 1500;
+  try {
+    await page.goto(base + '/admin/index.html#settings', { waitUntil: 'commit' });
+    const seen = (await samplePaint(25, 50)).filter((x) => x !== 'no-dom' && x !== 'nav');
+    assert.ok(seen.length && seen.every((x) => x === 'Settings'), seen.join(','));
+  } finally { cdnDelayMs = 0; }
+});
+
+test('First paint fail-safe: Admin becomes visible even if i18n.js fails to load', async () => {
+  await setStoredAdminLang('ar');
+  blockI18n = true;
+  try {
+    await page.goto(base + '/admin/index.html#settings', { waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(() => getComputedStyle(document.body).visibility === 'visible', null, { timeout: 3000 });
+  } finally { blockI18n = false; }
+  pageErrors.length = 0;   // the shell is expected to error without i18n.js
+  await setStoredAdminLang('en');
 });
 
 test('no uncaught page errors during the whole run', () => {

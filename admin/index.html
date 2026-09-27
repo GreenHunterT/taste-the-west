@@ -6,6 +6,8 @@
   <meta name="robots" content="noindex, nofollow" />
   <title data-i18n="shell.docTitle">Admin — Taste The West</title>
   <link rel="stylesheet" href="css/admin.css" />
+  <!-- Pre-paint Admin language bootstrap (1T.1) — keep synchronous, right after the stylesheet. -->
+  <script src="js/i18n-boot.js"></script>
   <!-- Fonts used by the public Homepage Statistics component, loaded so the
        shell Live Preview mirrors its real typography. Falls back otherwise. -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -162,10 +164,12 @@
   <!-- Pinned to the exact version resolved today (1O hardening) — a floating
        @2 tag means "today's tested code" is not guaranteed to be "tomorrow's
        deployed code." Bump deliberately, re-test, then update this pin. -->
+  <!-- i18n.js first (1T.1): a local file, so the pre-paint hide ends before the
+       network CDN script below is even requested. It only needs the DOM. -->
+  <script src="js/i18n.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.116.0/dist/umd/supabase.min.js"></script>
   <script src="../config/supabase.js"></script>
   <script src="js/client.js"></script>
-  <script src="js/i18n.js"></script>
   <script src="js/auth.js"></script>
   <script src="js/live-preview.js"></script>
   <script src="js/admin-sound.js"></script>

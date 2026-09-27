@@ -29,7 +29,7 @@ function makeStorage(initial) {
 function load(storage) {
   const attrs = {};
   const document = {
-    documentElement: { setAttribute: (k, v) => { attrs[k] = v; }, getAttribute: (k) => attrs[k] },
+    documentElement: { setAttribute: (k, v) => { attrs[k] = v; }, getAttribute: (k) => attrs[k], classList: { remove: () => {} } },
     querySelectorAll: () => [],
     addEventListener: () => {},
   };

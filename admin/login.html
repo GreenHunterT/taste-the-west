@@ -6,6 +6,8 @@
   <meta name="robots" content="noindex, nofollow" />
   <title data-i18n="login.docTitle">Admin Login — Taste The West</title>
   <link rel="stylesheet" href="css/admin.css" />
+  <!-- Pre-paint Admin language bootstrap (1T.1) — keep synchronous, right after the stylesheet. -->
+  <script src="js/i18n-boot.js"></script>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🍕</text></svg>" />
 </head>
 <body>
@@ -49,10 +51,12 @@
 
   <!-- Pinned to the exact version resolved today (1O hardening) — see
        admin/index.html for why a floating @2 tag is avoided. -->
+  <!-- i18n.js first (1T.1): a local file, so the pre-paint hide ends before the
+       network CDN script below is even requested. It only needs the DOM. -->
+  <script src="js/i18n.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.116.0/dist/umd/supabase.min.js"></script>
   <script src="../config/supabase.js"></script>
   <script src="js/client.js"></script>
-  <script src="js/i18n.js"></script>
   <script>
     (async function () {
       // Already signed in → go straight to the persistent Admin shell.
