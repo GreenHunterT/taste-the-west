@@ -1524,6 +1524,20 @@ html.admin-i18n-boot body { visibility: hidden; }
 }
 .login-error[hidden] { display: none; }
 .login-btn { width: 100%; margin-top: 6px; justify-content: center; padding: 11px; font-size: 14.5px; }
+/* Password recovery (1Y) — a quiet text link + panel copy on the login card. */
+.login-link {
+  display: block; margin: 14px auto 0; padding: 4px 6px;
+  background: none; border: 0; border-radius: var(--radius-sm);
+  color: var(--amuted); font-family: var(--f); font-size: 13px;
+  text-align: center; text-decoration: underline; text-underline-offset: 3px;
+  cursor: pointer;
+}
+.login-link:hover { color: var(--atext); }
+.login-link:focus-visible { outline: 2px solid var(--aaccent); outline-offset: 2px; }
+a.login-btn { display: flex; text-decoration: none; }
+.login-panel-title { font-size: 16px; font-weight: 700; text-align: center; margin: 4px 0 8px; }
+.login-panel-text { font-size: 13.5px; color: var(--atext); text-align: center; margin-bottom: 18px; line-height: 1.6; }
+.login-panel-text--muted { color: var(--amuted); font-size: 12.5px; }
 
 /* ── MISC ────────────────────────────────────────────────────────── */
 .text-muted   { color: var(--amuted); }

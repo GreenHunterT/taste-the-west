@@ -2,6 +2,18 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
+  <script>
+    /* 1Y: forward password-recovery links (e.g. an older email template or a
+       Site-URL fallback) to the reset page BEFORE the Supabase client reads
+       them. Only the path changes — the SDK still does all token handling. */
+    (function () {
+      var h = location.hash, q = location.search;
+      if (/[#&]type=recovery(&|$)/.test(h) || /[?&]type=recovery(&|$)/.test(q) ||
+          /[#&]error_code=/.test(h)) {
+        location.replace('/admin/reset-password.html' + q + h);
+      }
+    })();
+  </script>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="robots" content="noindex, nofollow" />
   <title data-i18n="login.docTitle">Admin Login — Taste The West</title>
@@ -46,6 +58,28 @@
           Sign in
         </button>
       </form>
+      <button type="button" class="login-link" id="forgot-btn" data-i18n="login.forgot">Forgot password?</button>
+
+      <!-- Password recovery request (1Y) — Supabase sends the email. -->
+      <form class="login-form" id="recover-form" novalidate hidden aria-labelledby="recover-title">
+        <h2 class="login-panel-title" id="recover-title" data-i18n="recover.title">Reset your password</h2>
+        <p class="login-panel-text" data-i18n="recover.intro">Enter your account email and we'll send you a link to choose a new password.</p>
+        <div class="login-error" id="recover-error" hidden role="alert"></div>
+        <div class="form-group">
+          <label for="recover-email" data-i18n="login.email">Email address</label>
+          <input type="email" id="recover-email" name="recover-email" autocomplete="email"
+                 aria-describedby="recover-error" placeholder="owner@example.com" required />
+        </div>
+        <button type="submit" class="btn btn-primary login-btn" id="recover-btn" data-i18n="recover.send">Send reset link</button>
+        <button type="button" class="login-link" id="recover-back" data-i18n="recover.back">Back to sign in</button>
+      </form>
+
+      <div id="recover-done" hidden role="status" aria-live="polite">
+        <h2 class="login-panel-title" data-i18n="recover.checkTitle">Check your email</h2>
+        <p class="login-panel-text" data-i18n="recover.sent">If an account exists for that email, a password reset link has been sent.</p>
+        <p class="login-panel-text login-panel-text--muted" data-i18n="recover.sentHint">The link works once and expires after a while. Check your spam folder if you don't see it.</p>
+        <button type="button" class="btn btn-secondary login-btn" id="recover-done-back" data-i18n="recover.back">Back to sign in</button>
+      </div>
     </div>
   </main>
 
@@ -102,6 +136,83 @@
         }
 
         window.location.replace('/admin/#menu');
+      });
+
+      // ── Password recovery request (1Y) ─────────────────────────────
+      const forgotBtn   = document.getElementById('forgot-btn');
+      const recForm     = document.getElementById('recover-form');
+      const recEmail    = document.getElementById('recover-email');
+      const recBtn      = document.getElementById('recover-btn');
+      const recError    = document.getElementById('recover-error');
+      const recDone     = document.getElementById('recover-done');
+      const subEl       = document.querySelector('.login-sub');
+
+      function show(which) {           // 'login' | 'recover' | 'done'
+        form.hidden = which !== 'login';
+        forgotBtn.hidden = which !== 'login';
+        if (subEl) subEl.hidden = which !== 'login';
+        recForm.hidden = which !== 'recover';
+        recDone.hidden = which !== 'done';
+        clearError();
+        recError.hidden = true;
+        recEmail.removeAttribute('aria-invalid');
+      }
+      function recFail(key) {
+        I18N.set(recError, key);
+        recError.hidden = false;
+        recEmail.setAttribute('aria-invalid', 'true');
+        recEmail.focus();
+      }
+      function recBusy(on) {
+        recBtn.disabled = on;
+        recBtn.textContent = '';
+        if (on) { recBtn.innerHTML = '<span class="btn-spinner"></span> '; I18N.set(recBtn, 'recover.sending'); }
+        else I18N.set(recBtn, 'recover.send');
+      }
+
+      forgotBtn.addEventListener('click', () => {
+        show('recover');
+        if (emailEl.value.trim()) recEmail.value = emailEl.value.trim();
+        recEmail.focus();
+      });
+      document.getElementById('recover-back').addEventListener('click', () => { show('login'); emailEl.focus(); });
+      document.getElementById('recover-done-back').addEventListener('click', () => { show('login'); emailEl.focus(); });
+      if (location.hash === '#forgot') forgotBtn.click();   // "Request another reset" from the reset page
+
+      recForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        recError.hidden = true;
+        recEmail.removeAttribute('aria-invalid');
+        const email = recEmail.value.trim();
+        if (!email) { recFail('recover.emailMissing'); return; }
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { recFail('recover.emailInvalid'); return; }
+
+        recBusy(true);
+        let error = null;
+        try {
+          // Official Supabase flow: Supabase emails a one-time link that returns
+          // to THIS site's reset page (current origin — works on production and
+          // on a local dev server alike; the URL must be allow-listed in
+          // Supabase → Authentication → URL Configuration → Redirect URLs).
+          ({ error } = await db.auth.resetPasswordForEmail(email, {
+            redirectTo: window.location.origin + '/admin/reset-password.html',
+          }));
+        } catch (err) {
+          error = err || new Error('request failed');
+        }
+        recBusy(false);
+
+        if (error) {
+          const status = error.status || 0;
+          const msg = String(error.message || '').toLowerCase();
+          const code = String(error.code || '');
+          console.warn('[recovery] resetPasswordForEmail:', status, code, error.message);
+          if (status === 429 || code.indexOf('rate_limit') !== -1 || msg.indexOf('rate limit') !== -1) { recFail('recover.rateLimit'); return; }
+          if (!status || msg.indexOf('failed to fetch') !== -1 || msg.indexOf('network') !== -1 || error.name === 'AuthRetryableFetchError') { recFail('recover.network'); return; }
+          // Anything else: stay neutral — never reveal whether the email exists.
+        }
+        show('done');
+        document.getElementById('recover-done-back').focus();
       });
     })();
   </script>

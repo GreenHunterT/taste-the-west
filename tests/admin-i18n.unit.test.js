@@ -66,11 +66,11 @@ test('every i18n key referenced by the Admin sources exists', () => {
   const { I18N } = load(makeStorage());
   const dict = I18N._dicts.en;
   const files = [
-    'admin/index.html', 'admin/login.html', 'admin/js/admin-shell.js', 'admin/js/auth.js',
+    'admin/index.html', 'admin/login.html', 'admin/reset-password.html', 'admin/js/admin-shell.js', 'admin/js/auth.js',
     'admin/js/live-preview.js', 'admin/js/views/menu-workspace.js', 'admin/js/views/menu.js',
     'admin/js/views/categories.js', 'admin/js/views/settings.js',
   ];
-  const NS = '(?:shell|lang|dirty|preview|common|upload|err|mw|menu|cat|set|stats|tr|login|order|feat)';
+  const NS = '(?:shell|lang|dirty|preview|common|upload|err|mw|menu|cat|set|stats|tr|login|order|feat|recover|reset)';
   const re = new RegExp('[\'"](' + NS + '\\.[A-Za-z0-9_.]+)[\'"]', 'g');
   const missing = [];
   let seen = 0;

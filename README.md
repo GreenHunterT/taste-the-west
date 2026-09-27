@@ -126,8 +126,11 @@ Plain-language guide for the business owner. No passwords belong in this file.
   Page / Device / Language buttons to look around. On a phone, switch between
   **Edit** and **Preview** at the top.
 - **View Site** opens your real website in a new tab. **Sign Out** logs you out.
-- **Forgot your password?** Contact your developer — they can send a reset
-  link from Supabase (there is no self-service reset page yet).
+- **Forgot your password?** On the sign-in page press **Forgot password?**,
+  enter your email and open the link you receive (check spam). Choose a new
+  password (at least 8 characters), then sign in with it. The link works once
+  and expires; you can always request another. Resetting signs you out on
+  your other devices too.
 
 ---
 
@@ -181,7 +184,17 @@ Vercel is the supported target for the full site including Admin.
 - [ ] Authentication → Users: only the owner account (+ yours, if intended);
       the owner's email is correct and reachable.
 - [ ] Authentication → URL Configuration: **Site URL** is the production
-      domain (password-recovery emails link there).
+      domain, e.g. `https://<domain>`.
+- [ ] Authentication → URL Configuration → **Redirect URLs** contains
+      `https://<domain>/admin/reset-password.html` (password reset lands
+      there; if it's missing Supabase silently falls back to the Site URL and
+      the reset won't open). Add `http://localhost:8080/admin/reset-password.html`
+      only if you test resets locally.
+- [ ] Authentication → Sign In / Providers → **Email** provider enabled
+      (email + password sign-in and password recovery use it).
+- [ ] Authentication → Emails → **Reset Password** template still uses
+      `{{ .ConfirmationURL }}` (the default). A `{{ .TokenHash }}` template also
+      works if it links to `{{ .SiteURL }}/admin/reset-password.html?token_hash={{ .TokenHash }}&type=recovery`.
 - [ ] Storage → `restaurant-media` is **Public**; set an upload limit of about
       **5 MB** and allowed types `image/jpeg, image/png, image/webp` (the Admin
       checks this too, but the server should enforce it).
