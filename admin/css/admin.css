@@ -169,6 +169,8 @@ img { max-width: 100%; display: block; }
   font-weight: 500;
 }
 .admin-appbar__actions .btn:hover { color: var(--atext); opacity: 1; }
+/* View Site / Sign Out: text label by default, icon-only at ≤560px (1T). */
+.admin-appbar__util svg { display: none; width: 16px; height: 16px; flex: none; }
 
 /* Admin-sound speaker toggle — a small icon control, quieter than the nav. */
 .admin-appbar__sound {
@@ -192,6 +194,45 @@ img { max-width: 100%; display: block; }
 .admin-appbar__sound[aria-pressed="false"] .i-on  { display: none; }
 .admin-appbar__sound[aria-pressed="false"] .i-off { display: block; }
 
+/* Admin interface language toggle (1T) — sits after Menu / Settings behind a
+   thin divider. Deliberately quieter than the nav links; the active language
+   gets a border + tint (not colour alone) and aria-pressed. */
+.admin-lang {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: 4px;
+  padding-left: 10px;
+  border-left: 1px solid var(--aborder);
+}
+.admin-lang__btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 28px;
+  min-width: 34px;
+  padding: 0 8px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--amuted);
+  font-family: var(--f);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color .15s, border-color .15s, background .15s;
+}
+.admin-lang__btn:hover { color: var(--atext); background: var(--acard); }
+.admin-lang__btn:focus-visible { outline: 2px solid var(--aaccent); outline-offset: 2px; }
+.admin-lang__btn.is-active {
+  color: var(--aaccent);
+  background: var(--aaccent-dim);
+  border-color: rgba(201, 168, 76, .45);
+  cursor: default;
+}
+
 /* Very narrow: drop the brand text (keep the mark) and tighten so the nav
    controls + the actions still fit one fixed-height row — no drawer. */
 @media (max-width: 560px) {
@@ -201,7 +242,23 @@ img { max-width: 100%; display: block; }
   .admin-appbar__actions { gap: 2px; }
   .admin-appbar__actions .btn { padding: 4px 6px; font-size: 12px; }
   .admin-appbar__sound { width: 26px; height: 26px; }
+  .admin-lang { margin-left: 0; padding-left: 6px; }
+  .admin-lang__btn { min-width: 28px; height: 26px; padding: 0 5px; }
+  .admin-appbar__util svg { display: block; }
+  .admin-appbar__util-label { display: none; }
 }
+/* Smallest phones: drop the brand mark and tighten so nav + language toggle +
+   icon actions still fit one fixed-height row in either language. */
+@media (max-width: 380px) {
+  .admin-appbar { padding: 0 8px; gap: 4px 6px; }
+  .admin-appbar__brand { display: none; }
+  .admin-appbar__nav { gap: 4px; }
+  .admin-navlink { padding: 0 8px; }
+  .admin-lang { padding-left: 4px; }
+}
+/* Login card: the same toggle, top-right, without the nav divider. */
+.login-lang { display: flex; justify-content: flex-end; margin: -8px -8px 4px 0; }
+.login-lang .admin-lang { margin-left: 0; padding-left: 0; border-left: 0; }
 
 /* ── MAIN CONTENT ────────────────────────────────────────────────── */
 .admin-main {
@@ -463,9 +520,8 @@ img { max-width: 100%; display: block; }
   opacity: 0;
   transition: opacity .2s ease;
   text-align: center;
-  /* Bilingual label ("Portal Waves · أمواج البوابة") — long enough on
-     narrow/mobile stages to need wrapping rather than the single-line
-     `nowrap` this pill used before it carried Arabic too. */
+  /* Label follows the Admin interface language (1T); the longer "Transitions
+     are OFF …" line needs wrapping on narrow/mobile stages, so no `nowrap`. */
   white-space: normal;
 }
 .tpv-demo.show-badge .tpv-demo__badge { opacity: 1; }
@@ -805,39 +861,16 @@ select option { background: var(--acard); }
   color: var(--amuted);
   margin-top: 3px;
 }
-/* Secondary Arabic label alongside/under an English one (Page Transition
-   settings) — deliberately lightweight rather than a full Admin i18n
-   retrofit: the rest of Admin stays English-only (confirmed by audit —
-   no TRANSLATIONS/locale mechanism exists anywhere under admin/), this just
-   gives the new fields a bilingual label as asked, without changing
-   Admin's overall LTR chrome or introducing a second language-preference
-   system. Default: its own line, under longer descriptive text (hints,
-   paragraphs). `--inline` variant: same line, for short labels/buttons
-   (segmented control options, the acard title, "Enable Transitions",
-   "Preview Transition") where a second full line would feel cramped.
-   `dir="rtl" lang="ar"` on each instance (set inline in the markup) keeps
-   the Arabic glyphs correctly shaped/ordered without flipping the
-   surrounding LTR control — a segmented button, toggle or color field
-   never becomes an RTL layout, only the Arabic text inside it does. */
-.bilingual-hint {
-  display: block;
-  font-size: 11px;
-  font-weight: 400;
-  text-transform: none;
-  letter-spacing: 0;
-  color: var(--amuted);
-  margin-top: 1px;
-}
-.bilingual-hint--inline {
-  display: inline;
-  margin-top: 0;
-  margin-inline-start: 6px;
-  opacity: .8;
-}
-/* Inside an active/selected segmented button the English label already
-   flips to a dark bg + bold text (.lp-seg__btn.is-active) — the Arabic
-   half must follow, not stay at the muted admin-on-dark color. */
-.lp-seg__btn.is-active .bilingual-hint--inline { color: inherit; opacity: .75; }
+/* ── ADMIN INTERFACE LANGUAGE (1T) ─────────────────────────────────
+   Replaces the former inline side-by-side EN+AR hint labels (1R/1S): the
+   Admin now shows ONE interface language at a time (js/i18n.js). The
+   document itself is never dir="rtl" — the dashboard geometry (settings
+   left, Live Preview right) is identical in both languages. i18n.js puts
+   dir="rtl" lang="ar" on each translated text element instead, so Arabic
+   labels / headings / hints read and align naturally inside unchanged
+   boxes. Arabic must never be letter-spaced or case-transformed (spacing
+   breaks the joined script), so every lang="ar" node opts out. */
+[lang="ar"] { letter-spacing: 0 !important; text-transform: none !important; }
 
 /* Page Transition color field: native swatch + hex text input side by side */
 .color-field { display: flex; align-items: center; gap: 10px; }

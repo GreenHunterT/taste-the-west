@@ -23,6 +23,10 @@ window.AdminViews.categories = (function () {
 
   var CAT_FIELD_LANG = { 'cat-name-en': 'en', 'cat-name-ar': 'ar' };
 
+  // Admin interface i18n (1T). Owner-entered category names are never translated.
+  var I18N = window.AdminI18n;
+  var t = I18N.t;
+
   // ── Per-mount state (reset by resetState() at the top of mount()) ──
   var ctx, root;
   var mountToken = 0;
@@ -82,6 +86,12 @@ window.AdminViews.categories = (function () {
     if (text != null) n.textContent = text;
     return n;
   }
+  // Same as el(), but the text is an Admin string key (stamped → live-switchable).
+  function elT(tag, cls, key) {
+    var n = el(tag, cls);
+    I18N.set(n, key);
+    return n;
+  }
   function mkBtn(cls, text, data) {
     var b = document.createElement('button');
     b.type = 'button';
@@ -90,10 +100,17 @@ window.AdminViews.categories = (function () {
     if (data) Object.keys(data).forEach(function (k) { b.dataset[k] = String(data[k]); });
     return b;
   }
-  function makeErrLi(text) {
+  // Icon-only button (↑ / ↓ / 🗑): the glyph stays, the accessible name is translated.
+  function mkIconBtn(cls, glyph, labelKey, data) {
+    var b = mkBtn(cls, glyph, data);
+    I18N.setAttr(b, 'aria-label', labelKey);
+    I18N.setAttr(b, 'title', labelKey);
+    return b;
+  }
+  function makeErrLi(key) {
     var li = el('li', 'empty-state');
     li.style.padding = '28px 0';
-    li.appendChild(el('p', 'field-hint', text || 'The category editor is read-only — the restaurant could not be loaded. Reload the page.'));
+    li.appendChild(elT('p', 'field-hint', key || 'cat.readOnly'));
     return li;
   }
 
@@ -143,43 +160,43 @@ window.AdminViews.categories = (function () {
       '<div class="categories-view">',
       '  <div class="admin-page-header">',
       '    <div>',
-      '      <h1 class="admin-page-title">Categories</h1>',
-      '      <p class="admin-page-desc">Categories let customers filter your menu. Renames preview live and go public when you Save.</p>',
+      '      <h1 class="admin-page-title" data-i18n="mw.categories">Categories</h1>',
+      '      <p class="admin-page-desc" data-i18n="cat.desc">Categories let customers filter your menu. Renames preview live and go public when you Save.</p>',
       '    </div>',
       '  </div>',
-      '  <p class="field-hint settings-view__hint--error" id="cat-error-note" hidden>Categories are read-only — the restaurant could not be loaded. Reload the page.</p>',
+      '  <p class="field-hint settings-view__hint--error" id="cat-error-note" hidden data-i18n="cat.readOnly">Categories are read-only — the restaurant could not be loaded. Reload the page.</p>',
       '',
       '  <div class="acard mb-3">',
-      '    <div class="acard-title">Add Category</div>',
+      '    <div class="acard-title" data-i18n="cat.addTitle">Add Category</div>',
       '    <form id="add-cat-form" novalidate>',
       '      <div class="form-row">',
       '        <div class="form-group">',
-      '          <label for="cat-name-en">Category Name (English) <span class="required">*</span></label>',
+      '          <label for="cat-name-en" data-i18n="cat.nameEn">Category Name (English) <span class="required">*</span></label>',
       '          <input type="text" id="cat-name-en" placeholder="Pizza" required />',
       '        </div>',
       '        <div class="form-group">',
-      '          <label for="cat-name-ar">Category Name (Arabic) <span class="required">*</span></label>',
+      '          <label for="cat-name-ar" data-i18n="cat.nameAr">Category Name (Arabic) <span class="required">*</span></label>',
       '          <input type="text" id="cat-name-ar" dir="rtl" placeholder="بيتزا" required />',
       '        </div>',
       '      </div>',
-      '      <button type="submit" class="btn btn-primary" id="add-cat-btn">Add Category</button>',
+      '      <button type="submit" class="btn btn-primary" id="add-cat-btn" data-i18n="cat.addTitle">Add Category</button>',
       '    </form>',
       '  </div>',
       '',
       '  <div class="acard">',
-      '    <div class="acard-title">Existing Categories <small style="text-transform:none;font-weight:400;color:var(--amuted)">(Edit to rename · ↑ ↓ to reorder)</small></div>',
+      '    <div class="acard-title" data-i18n="cat.existing">Existing Categories <small style="text-transform:none;font-weight:400;color:var(--amuted)" data-i18n="cat.existingHint">(Edit to rename · ↑ ↓ to reorder)</small></div>',
       '    <ul class="cat-list" id="cat-list">',
-      '      <li class="empty-state" style="padding:32px 0"><div class="empty-state-icon">📋</div><h3>Loading…</h3><p>Fetching your categories.</p></li>',
+      '      <li class="empty-state" style="padding:32px 0"><div class="empty-state-icon">📋</div><h3 data-i18n="common.loading">Loading…</h3><p data-i18n="cat.loadingDesc">Fetching your categories.</p></li>',
       '    </ul>',
       '  </div>',
       '',
       '  <div class="modal-backdrop" id="confirm-modal" role="dialog" aria-modal="true" aria-labelledby="cat-confirm-title">',
       '    <div class="confirm-dialog">',
-      '      <h2 class="confirm-title" id="cat-confirm-title">Delete category?</h2>',
-      '      <p class="confirm-msg" id="confirm-msg">Products in this category will have their category cleared but will not be deleted.</p>',
+      '      <h2 class="confirm-title" id="cat-confirm-title" data-i18n="cat.deleteTitle">Delete category?</h2>',
+      '      <p class="confirm-msg" id="confirm-msg" data-i18n="cat.deleteMsg">Products in this category will have their category cleared but will not be deleted.</p>',
       '      <div class="confirm-actions">',
-      '        <button class="btn btn-ghost" id="confirm-cancel" type="button">Cancel</button>',
-      '        <button class="btn btn-danger" id="confirm-ok" type="button">Delete</button>',
+      '        <button class="btn btn-ghost" id="confirm-cancel" type="button" data-i18n="common.cancel">Cancel</button>',
+      '        <button class="btn btn-danger" id="confirm-ok" type="button" data-i18n="common.delete">Delete</button>',
       '      </div>',
       '    </div>',
       '  </div>',
@@ -206,7 +223,7 @@ window.AdminViews.categories = (function () {
       if ((err && err.name === 'AbortError') || msg.toLowerCase().indexOf('abort') !== -1) return;
       console.error('[categories view] load failed:', err);
       var listEl = q('#cat-list');
-      if (listEl) { listEl.textContent = ''; listEl.appendChild(makeErrLi('Categories could not be loaded. Reload to retry.')); }
+      if (listEl) { listEl.textContent = ''; listEl.appendChild(makeErrLi('cat.loadFailed')); }
     } finally {
       loadAbort = null;
     }
@@ -223,8 +240,8 @@ window.AdminViews.categories = (function () {
       var li = el('li', 'empty-state');
       li.style.padding = '32px 0';
       li.appendChild(el('div', 'empty-state-icon', '📋'));
-      li.appendChild(el('h3', null, 'No categories yet'));
-      li.appendChild(el('p', null, 'Add your first category above.'));
+      li.appendChild(elT('h3', null, 'cat.empty'));
+      li.appendChild(elT('p', null, 'cat.emptyDesc'));
       list.appendChild(li);
       return;
     }
@@ -244,14 +261,16 @@ window.AdminViews.categories = (function () {
     li.appendChild(info);
 
     var actions = el('div', 'row-actions');
-    actions.appendChild(mkBtn('btn btn-ghost btn-sm', 'Edit', { role: 'edit', id: c.id }));
-    var up = mkBtn('btn btn-ghost btn-sm', '↑', { role: 'up', idx: idx });
+    var editBtn = mkBtn('btn btn-ghost btn-sm', '', { role: 'edit', id: c.id });
+    I18N.set(editBtn, 'common.edit');
+    actions.appendChild(editBtn);
+    var up = mkIconBtn('btn btn-ghost btn-sm', '↑', 'common.moveUp', { role: 'up', idx: idx });
     if (idx === 0) up.disabled = true;
-    var down = mkBtn('btn btn-ghost btn-sm', '↓', { role: 'down', idx: idx });
+    var down = mkIconBtn('btn btn-ghost btn-sm', '↓', 'common.moveDown', { role: 'down', idx: idx });
     if (idx === categories.length - 1) down.disabled = true;
     actions.appendChild(up);
     actions.appendChild(down);
-    actions.appendChild(mkBtn('btn btn-danger btn-sm', '🗑', { role: 'delete', id: c.id, name: c.name_en || '' }));
+    actions.appendChild(mkIconBtn('btn btn-danger btn-sm', '🗑', 'common.delete', { role: 'delete', id: c.id, name: c.name_en || '' }));
     li.appendChild(actions);
     return li;
   }
@@ -262,20 +281,24 @@ window.AdminViews.categories = (function () {
 
     var info = el('div', 'cat-info');
     var row = el('div', 'form-row');
-    row.appendChild(field('Category Name (English)', 'edit-en', c.name_en || '', false));
-    row.appendChild(field('Category Name (Arabic)', 'edit-ar', c.name_ar || '', true));
+    row.appendChild(field('cat.nameEn', 'edit-en', c.name_en || '', false));
+    row.appendChild(field('cat.nameAr', 'edit-ar', c.name_ar || '', true));
     info.appendChild(row);
     li.appendChild(info);
 
     var actions = el('div', 'row-actions');
-    actions.appendChild(mkBtn('btn btn-primary btn-sm', 'Save', { role: 'cat-save', id: c.id }));
-    actions.appendChild(mkBtn('btn btn-ghost btn-sm', 'Cancel', { role: 'cat-cancel' }));
+    var saveBtn = mkBtn('btn btn-primary btn-sm', '', { role: 'cat-save', id: c.id });
+    I18N.set(saveBtn, 'common.save');
+    var cancelBtn = mkBtn('btn btn-ghost btn-sm', '', { role: 'cat-cancel' });
+    I18N.set(cancelBtn, 'common.cancel');
+    actions.appendChild(saveBtn);
+    actions.appendChild(cancelBtn);
     li.appendChild(actions);
     return li;
   }
-  function field(labelText, role, value, rtl) {
+  function field(labelKey, role, value, rtl) {
     var g = el('div', 'form-group');
-    g.appendChild(el('label', null, labelText));
+    g.appendChild(elT('label', null, labelKey));
     var i = document.createElement('input');
     i.type = 'text';
     i.dataset.role = role;
@@ -352,7 +375,7 @@ window.AdminViews.categories = (function () {
   async function saveCatEdit(id) {
     if (savingEdit) return;
     var nameEn = fvRole('edit-en'), nameAr = fvRole('edit-ar');
-    if (!nameEn || !nameAr) { showToast('Both English and Arabic names are required.', 'error'); return; }
+    if (!nameEn || !nameAr) { showToast(t('cat.bothRequired'), 'error'); return; }
     savingEdit = true;
     var btn = q('#cat-list [data-role="cat-save"]');
     if (btn) { btn.disabled = true; btn.innerHTML = '<span class="btn-spinner"></span>'; }
@@ -364,7 +387,7 @@ window.AdminViews.categories = (function () {
       if (!ctx) return;                       // unmounted mid-save
       var row = categories.find(function (c) { return c.id === id; });
       if (row) { row.name_en = nameEn; row.name_ar = nameAr; }
-      showToast('Category renamed.', 'success');
+      showToast(t('cat.renamed'), 'success');
       if (ctx && typeof ctx.sound === 'function') ctx.sound('success');
       editingCatId = null;
       contextKey = '';
@@ -375,11 +398,11 @@ window.AdminViews.categories = (function () {
       }
     } catch (err) {
       console.error('[categories view] rename failed:', err);
-      showToast(friendlyDbError(err, 'Rename failed. Please try again.'), 'error', 5500);
+      showToast(friendlyDbError(err, t('cat.renameFailed')), 'error', 5500);
     } finally {
       savingEdit = false;
       var b2 = q('#cat-list [data-role="cat-save"]');
-      if (b2) { b2.disabled = false; b2.textContent = 'Save'; }
+      if (b2) { b2.disabled = false; b2.textContent = ''; I18N.set(b2, 'common.save'); }
     }
   }
 
@@ -390,8 +413,8 @@ window.AdminViews.categories = (function () {
     if (e && e.preventDefault) e.preventDefault();
     if (savingAdd || !catsReady) return;
     var nameEn = fv('cat-name-en'), nameAr = fv('cat-name-ar');
-    if (!nameEn) { showToast('English category name is required.', 'error'); return; }
-    if (!nameAr) { showToast('Arabic category name is required.', 'error'); return; }
+    if (!nameEn) { showToast(t('cat.enRequired'), 'error'); return; }
+    if (!nameAr) { showToast(t('cat.arRequired'), 'error'); return; }
 
     // Slug is internal: generated from the English name, made unique against the
     // already-loaded list. The owner never types or resolves it.
@@ -416,7 +439,7 @@ window.AdminViews.categories = (function () {
       if (!ctx) return;                       // unmounted mid-save
       var newId = (res.data && res.data[0] && res.data[0].id) || null;
 
-      showToast('Category added.', 'success');
+      showToast(t('cat.added'), 'success');
       if (ctx && typeof ctx.sound === 'function') ctx.sound('success');
       var f = q('#add-cat-form'); if (f) f.reset();
       addDraftId = null;
@@ -428,11 +451,11 @@ window.AdminViews.categories = (function () {
       else ctx.preview.refreshCatalog();
     } catch (err) {
       console.error('[categories view] add failed:', err);
-      showToast(friendlyDbError(err, 'Could not add category. Please try again.'), 'error', 5500);
+      showToast(friendlyDbError(err, t('cat.addFailed')), 'error', 5500);
     } finally {
       savingAdd = false;
       var b2 = q('#add-cat-btn');
-      if (b2) { b2.disabled = false; b2.textContent = 'Add Category'; }
+      if (b2) { b2.disabled = false; b2.textContent = ''; I18N.set(b2, 'cat.addTitle'); }
     }
   }
 
@@ -458,13 +481,13 @@ window.AdminViews.categories = (function () {
         ctx.db.from('categories').update({ sort_order: newIdx }).eq('id', a.id),
       ]);
       var bad = results.find(function (r) { return r.error; });
-      if (bad) { console.error('[categories view] reorder failed:', bad.error); showToast(friendlyDbError(bad.error, 'Reorder failed. Please try again.'), 'error', 5500); await loadAll(); return; }
+      if (bad) { console.error('[categories view] reorder failed:', bad.error); showToast(friendlyDbError(bad.error, t('cat.reorderFailed')), 'error', 5500); await loadAll(); return; }
       b.sort_order = idx;
       a.sort_order = newIdx;
       if (ctx && ctx.preview) ctx.preview.refreshCatalog();
     } catch (err) {
       console.error('[categories view] reorder failed:', err);
-      showToast(friendlyDbError(err, 'Reorder failed. Please try again.'), 'error', 5500);
+      showToast(friendlyDbError(err, t('cat.reorderFailed')), 'error', 5500);
       await loadAll();
     } finally {
       reordering = false;
@@ -477,10 +500,8 @@ window.AdminViews.categories = (function () {
   function askDelete(id, name) {
     pendingDeleteId = id;
     var msg = q('#confirm-msg');
-    if (msg) {
-      msg.textContent = '"' + (name || 'This category') +
-        '" will be deleted. Products in this category will have their category cleared but will NOT be deleted.';
-    }
+    // `name` is owner data — passed as a plain var (textContent, never HTML).
+    if (msg) I18N.set(msg, 'cat.deleteMsgNamed', { name: name || t('cat.thisCategory') });
     var m = q('#confirm-modal'); if (m) m.classList.add('open');
     if (ctx && typeof ctx.sound === 'function') ctx.sound('warning');
   }
@@ -495,10 +516,10 @@ window.AdminViews.categories = (function () {
     var res = await ctx.db.from('categories').delete().eq('id', id);
     if (res.error) {
       console.error('[categories view] delete failed:', res.error);
-      showToast(friendlyDbError(res.error, 'Delete failed. Please try again.'), 'error', 5500);
+      showToast(friendlyDbError(res.error, t('common.deleteFailed')), 'error', 5500);
       return;
     }
-    showToast('Category deleted.', 'success');
+    showToast(t('cat.deleted'), 'success');
     if (editingCatId === id) editingCatId = null;
     contextKey = '';
     if (ctx && ctx.preview) ctx.preview.clearCatalogDraft();
@@ -549,6 +570,7 @@ window.AdminViews.categories = (function () {
     resetState();
 
     root.innerHTML = viewMarkup();
+    I18N.apply(root);
 
     var ready = ctx.restaurantLoadState === 'ready' && ctx.restaurant && ctx.restaurant.id;
     if (!ready) {

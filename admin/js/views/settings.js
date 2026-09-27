@@ -20,12 +20,15 @@ window.AdminViews.settings = (function () {
   // Metadata only (milestone 1S) — nothing branches on this yet; the
   // <select>'s own <option> list is the other half of this whitelist.
   var BUSINESS_TYPES = new Set(['restaurant', 'cafe', 'bakery', 'retail', 'clothing', 'salon', 'services', 'other']);
-  var TYPE_LABELS = {
-    custom:  'Custom text',
-    percent: 'Percentage',
-    plus:    'Number with +',
-    rating:  'Rating out of 5',
-    number:  'Plain number',
+  // Admin interface i18n (1T). Stat types are UI labels → string keys.
+  var I18N = window.AdminI18n;
+  var t = I18N.t;
+  var TYPE_KEYS = {
+    custom:  'stats.type.custom',
+    percent: 'stats.type.percent',
+    plus:    'stats.type.plus',
+    rating:  'stats.type.rating',
+    number:  'stats.type.number',
   };
   // Niche-neutral (milestone 1S) — these seed a NEW restaurant's first
   // highlights and "Reset to default"; TasteTheWest's own already-SAVED
@@ -146,6 +149,12 @@ window.AdminViews.settings = (function () {
     if (text != null) n.textContent = text;
     return n;
   }
+  // Same as el(), but the text is an Admin string key (stamped → live-switchable).
+  function elT(tag, cls, key, vars) {
+    var n = el(tag, cls);
+    I18N.set(n, key, vars);
+    return n;
+  }
 
   // Segmented-control sync for this view's OWN toggles (data-loc-visual /
   // data-loc-fit / data-loc-height). The preview engine syncs its own
@@ -162,141 +171,143 @@ window.AdminViews.settings = (function () {
   //  Editor markup  (left side only — no preview, no page/device/…/
   //  view controls, no Edit|Preview toggle)
   // =================================================================
+  // Admin strings carry data-i18n keys (1T) — the English text below is only
+  // the pre-translation default; AdminI18n.apply(root) localizes it on mount
+  // and again, in place, on every Admin language switch. Business-content
+  // placeholders (example names/addresses/hours) are deliberately NOT keyed.
   function editorMarkup() {
     return [
       '<div class="settings-view">',
       '  <div class="settings-view__bar">',
-      '    <span class="stats-dirty is-clean" id="stats-dirty" role="status" aria-live="polite">✓ All changes saved</span>',
-      '    <button type="button" class="btn btn-primary btn-sm" id="save-btn">Save Changes</button>',
+      '    <span class="stats-dirty is-clean" id="stats-dirty" role="status" aria-live="polite" data-i18n="set.clean">✓ All changes saved</span>',
+      '    <button type="button" class="btn btn-primary btn-sm" id="save-btn" data-i18n="set.save">Save Changes</button>',
       '  </div>',
-      '  <p class="settings-view__hint">Edits appear in the Live Preview instantly; they go live on your public site only after you Save.</p>',
-      '  <p class="settings-view__hint settings-view__hint--error" id="settings-error-note" hidden>Settings are read-only — the restaurant could not be loaded. Reload the page.</p>',
+      '  <p class="settings-view__hint" data-i18n="set.hint">Edits appear in the Live Preview instantly; they go live on your public site only after you Save.</p>',
+      '  <p class="settings-view__hint settings-view__hint--error" id="settings-error-note" hidden data-i18n="set.readOnly">Settings are read-only — the restaurant could not be loaded. Reload the page.</p>',
       '',
       '  <form id="settings-form" novalidate>',
       '  <fieldset id="stg-fieldset" class="stg-fieldset">',
       '',
       '  <!-- Identity -->',
       '  <div class="acard" data-pv-page="home" data-pv-target="hero">',
-      '    <div class="acard-title">Identity</div>',
+      '    <div class="acard-title" data-i18n="set.identity">Identity</div>',
       '    <div class="form-row">',
       '      <div class="form-group">',
-      '        <label for="name_ar">Name (Arabic) <span class="required">*</span></label>',
+      '        <label for="name_ar" data-i18n="set.nameAr">Name (Arabic) <span class="required">*</span></label>',
       '        <input type="text" id="name_ar" name="name_ar" placeholder="تيست ذا ويست" dir="rtl" required />',
       '      </div>',
       '      <div class="form-group">',
-      '        <label for="name_en">Name (English) <span class="required">*</span></label>',
+      '        <label for="name_en" data-i18n="set.nameEn">Name (English) <span class="required">*</span></label>',
       '        <input type="text" id="name_en" name="name_en" placeholder="Taste The West" required />',
       '      </div>',
       '    </div>',
       '    <div class="form-row">',
       '      <div class="form-group">',
-      '        <label for="tagline_ar">Tagline (Arabic)</label>',
+      '        <label for="tagline_ar" data-i18n="set.taglineAr">Tagline (Arabic)</label>',
       '        <input type="text" id="tagline_ar" name="tagline_ar" placeholder="بيتزا بأسلوب مختلف" dir="rtl" />',
       '      </div>',
       '      <div class="form-group">',
-      '        <label for="tagline_en">Tagline (English)</label>',
+      '        <label for="tagline_en" data-i18n="set.taglineEn">Tagline (English)</label>',
       '        <input type="text" id="tagline_en" name="tagline_en" placeholder="A Different Kind of Pizza" />',
       '      </div>',
       '    </div>',
       '    <div class="form-row" data-pv-page="home" data-pv-target="about">',
       '      <div class="form-group">',
-      '        <label for="description_ar">Description (Arabic)</label>',
+      '        <label for="description_ar" data-i18n="set.descAr">Description (Arabic)</label>',
       '        <textarea id="description_ar" name="description_ar" dir="rtl" placeholder="وصف المطعم بالعربية…"></textarea>',
       '      </div>',
       '      <div class="form-group">',
-      '        <label for="description_en">Description (English)</label>',
+      '        <label for="description_en" data-i18n="set.descEn">Description (English)</label>',
       '        <textarea id="description_en" name="description_en" placeholder="Restaurant description in English…"></textarea>',
       '      </div>',
       '    </div>',
       '    <div class="form-row single">',
       '      <div class="form-group">',
-      '        <label for="business_type">Business Type <span class="bilingual-hint bilingual-hint--inline" dir="rtl" lang="ar">نوع النشاط التجاري</span></label>',
+      '        <label for="business_type" data-i18n="set.businessType">Business Type</label>',
       '        <select id="business_type" name="business_type">',
-      '          <option value="restaurant">Restaurant · مطعم</option>',
-      '          <option value="cafe">Cafe · مقهى</option>',
-      '          <option value="bakery">Bakery · مخبز</option>',
-      '          <option value="retail">Retail · تجزئة</option>',
-      '          <option value="clothing">Clothing · ملابس</option>',
-      '          <option value="salon">Salon · صالون</option>',
-      '          <option value="services">Services · خدمات</option>',
-      '          <option value="other">Other · أخرى</option>',
+      '          <option value="restaurant" data-i18n="set.bt.restaurant">Restaurant</option>',
+      '          <option value="cafe" data-i18n="set.bt.cafe">Cafe</option>',
+      '          <option value="bakery" data-i18n="set.bt.bakery">Bakery</option>',
+      '          <option value="retail" data-i18n="set.bt.retail">Retail</option>',
+      '          <option value="clothing" data-i18n="set.bt.clothing">Clothing</option>',
+      '          <option value="salon" data-i18n="set.bt.salon">Salon</option>',
+      '          <option value="services" data-i18n="set.bt.services">Services</option>',
+      '          <option value="other" data-i18n="set.bt.other">Other</option>',
       '        </select>',
-      '        <p class="field-hint">For your own reference — this does not change how your site looks yet.</p>',
-      '        <p class="field-hint bilingual-hint" dir="rtl" lang="ar">لغرض الرجوع فقط — لا يغيّر هذا شكل موقعك حالياً.</p>',
+      '        <p class="field-hint" data-i18n="set.businessTypeHint">For your own reference — this does not change how your site looks yet.</p>',
       '      </div>',
       '    </div>',
       '  </div>',
       '',
       '  <!-- Content Labels -->',
       '  <div class="acard mt-2" id="content-labels-acard">',
-      '    <div class="acard-title">Content Labels <span class="bilingual-hint bilingual-hint--inline" dir="rtl" lang="ar">تسميات المحتوى</span></div>',
-      '    <p class="field-hint">Leave any field blank to keep the current wording shown below it.</p>',
-      '    <p class="field-hint bilingual-hint" dir="rtl" lang="ar">اترك أي حقل فارغاً للإبقاء على النص الحالي الموضح تحته.</p>',
+      '    <div class="acard-title" data-i18n="set.labels">Content Labels</div>',
+      '    <p class="field-hint" data-i18n="set.labelsHint">Leave any field blank to keep the current wording shown below it.</p>',
       '    <div class="form-row mt-2" data-pv-page="products" data-pv-target="catalog-heading">',
       '      <div class="form-group">',
-      '        <label for="catalog_label_en">Catalog Label (English) <span class="bilingual-hint bilingual-hint--inline" dir="rtl" lang="ar">تسمية الكتالوج (إنجليزي)</span></label>',
+      '        <label for="catalog_label_en" data-i18n="set.catalogLabelEn">Catalog Label (English)</label>',
       '        <input type="text" id="catalog_label_en" name="catalog_label_en" placeholder="Menu (default)" />',
       '      </div>',
       '      <div class="form-group">',
-      '        <label for="catalog_label_ar">Catalog Label (Arabic) <span class="bilingual-hint bilingual-hint--inline" dir="rtl" lang="ar">تسمية الكتالوج (عربي)</span></label>',
+      '        <label for="catalog_label_ar" data-i18n="set.catalogLabelAr">Catalog Label (Arabic)</label>',
       '        <input type="text" id="catalog_label_ar" name="catalog_label_ar" dir="rtl" placeholder="القائمة (افتراضي)" />',
       '      </div>',
       '    </div>',
-      '    <p class="field-hint">Used for the main navigation link and the catalog page\'s eyebrow label. Examples: Menu, Products, Services, Collection.</p>',
+      '    <p class="field-hint" data-i18n="set.catalogLabelHint">Used for the main navigation link and the catalog page\'s eyebrow label. Examples: Menu, Products, Services, Collection.</p>',
       '    <div class="form-row mt-2" data-pv-page="home" data-pv-target="featured">',
       '      <div class="form-group">',
-      '        <label for="featured_title_en">Featured Section Title (English) <span class="bilingual-hint bilingual-hint--inline" dir="rtl" lang="ar">عنوان القسم المميز (إنجليزي)</span></label>',
+      '        <label for="featured_title_en" data-i18n="set.featuredTitleEn">Featured Section Title (English)</label>',
       '        <input type="text" id="featured_title_en" name="featured_title_en" placeholder="Featured Dishes (default)" />',
       '      </div>',
       '      <div class="form-group">',
-      '        <label for="featured_title_ar">Featured Section Title (Arabic) <span class="bilingual-hint bilingual-hint--inline" dir="rtl" lang="ar">عنوان القسم المميز (عربي)</span></label>',
+      '        <label for="featured_title_ar" data-i18n="set.featuredTitleAr">Featured Section Title (Arabic)</label>',
       '        <input type="text" id="featured_title_ar" name="featured_title_ar" dir="rtl" placeholder="أطباق مميزة (افتراضي)" />',
       '      </div>',
       '    </div>',
-      '    <p class="field-hint">Shown above the homepage\'s highlighted items. Examples: Featured Dishes, Featured Products, Featured Services.</p>',
+      '    <p class="field-hint" data-i18n="set.featuredTitleHint">Shown above the homepage\'s highlighted items. Examples: Featured Dishes, Featured Products, Featured Services.</p>',
       '    <div class="form-row mt-2" data-pv-page="products" data-pv-target="catalog-heading">',
       '      <div class="form-group">',
-      '        <label for="catalog_heading_en">Catalog Page Heading (English) <span class="bilingual-hint bilingual-hint--inline" dir="rtl" lang="ar">عنوان صفحة الكتالوج (إنجليزي)</span></label>',
+      '        <label for="catalog_heading_en" data-i18n="set.catalogHeadingEn">Catalog Page Heading (English)</label>',
       '        <input type="text" id="catalog_heading_en" name="catalog_heading_en" placeholder="Full Menu (default)" />',
       '      </div>',
       '      <div class="form-group">',
-      '        <label for="catalog_heading_ar">Catalog Page Heading (Arabic) <span class="bilingual-hint bilingual-hint--inline" dir="rtl" lang="ar">عنوان صفحة الكتالوج (عربي)</span></label>',
+      '        <label for="catalog_heading_ar" data-i18n="set.catalogHeadingAr">Catalog Page Heading (Arabic)</label>',
       '        <input type="text" id="catalog_heading_ar" name="catalog_heading_ar" dir="rtl" placeholder="القائمة الكاملة (افتراضي)" />',
       '      </div>',
       '    </div>',
-      '    <p class="field-hint">The main heading at the top of the full catalog page.</p>',
+      '    <p class="field-hint" data-i18n="set.catalogHeadingHint">The main heading at the top of the full catalog page.</p>',
       '  </div>',
       '',
       '  <!-- Contact -->',
       '  <div class="acard mt-2" data-pv-page="contact" data-pv-target="contact">',
-      '    <div class="acard-title">Contact</div>',
+      '    <div class="acard-title" data-i18n="set.contact">Contact</div>',
       '    <div class="form-row triple">',
       '      <div class="form-group">',
-      '        <label for="phone">Phone <small>(display format)</small></label>',
+      '        <label for="phone" data-i18n="set.phone">Phone <small data-i18n="set.phoneNote">(display format)</small></label>',
       '        <input type="tel" id="phone" name="phone" placeholder="+966 5X XXX XXXX" />',
       '      </div>',
       '      <div class="form-group">',
-      '        <label for="whatsapp">WhatsApp Number <small>(digits only)</small></label>',
+      '        <label for="whatsapp" data-i18n="set.whatsapp">WhatsApp Number <small data-i18n="set.whatsappNote">(digits only)</small></label>',
       '        <input type="text" id="whatsapp" name="whatsapp" placeholder="9665XXXXXXXX" />',
       '      </div>',
       '      <div class="form-group">',
-      '        <label for="instagram">Instagram</label>',
+      '        <label for="instagram" data-i18n="set.instagram">Instagram</label>',
       '        <input type="text" id="instagram" name="instagram" placeholder="@tastethewest" />',
       '      </div>',
       '    </div>',
       '    <div class="form-row single">',
       '      <div class="form-group">',
-      '        <label for="email">Email <small>(leave blank to hide)</small></label>',
+      '        <label for="email" data-i18n="set.email">Email <small data-i18n="set.emailNote">(leave blank to hide)</small></label>',
       '        <input type="email" id="email" name="email" placeholder="info@example.com" />',
       '      </div>',
       '    </div>',
       '    <div class="form-row">',
       '      <div class="form-group">',
-      '        <label for="wa_message_ar">WhatsApp Pre-fill (Arabic)</label>',
+      '        <label for="wa_message_ar" data-i18n="set.waAr">WhatsApp Pre-fill (Arabic)</label>',
       '        <input type="text" id="wa_message_ar" name="wa_message_ar" dir="rtl" placeholder="مرحباً! أريد طلب…" />',
       '      </div>',
       '      <div class="form-group">',
-      '        <label for="wa_message_en">WhatsApp Pre-fill (English)</label>',
+      '        <label for="wa_message_en" data-i18n="set.waEn">WhatsApp Pre-fill (English)</label>',
       '        <input type="text" id="wa_message_en" name="wa_message_en" placeholder="Hi! I\'d like to order…" />',
       '      </div>',
       '    </div>',
@@ -304,63 +315,63 @@ window.AdminViews.settings = (function () {
       '',
       '  <!-- Location -->',
       '  <div class="acard mt-2" data-pv-page="location" data-pv-target="location-visual">',
-      '    <div class="acard-title">Location</div>',
+      '    <div class="acard-title" data-i18n="set.location">Location</div>',
       '    <div class="form-row">',
       '      <div class="form-group">',
-      '        <label for="address_ar">Address (Arabic)</label>',
+      '        <label for="address_ar" data-i18n="set.addressAr">Address (Arabic)</label>',
       '        <input type="text" id="address_ar" name="address_ar" dir="rtl" placeholder="حي السلطانة، المدينة المنورة" />',
       '      </div>',
       '      <div class="form-group">',
-      '        <label for="address_en">Address (English)</label>',
+      '        <label for="address_en" data-i18n="set.addressEn">Address (English)</label>',
       '        <input type="text" id="address_en" name="address_en" placeholder="Sultana District, Madinah" />',
       '      </div>',
       '    </div>',
       '    <div class="form-row single">',
       '      <div class="form-group">',
-      '        <label for="map_directions">Google Maps Share Link</label>',
+      '        <label for="map_directions" data-i18n="set.mapLink">Google Maps Share Link</label>',
       '        <input type="text" id="map_directions" name="map_directions" placeholder="https://maps.app.goo.gl/…" />',
-      '        <p class="field-hint">Open Google Maps → Share → Copy link</p>',
+      '        <p class="field-hint" data-i18n="set.mapLinkHint">Open Google Maps → Share → Copy link</p>',
       '      </div>',
       '    </div>',
       '    <div class="form-row single">',
       '      <div class="form-group">',
-      '        <label for="map_embed">Google Maps Embed URL <small>(for the iframe)</small></label>',
+      '        <label for="map_embed" data-i18n="set.mapEmbed">Google Maps Embed URL <small data-i18n="set.mapEmbedNote">(for the iframe)</small></label>',
       '        <input type="text" id="map_embed" name="map_embed" placeholder="https://maps.google.com/maps?q=…&amp;output=embed" />',
-      '        <p class="field-hint">Google Maps → Share → Embed a map → copy the src value from the iframe code</p>',
+      '        <p class="field-hint" data-i18n="set.mapEmbedHint">Google Maps → Share → Embed a map → copy the src value from the iframe code</p>',
       '      </div>',
       '    </div>',
       '    <div class="form-row single">',
       '      <div class="form-group">',
-      '        <label id="loc-visual-label">Location Visual</label>',
+      '        <label id="loc-visual-label" data-i18n="set.locVisual">Location Visual</label>',
       '        <div class="lp-seg" role="group" aria-labelledby="loc-visual-label" id="loc-visual-seg">',
-      '          <button type="button" class="lp-seg__btn is-active" data-loc-visual="map" aria-pressed="true">Interactive Map</button>',
-      '          <button type="button" class="lp-seg__btn" data-loc-visual="image" aria-pressed="false">Location Image</button>',
+      '          <button type="button" class="lp-seg__btn is-active" data-loc-visual="map" aria-pressed="true" data-i18n="set.locMap">Interactive Map</button>',
+      '          <button type="button" class="lp-seg__btn" data-loc-visual="image" aria-pressed="false" data-i18n="set.locImage">Location Image</button>',
       '        </div>',
       '        <div id="loc-image-field" hidden>',
       '          <div class="img-upload-area" onclick="document.getElementById(\'location-file\').click()">',
       '            <input type="file" id="location-file" accept="image/jpeg,image/png,image/webp" />',
       '            <div class="img-upload-icon">🏬</div>',
-      '            <div class="img-upload-label"><strong>Click to upload</strong> or drag and drop</div>',
-      '            <div class="img-upload-hint">Restaurant exterior, storefront, entrance or interior · JPG, PNG or WebP · max 5 MB</div>',
+      '            <div class="img-upload-label" data-i18n-dir><strong data-i18n="upload.click">Click to upload</strong> <span data-i18n="upload.drag">or drag and drop</span></div>',
+      '            <div class="img-upload-hint" data-i18n="set.locUploadHint">Restaurant exterior, storefront, entrance or interior · JPG, PNG or WebP · max 5 MB</div>',
       '          </div>',
       '          <div id="loc-compose" hidden>',
-      '            <img id="location-preview" class="img-preview-wide" alt="Location image" />',
-      '            <label id="loc-fit-label" class="mt-1" style="display:block">Image Display</label>',
+      '            <img id="location-preview" class="img-preview-wide" alt="Location image" data-i18n-alt="set.locImageAlt" />',
+      '            <label id="loc-fit-label" class="mt-1" style="display:block" data-i18n="set.locFit">Image Display</label>',
       '            <div class="lp-seg" role="group" aria-labelledby="loc-fit-label" id="loc-fit-seg">',
-      '              <button type="button" class="lp-seg__btn" data-loc-fit="contain" aria-pressed="false">Fit Entire Image</button>',
-      '              <button type="button" class="lp-seg__btn is-active" data-loc-fit="cover" aria-pressed="true">Fill Frame</button>',
+      '              <button type="button" class="lp-seg__btn" data-loc-fit="contain" aria-pressed="false" data-i18n="set.locFitContain">Fit Entire Image</button>',
+      '              <button type="button" class="lp-seg__btn is-active" data-loc-fit="cover" aria-pressed="true" data-i18n="set.locFitCover">Fill Frame</button>',
       '            </div>',
-      '            <label id="loc-height-label" class="mt-1" style="display:block">Frame Height</label>',
+      '            <label id="loc-height-label" class="mt-1" style="display:block" data-i18n="set.locHeight">Frame Height</label>',
       '            <div class="lp-seg" role="group" aria-labelledby="loc-height-label" id="loc-height-seg">',
-      '              <button type="button" class="lp-seg__btn" data-loc-height="short" aria-pressed="false">Short</button>',
-      '              <button type="button" class="lp-seg__btn is-active" data-loc-height="standard" aria-pressed="true">Standard</button>',
-      '              <button type="button" class="lp-seg__btn" data-loc-height="tall" aria-pressed="false">Tall</button>',
+      '              <button type="button" class="lp-seg__btn" data-loc-height="short" aria-pressed="false" data-i18n="set.locShort">Short</button>',
+      '              <button type="button" class="lp-seg__btn is-active" data-loc-height="standard" aria-pressed="true" data-i18n="set.locStandard">Standard</button>',
+      '              <button type="button" class="lp-seg__btn" data-loc-height="tall" aria-pressed="false" data-i18n="set.locTall">Tall</button>',
       '            </div>',
-      '            <button type="button" class="btn btn-secondary btn-sm mt-2" id="loc-edit-btn">Edit Image in Preview</button>',
-      '            <p class="field-hint mt-1" id="loc-fit-hint" hidden>Fit Entire Image shows the whole photo; the edges are filled with a soft blur of the same photo so nothing is cropped.</p>',
+      '            <button type="button" class="btn btn-secondary btn-sm mt-2" id="loc-edit-btn" data-i18n="set.locEdit">Edit Image in Preview</button>',
+      '            <p class="field-hint mt-1" id="loc-fit-hint" hidden data-i18n="set.locFitHint">Fit Entire Image shows the whole photo; the edges are filled with a soft blur of the same photo so nothing is cropped.</p>',
       '          </div>',
-      '          <button type="button" id="location-remove" class="btn btn-danger btn-sm mt-2" hidden>Remove Location Image</button>',
-      '          <p class="field-hint mt-1">Shown on the public Location page instead of the map; clicking it opens your Google Maps Share Link.</p>',
+      '          <button type="button" id="location-remove" class="btn btn-danger btn-sm mt-2" hidden data-i18n="set.locRemove">Remove Location Image</button>',
+      '          <p class="field-hint mt-1" data-i18n="set.locImageHint">Shown on the public Location page instead of the map; clicking it opens your Google Maps Share Link.</p>',
       '        </div>',
       '      </div>',
       '    </div>',
@@ -368,24 +379,24 @@ window.AdminViews.settings = (function () {
       '',
       '  <!-- Opening Hours -->',
       '  <div class="acard mt-2" data-pv-page="location" data-pv-target="hours">',
-      '    <div class="acard-title">Opening Hours</div>',
+      '    <div class="acard-title" data-i18n="set.hours">Opening Hours</div>',
       '    <div class="form-row">',
       '      <div class="form-group">',
-      '        <label for="hours_weekdays_en">Weekdays (English)</label>',
+      '        <label for="hours_weekdays_en" data-i18n="set.weekdaysEn">Weekdays (English)</label>',
       '        <input type="text" id="hours_weekdays_en" name="hours_weekdays_en" placeholder="12:00 PM – 12:00 AM" />',
       '      </div>',
       '      <div class="form-group">',
-      '        <label for="hours_weekdays_ar">Weekdays (Arabic)</label>',
+      '        <label for="hours_weekdays_ar" data-i18n="set.weekdaysAr">Weekdays (Arabic)</label>',
       '        <input type="text" id="hours_weekdays_ar" name="hours_weekdays_ar" dir="rtl" placeholder="١٢:٠٠ ظهراً – ١٢:٠٠ منتصف الليل" />',
       '      </div>',
       '    </div>',
       '    <div class="form-row">',
       '      <div class="form-group">',
-      '        <label for="hours_weekends_en">Weekends (English)</label>',
+      '        <label for="hours_weekends_en" data-i18n="set.weekendsEn">Weekends (English)</label>',
       '        <input type="text" id="hours_weekends_en" name="hours_weekends_en" placeholder="12:00 PM – 1:00 AM" />',
       '      </div>',
       '      <div class="form-group">',
-      '        <label for="hours_weekends_ar">Weekends (Arabic)</label>',
+      '        <label for="hours_weekends_ar" data-i18n="set.weekendsAr">Weekends (Arabic)</label>',
       '        <input type="text" id="hours_weekends_ar" name="hours_weekends_ar" dir="rtl" placeholder="١٢:٠٠ ظهراً – ١:٠٠ فجراً" />',
       '      </div>',
       '    </div>',
@@ -393,30 +404,30 @@ window.AdminViews.settings = (function () {
       '',
       '  <!-- Images -->',
       '  <div class="acard mt-2" data-pv-page="home" data-pv-target="hero">',
-      '    <div class="acard-title">Images</div>',
+      '    <div class="acard-title" data-i18n="set.images">Images</div>',
       '    <div class="form-row">',
       '      <div class="form-group">',
-      '        <label>Hero Image <small>(displayed on homepage)</small></label>',
+      '        <label data-i18n="set.hero">Hero Image <small data-i18n="set.heroNote">(displayed on homepage)</small></label>',
       '        <div class="img-upload-area" onclick="document.getElementById(\'hero-file\').click()">',
       '          <input type="file" id="hero-file" accept="image/jpeg,image/png,image/webp" />',
       '          <div class="img-upload-icon">🖼</div>',
-      '          <div class="img-upload-label"><strong>Click to upload</strong> or drag and drop</div>',
-      '          <div class="img-upload-hint">JPG, PNG or WebP · max 5 MB · 1920×1080 px recommended</div>',
+      '          <div class="img-upload-label" data-i18n-dir><strong data-i18n="upload.click">Click to upload</strong> <span data-i18n="upload.drag">or drag and drop</span></div>',
+      '          <div class="img-upload-hint" data-i18n="set.heroHint">JPG, PNG or WebP · max 5 MB · 1920×1080 px recommended</div>',
       '        </div>',
-      '        <img id="hero-preview" class="img-preview-wide" hidden alt="Hero preview" />',
-      '        <button type="button" id="hero-remove" class="btn btn-danger btn-sm mt-1" hidden>Remove Hero Image</button>',
+      '        <img id="hero-preview" class="img-preview-wide" hidden alt="Hero preview" data-i18n-alt="set.heroAlt" />',
+      '        <button type="button" id="hero-remove" class="btn btn-danger btn-sm mt-1" hidden data-i18n="set.heroRemove">Remove Hero Image</button>',
       '        <input type="hidden" id="hero_image_url" name="hero_image_url" />',
       '      </div>',
       '      <div class="form-group">',
-      '        <label>Logo / Brand Image <small>(optional)</small></label>',
+      '        <label data-i18n="set.logo">Logo / Brand Image <small data-i18n="set.logoNote">(optional)</small></label>',
       '        <div class="img-upload-area" onclick="document.getElementById(\'logo-file\').click()">',
       '          <input type="file" id="logo-file" accept="image/jpeg,image/png,image/webp" />',
       '          <div class="img-upload-icon">🏷</div>',
-      '          <div class="img-upload-label"><strong>Click to upload</strong> or drag and drop</div>',
-      '          <div class="img-upload-hint">JPG, PNG or WebP · max 5 MB · square format recommended</div>',
+      '          <div class="img-upload-label" data-i18n-dir><strong data-i18n="upload.click">Click to upload</strong> <span data-i18n="upload.drag">or drag and drop</span></div>',
+      '          <div class="img-upload-hint" data-i18n="set.logoHint">JPG, PNG or WebP · max 5 MB · square format recommended</div>',
       '        </div>',
-      '        <img id="logo-preview" class="img-preview-wide" hidden alt="Logo preview" />',
-      '        <button type="button" id="logo-remove" class="btn btn-danger btn-sm mt-1" hidden>Remove Logo</button>',
+      '        <img id="logo-preview" class="img-preview-wide" hidden alt="Logo preview" data-i18n-alt="set.logoAlt" />',
+      '        <button type="button" id="logo-remove" class="btn btn-danger btn-sm mt-1" hidden data-i18n="set.logoRemove">Remove Logo</button>',
       '        <input type="hidden" id="logo_url" name="logo_url" />',
       '      </div>',
       '    </div>',
@@ -424,25 +435,25 @@ window.AdminViews.settings = (function () {
       '',
       '  <!-- Homepage Statistics -->',
       '  <div class="acard mt-2" id="stats-acard" data-pv-page="home" data-pv-target="highlights">',
-      '    <div class="acard-title">Homepage Statistics</div>',
-      '    <p class="field-hint">The quick facts shown near the top of your homepage. Order and visibility here match the public site.</p>',
+      '    <div class="acard-title" data-i18n="stats.title">Homepage Statistics</div>',
+      '    <p class="field-hint" data-i18n="stats.hint">The quick facts shown near the top of your homepage. Order and visibility here match the public site.</p>',
       '    <div class="stats-toolbar">',
-      '      <button type="button" class="btn btn-ghost btn-sm" id="stats-undo" disabled>Undo</button>',
-      '      <button type="button" class="btn btn-ghost btn-sm" id="stats-reset">Reset to default</button>',
-      '      <button type="button" class="btn btn-ghost btn-sm" id="stats-view-in-preview">View in Preview</button>',
+      '      <button type="button" class="btn btn-ghost btn-sm" id="stats-undo" disabled data-i18n="stats.undo">Undo</button>',
+      '      <button type="button" class="btn btn-ghost btn-sm" id="stats-reset" data-i18n="stats.reset">Reset to default</button>',
+      '      <button type="button" class="btn btn-ghost btn-sm" id="stats-view-in-preview" data-i18n="common.viewInPreview">View in Preview</button>',
       '    </div>',
       '    <div id="stats-cards"></div>',
-      '    <button type="button" class="btn btn-secondary btn-sm mt-2" id="stats-add">+ Add statistic</button>',
-      '    <p class="field-hint mt-1" id="stats-max-hint" hidden>Maximum of 6 statistics.</p>',
+      '    <button type="button" class="btn btn-secondary btn-sm mt-2" id="stats-add" data-i18n="stats.add">+ Add statistic</button>',
+      '    <p class="field-hint mt-1" id="stats-max-hint" hidden data-i18n="stats.max" data-i18n-vars=\'{"max":6}\'>Maximum of 6 statistics.</p>',
       '  </div>',
       '',
       '  <!-- App settings -->',
       '  <div class="acard mt-2">',
-      '    <div class="acard-title">App Settings</div>',
+      '    <div class="acard-title" data-i18n="set.app">App Settings</div>',
       '    <div class="toggle-row">',
       '      <div class="toggle-info">',
-      '        <strong>Customer Site Sounds</strong>',
-      '        <span>Play subtle interaction sounds for customers using the website.</span>',
+      '        <strong data-i18n="set.sounds">Customer Site Sounds</strong>',
+      '        <span data-i18n="set.soundsDesc">Play subtle interaction sounds for customers using the website.</span>',
       '      </div>',
       '      <label class="toggle">',
       '        <input type="checkbox" id="sounds_enabled" name="sounds_enabled" />',
@@ -453,12 +464,11 @@ window.AdminViews.settings = (function () {
       '',
       '  <!-- Page Transition -->',
       '  <div class="acard mt-2" id="transition-acard">',
-      '    <div class="acard-title">Page Transition <span class="bilingual-hint bilingual-hint--inline" dir="rtl" lang="ar">انتقال الصفحة</span></div>',
+      '    <div class="acard-title" data-i18n="tr.title">Page Transition</div>',
       '    <div class="toggle-row">',
       '      <div class="toggle-info">',
-      '        <strong>Enable Transitions <span class="bilingual-hint bilingual-hint--inline" dir="rtl" lang="ar">تفعيل الانتقالات</span></strong>',
-      '        <span>Play an animated hand-off between pages on the public site.</span>',
-      '        <span class="bilingual-hint" dir="rtl" lang="ar">تفعيل الانتقال المتحرك بين صفحات الموقع العام</span>',
+      '        <strong data-i18n="tr.enable">Enable Transitions</strong>',
+      '        <span data-i18n="tr.enableDesc">Play an animated hand-off between pages on the public site.</span>',
       '      </div>',
       '      <label class="toggle">',
       '        <input type="checkbox" id="transition_enabled" name="transition_enabled" />',
@@ -467,35 +477,32 @@ window.AdminViews.settings = (function () {
       '    </div>',
       '    <div class="form-row single">',
       '      <div class="form-group">',
-      '        <label id="transition-style-label">Transition Style <span class="bilingual-hint bilingual-hint--inline" dir="rtl" lang="ar">نمط الانتقال</span></label>',
+      '        <label id="transition-style-label" data-i18n="tr.style">Transition Style</label>',
       '        <div class="lp-seg" role="group" aria-labelledby="transition-style-label" id="transition-style-seg">',
-      '          <button type="button" class="lp-seg__btn is-active" data-transition-style="portal" aria-pressed="true">Portal Waves <span class="bilingual-hint bilingual-hint--inline" dir="rtl" lang="ar">أمواج البوابة</span></button>',
-      '          <button type="button" class="lp-seg__btn" data-transition-style="fade" aria-pressed="false">Fade <span class="bilingual-hint bilingual-hint--inline" dir="rtl" lang="ar">تلاشي</span></button>',
-      '          <button type="button" class="lp-seg__btn" data-transition-style="slide" aria-pressed="false">Slide <span class="bilingual-hint bilingual-hint--inline" dir="rtl" lang="ar">انزلاق</span></button>',
+      '          <button type="button" class="lp-seg__btn is-active" data-transition-style="portal" aria-pressed="true" data-i18n="tr.portal">Portal Waves</button>',
+      '          <button type="button" class="lp-seg__btn" data-transition-style="fade" aria-pressed="false" data-i18n="tr.fade">Fade</button>',
+      '          <button type="button" class="lp-seg__btn" data-transition-style="slide" aria-pressed="false" data-i18n="tr.slide">Slide</button>',
       '        </div>',
       '      </div>',
       '    </div>',
       '    <div class="form-row single">',
       '      <div class="form-group">',
-      '        <label for="transition_color">Transition Color <span class="bilingual-hint bilingual-hint--inline" dir="rtl" lang="ar">لون الانتقال</span></label>',
+      '        <label for="transition_color" data-i18n="tr.color">Transition Color</label>',
       '        <div class="color-field">',
-      '          <input type="color" id="transition_color_picker" value="#d4af65" aria-label="Transition color picker" />',
-      '          <input type="text" id="transition_color" name="transition_color" placeholder="#d4af65" maxlength="7" pattern="^#[0-9A-Fa-f]{6}$" aria-label="Transition color (hex)" />',
+      '          <input type="color" id="transition_color_picker" value="#d4af65" aria-label="Transition color picker" data-i18n-aria-label="tr.colorPickerAria" />',
+      '          <input type="text" id="transition_color" name="transition_color" placeholder="#d4af65" maxlength="7" pattern="^#[0-9A-Fa-f]{6}$" aria-label="Transition color (hex)" data-i18n-aria-label="tr.colorHexAria" />',
       '        </div>',
-      '        <p class="field-hint">Used by Portal Waves only. Must be a valid hex color, e.g. #d4af65 — invalid values fall back to the default gold on Save.</p>',
-      '        <p class="field-hint bilingual-hint" dir="rtl" lang="ar">يُستخدم في نمط أمواج البوابة فقط. يجب أن يكون لوناً سداسياً صحيحاً، مثل ‎#d4af65‎ — القيم غير الصحيحة تعود تلقائياً إلى الذهبي الافتراضي عند الحفظ.</p>',
+      '        <p class="field-hint" data-i18n="tr.colorHint">Used by Portal Waves only. Must be a valid hex color, e.g. #d4af65 — invalid values fall back to the default gold on Save.</p>',
       '      </div>',
       '    </div>',
       '    <div class="stats-toolbar">',
-      '      <button type="button" class="btn btn-secondary btn-sm" id="transition-preview-btn">Preview Transition <span class="bilingual-hint bilingual-hint--inline" dir="rtl" lang="ar">معاينة الانتقال</span></button>',
-      '      <span class="field-hint" id="transition-preview-hint">Demonstrates the transition above inside the Live Preview — nothing is sent to your public site.',
-      '        <span class="bilingual-hint" dir="rtl" lang="ar">يعرض هذا زر معاينة الانتقال أعلاه داخل المعاينة المباشرة فقط — لا يُرسل شيء إلى موقعك العام.</span>',
-      '      </span>',
+      '      <button type="button" class="btn btn-secondary btn-sm" id="transition-preview-btn" data-i18n="tr.preview">Preview Transition</button>',
+      '      <span class="field-hint" id="transition-preview-hint" data-i18n="tr.previewHint">Demonstrates the transition above inside the Live Preview — nothing is sent to your public site.</span>',
       '    </div>',
       '  </div>',
       '',
       '  <div class="settings-view__foot">',
-      '    <button type="submit" class="btn btn-primary" id="save-btn-bottom">Save Changes</button>',
+      '    <button type="submit" class="btn btn-primary" id="save-btn-bottom" data-i18n="set.save">Save Changes</button>',
       '  </div>',
       '',
       '  </fieldset>',
@@ -750,14 +757,19 @@ window.AdminViews.settings = (function () {
     });
   }
   function sameStats(a, b) { return JSON.stringify(normStats(a)) === JSON.stringify(normStats(b)); }
-  function summaryText(stat) {
-    return TYPE_LABELS[stat.type] + ' · ' + (normText(stat.value) || '—') + (stat.visible === false ? ' · hidden' : '');
+  // Stamps the card summary ("Percentage · 100%") so it re-localizes in place.
+  function setSummary(node, stat) {
+    if (!node) return;
+    I18N.set(node, stat.visible === false ? 'stats.summaryHidden' : 'stats.summary', {
+      type: { key: TYPE_KEYS[stat.type] || TYPE_KEYS.custom },
+      value: normText(stat.value) || '—',
+    });
   }
   function statsChanged() { return JSON.stringify(normStats(statisticsState)) !== savedBaseline; }
   function recomputeDirty() {
     var dirty = isDirty();
     root.querySelectorAll('.stats-dirty').forEach(function (el2) {
-      el2.textContent = dirty ? '● Unsaved changes' : '✓ All changes saved';
+      I18N.set(el2, dirty ? 'set.dirty' : 'set.clean');
       el2.classList.toggle('is-dirty', dirty);
       el2.classList.toggle('is-clean', !dirty);
     });
@@ -904,8 +916,7 @@ window.AdminViews.settings = (function () {
     } else if (role === 'label-ar') {
       stat.labelAr = e.target.value;
     } else { return; }
-    var sum = card.querySelector('[data-role="summary"]');
-    if (sum) sum.textContent = summaryText(stat);
+    setSummary(card.querySelector('[data-role="summary"]'), stat);
     renderLivePreview();
     recomputeDirty();
   }
@@ -925,8 +936,7 @@ window.AdminViews.settings = (function () {
       pushHistory();
       stat.visible = e.target.checked;
       card.classList.toggle('is-hidden', !stat.visible);
-      var sum = card.querySelector('[data-role="summary"]');
-      if (sum) sum.textContent = summaryText(stat);
+      setSummary(card.querySelector('[data-role="summary"]'), stat);
       renderLivePreview(); recomputeDirty(); updateUndoBtn();
     } else if (role === 'value' && (e.target.type === 'number' || e.target.type === 'range')) {
       stat.value = formatByType(stat.type, e.target.value);
@@ -936,8 +946,7 @@ window.AdminViews.settings = (function () {
       }
       var out = card.querySelector('[data-role="value-out"]');
       if (out) out.textContent = normText(stat.value);
-      var sum2 = card.querySelector('[data-role="summary"]');
-      if (sum2) sum2.textContent = summaryText(stat);
+      setSummary(card.querySelector('[data-role="summary"]'), stat);
       renderLivePreview();
       recomputeDirty();
     }
@@ -965,10 +974,7 @@ window.AdminViews.settings = (function () {
     var frag = document.createDocumentFragment();
     var total = statisticsState.length;
     if (!total) {
-      var p = document.createElement('p');
-      p.className = 'field-hint';
-      p.textContent = 'No statistics yet. Use “+ Add statistic”, or “Reset to default”.';
-      frag.appendChild(p);
+      frag.appendChild(elT('p', 'field-hint', 'stats.empty'));
     }
     statisticsState.forEach(function (stat, idx) { frag.appendChild(buildStatCard(stat, idx, total)); });
     wrap.replaceChildren(frag);
@@ -977,9 +983,7 @@ window.AdminViews.settings = (function () {
     if (a) a.disabled = total >= MAX_STATS;
     if (h) {
       h.hidden = total < MAX_STATS;
-      h.textContent = total > MAX_STATS
-        ? 'You have ' + total + ' statistics. The maximum is ' + MAX_STATS + ' — remove some before adding more. Nothing is deleted until you Save.'
-        : 'Maximum of ' + MAX_STATS + ' statistics.';
+      I18N.set(h, total > MAX_STATS ? 'stats.overMax' : 'stats.max', { total: total, max: MAX_STATS });
     }
   }
   function replaceCard(stat) {
@@ -991,34 +995,37 @@ window.AdminViews.settings = (function () {
     var card = el('div', 'stat-card-ed' + (stat.visible === false ? ' is-hidden' : ''));
     card.dataset.statId = stat._id;
     var head = el('div', 'stat-card-ed__head');
-    head.appendChild(el('span', 'stat-card-ed__title', 'Statistic ' + (idx + 1)));
-    var sum = el('span', 'stat-card-ed__summary', summaryText(stat));
+    var n = idx + 1;
+    head.appendChild(elT('span', 'stat-card-ed__title', 'stats.card', { n: n }));
+    var sum = el('span', 'stat-card-ed__summary');
     sum.dataset.role = 'summary';
+    setSummary(sum, stat);
     head.appendChild(sum);
     card.appendChild(head);
 
     var tRow = el('div', 'toggle-row');
     var tInfo = el('div', 'toggle-info');
-    tInfo.appendChild(el('strong', null, 'Show on website'));
-    tInfo.appendChild(el('span', null, 'Uncheck to hide this from your homepage.'));
+    tInfo.appendChild(elT('strong', null, 'stats.show'));
+    tInfo.appendChild(elT('span', null, 'stats.showDesc'));
     var tLabel = el('label', 'toggle');
     var tCb = document.createElement('input');
     tCb.type = 'checkbox'; tCb.dataset.role = 'visible';
     tCb.checked = stat.visible !== false;
-    tCb.setAttribute('aria-label', 'Show statistic ' + (idx + 1) + ' on website');
+    I18N.setAttr(tCb, 'aria-label', 'stats.showAria', { n: n });
     tLabel.appendChild(tCb);
     tLabel.appendChild(el('span', 'toggle-track'));
     tRow.appendChild(tInfo); tRow.appendChild(tLabel);
     card.appendChild(tRow);
 
     var styleGroup = el('div', 'form-group stat-card-ed__row');
-    var styleLbl = el('label', null, 'Display style');
+    var styleLbl = elT('label', null, 'stats.style');
     styleLbl.htmlFor = 'st-' + stat._id;
     var styleSel = document.createElement('select');
     styleSel.id = 'st-' + stat._id; styleSel.dataset.role = 'type';
-    Object.keys(TYPE_LABELS).forEach(function (k) {
+    Object.keys(TYPE_KEYS).forEach(function (k) {
       var o = document.createElement('option');
-      o.value = k; o.textContent = TYPE_LABELS[k];
+      o.value = k;
+      I18N.set(o, TYPE_KEYS[k]);
       styleSel.appendChild(o);
     });
     styleSel.value = stat.type;
@@ -1028,28 +1035,28 @@ window.AdminViews.settings = (function () {
     card.appendChild(buildValueRow(stat));
 
     var lRow = el('div', 'stat-card-ed__row two');
-    lRow.appendChild(buildTextField('sle-' + stat._id, 'Label (English)', 'label-en', stat.label, false));
-    lRow.appendChild(buildTextField('sla-' + stat._id, 'Label (Arabic)', 'label-ar', stat.labelAr, true));
+    lRow.appendChild(buildTextField('sle-' + stat._id, 'stats.labelEn', 'label-en', stat.label, false));
+    lRow.appendChild(buildTextField('sla-' + stat._id, 'stats.labelAr', 'label-ar', stat.labelAr, true));
     card.appendChild(lRow);
 
     var foot = el('div', 'stat-card-ed__foot');
-    var up = el('button', 'btn btn-ghost btn-sm', '↑ Move up');
+    var up = elT('button', 'btn btn-ghost btn-sm', 'stats.moveUp');
     up.type = 'button'; up.dataset.role = 'up'; up.disabled = idx === 0;
-    up.setAttribute('aria-label', 'Move statistic ' + (idx + 1) + ' up');
-    var down = el('button', 'btn btn-ghost btn-sm', '↓ Move down');
+    I18N.setAttr(up, 'aria-label', 'stats.upAria', { n: n });
+    var down = elT('button', 'btn btn-ghost btn-sm', 'stats.moveDown');
     down.type = 'button'; down.dataset.role = 'down'; down.disabled = idx === total - 1;
-    down.setAttribute('aria-label', 'Move statistic ' + (idx + 1) + ' down');
+    I18N.setAttr(down, 'aria-label', 'stats.downAria', { n: n });
     var spacer = el('span', 'spacer');
-    var rm = el('button', 'btn btn-danger btn-sm', 'Remove');
+    var rm = elT('button', 'btn btn-danger btn-sm', 'common.remove');
     rm.type = 'button'; rm.dataset.role = 'remove';
-    rm.setAttribute('aria-label', 'Remove statistic ' + (idx + 1));
+    I18N.setAttr(rm, 'aria-label', 'stats.removeAria', { n: n });
     foot.appendChild(up); foot.appendChild(down); foot.appendChild(spacer); foot.appendChild(rm);
     card.appendChild(foot);
     return card;
   }
-  function buildTextField(id, labelText, role, value, rtl) {
+  function buildTextField(id, labelKey, role, value, rtl) {
     var g = el('div', 'form-group');
-    var l = el('label', null, labelText);
+    var l = elT('label', null, labelKey);
     l.htmlFor = id;
     var i = document.createElement('input');
     i.type = 'text'; i.id = id; i.dataset.role = role;
@@ -1063,10 +1070,10 @@ window.AdminViews.settings = (function () {
     var id = 'sv-' + stat._id;
     var n = firstNumber(stat.value);
     var num = Number.isFinite(n) ? n : '';
-    var labelText = 'Value';
+    var labelKey = 'stats.value';
     var control;
     if (stat.type === 'percent') {
-      labelText = 'Percentage';
+      labelKey = 'stats.valuePercent';
       var wrap = el('div', 'flex-center gap-1');
       var range = document.createElement('input');
       range.type = 'range'; range.id = id; range.dataset.role = 'value';
@@ -1078,7 +1085,7 @@ window.AdminViews.settings = (function () {
       wrap.appendChild(range); wrap.appendChild(out);
       control = wrap;
     } else if (stat.type === 'plus') {
-      labelText = 'Number';
+      labelKey = 'stats.valueNumber';
       var wrap2 = el('div', 'flex-center gap-1');
       var inp = document.createElement('input');
       inp.type = 'number'; inp.id = id; inp.dataset.role = 'value';
@@ -1087,7 +1094,7 @@ window.AdminViews.settings = (function () {
       wrap2.appendChild(inp); wrap2.appendChild(el('span', 'text-muted', '+'));
       control = wrap2;
     } else if (stat.type === 'rating') {
-      labelText = 'Rating (out of 5)';
+      labelKey = 'stats.valueRating';
       var wrap3 = el('div', 'flex-center gap-1');
       var inp2 = document.createElement('input');
       inp2.type = 'number'; inp2.id = id; inp2.dataset.role = 'value';
@@ -1096,20 +1103,20 @@ window.AdminViews.settings = (function () {
       wrap3.appendChild(inp2); wrap3.appendChild(el('span', 'text-muted', '/ 5'));
       control = wrap3;
     } else if (stat.type === 'number') {
-      labelText = 'Number';
+      labelKey = 'stats.valueNumber';
       var inp3 = document.createElement('input');
       inp3.type = 'number'; inp3.id = id; inp3.dataset.role = 'value';
       inp3.value = num === '' ? '' : String(num);
       control = inp3;
     } else {
-      labelText = 'Text';
+      labelKey = 'stats.valueText';
       var inp4 = document.createElement('input');
       inp4.type = 'text'; inp4.id = id; inp4.dataset.role = 'value';
-      inp4.placeholder = 'e.g. 24/7, Since 1998, Free';
+      I18N.setAttr(inp4, 'placeholder', 'stats.valueTextPh');
       inp4.value = stat.value == null ? '' : String(stat.value);
       control = inp4;
     }
-    var l = el('label', null, labelText);
+    var l = elT('label', null, labelKey);
     l.htmlFor = id;
     g.appendChild(l); g.appendChild(control);
     return g;
@@ -1160,7 +1167,7 @@ window.AdminViews.settings = (function () {
   }
   function updateLocEditUi() {
     var b = $('loc-edit-btn');
-    if (b) b.textContent = locEditActive ? 'Editing in Preview…' : 'Edit Image in Preview';
+    if (b) I18N.set(b, locEditActive ? 'set.locEditing' : 'set.locEdit');
   }
   function setLocationVisualMode(mode) {
     locVisualMode = (mode === 'image') ? 'image' : 'map';
@@ -1210,14 +1217,14 @@ window.AdminViews.settings = (function () {
   }
   async function doSave() {
     if (!ctx || ctx.restaurantLoadState !== 'ready' || !ctx.restaurant || !ctx.restaurant.id) {
-      showToast('Restaurant settings could not be loaded. Reload the page before saving.', 'error');
+      showToast(t('set.notLoadedSave'), 'error');
       return;
     }
     var restaurant = ctx.restaurant;
     var session = ctx.session;
     var btnBottom = $('save-btn-bottom');
     var btnTop = $('save-btn');
-    if (btnBottom) { btnBottom.disabled = true; btnBottom.innerHTML = '<span class="btn-spinner"></span> Saving…'; }
+    if (btnBottom) { btnBottom.disabled = true; btnBottom.innerHTML = '<span class="btn-spinner"></span> '; I18N.set(btnBottom, 'common.saving'); }
     if (btnTop) btnTop.disabled = true;
 
     var oldHeroUrl = restaurant.hero_image_url || '';
@@ -1234,7 +1241,7 @@ window.AdminViews.settings = (function () {
 
     try {
       if (!fieldVal('name_ar') || !fieldVal('name_en')) {
-        showToast('Restaurant name (Arabic and English) is required.', 'error');
+        showToast(t('set.nameRequired'), 'error');
         return;
       }
 
@@ -1322,7 +1329,7 @@ window.AdminViews.settings = (function () {
       var result = await updateQuery.select('updated_at');
       if (result.error) throw new Error(result.error.message);
       if (expectedUpdatedAt && (!result.data || !result.data.length)) {
-        throw ownerError('Someone else saved Settings changes after this page loaded. Reload the page to see the latest version, then make your changes again.');
+        throw ownerError(t('set.conflict'));
       }
       if (result.data && result.data[0]) restaurant.updated_at = result.data[0].updated_at;
       persisted = true;
@@ -1395,7 +1402,7 @@ window.AdminViews.settings = (function () {
       // with _previewId so preview stat-clicks keep working).
       postPreviewData();
 
-      showToast('Settings saved successfully.', 'success');
+      showToast(t('set.saved'), 'success');
       if (ctx && typeof ctx.sound === 'function') ctx.sound('success');
     } catch (err) {
       if (!persisted) {
@@ -1404,10 +1411,10 @@ window.AdminViews.settings = (function () {
         if (uploadedLocationUrl && uploadedLocationUrl !== oldLocationUrl) { await deleteFromStorage(uploadedLocationUrl); }
       }
       console.error(err);
-      showToast(friendlyDbError(err, 'Save failed. Please try again.'), 'error', 5500);
+      showToast(friendlyDbError(err, t('common.saveFailed')), 'error', 5500);
       recomputeDirty();
     } finally {
-      if (btnBottom) { btnBottom.disabled = false; btnBottom.textContent = 'Save Changes'; }
+      if (btnBottom) { btnBottom.disabled = false; btnBottom.textContent = ''; I18N.set(btnBottom, 'set.save'); }
       if (btnTop) btnTop.disabled = false;
     }
   }
@@ -1522,6 +1529,7 @@ window.AdminViews.settings = (function () {
     resetState();
 
     root.innerHTML = editorMarkup();
+    I18N.apply(root);   // Admin strings only — never touches field values
 
     var ready = ctx.restaurantLoadState === 'ready' && ctx.restaurant && ctx.restaurant.id;
     var r = ready ? ctx.restaurant : null;

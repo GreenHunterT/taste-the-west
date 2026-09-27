@@ -30,6 +30,11 @@
 window.LivePreview = (function () {
   'use strict';
 
+  // Admin interface string lookup (1T) — optional dependency on js/i18n.js.
+  function _t(key, fallback) {
+    return (window.AdminI18n && typeof window.AdminI18n.t === 'function') ? window.AdminI18n.t(key) : fallback;
+  }
+
   // Whitelisted preview targets. The iframe src is only ever built from
   // this map after validating the key — never from a raw postMessage string.
   const DEFAULT_PAGES = {
@@ -543,7 +548,7 @@ window.LivePreview = (function () {
       _page = _activePage;
       _syncSeg('data-page', _page);
       _emit('error', { page: dead && dead.dataset ? dead.dataset.slot : null });
-      TOAST('Preview page could not be loaded.', 'error');
+      TOAST(_t('preview.loadFailed', 'Preview page could not be loaded.'), 'error');
     }
 
     function _postToActive(msg) {
@@ -683,12 +688,21 @@ window.LivePreview = (function () {
     function _demoAfter(ms, fn) {
       _demoTimers.push(setTimeout(fn, ms));
     }
-    const DEMO_LABELS = {
-      portal: 'Portal Waves · أمواج البوابة',
-      fade:   'Fade · تلاشي',
-      slide:  'Slide · انزلاق',
-      off:    'Transitions are OFF — pages load instantly · الانتقالات متوقفة — تنتقل الصفحات فوراً',
+    // Badge text follows the Admin INTERFACE language (1T), not the Preview
+    // language — it is Admin chrome drawn in this document. Stamped via
+    // AdminI18n.set() so an Admin language switch re-labels it in place.
+    const DEMO_LABEL_KEYS = {
+      portal: 'preview.demo.portal',
+      fade:   'preview.demo.fade',
+      slide:  'preview.demo.slide',
+      off:    'preview.demo.off',
     };
+    function _setBadge(badge, which) {
+      if (!badge) return;
+      const key = DEMO_LABEL_KEYS[which] || DEMO_LABEL_KEYS.portal;
+      if (window.AdminI18n) window.AdminI18n.set(badge, key);
+      else badge.textContent = key;
+    }
 
     // 1R.1 §2 — Admin-only inspection timing. Mirrors js/app.js's own
     // per-style PORTAL/FADE/SLIDE close(+hold) constants — that file is the
@@ -755,14 +769,14 @@ window.LivePreview = (function () {
       _clearDemoTimers();
 
       if (!enabled) {
-        if (badge) badge.textContent = DEMO_LABELS.off;
+        _setBadge(badge, 'off');
         _demoEl.classList.add('is-active', 'show-badge');
         _demoAfter(900, function () { _demoEl.classList.remove('is-active', 'show-badge'); });
         return;
       }
 
       _demoClose(style, color, function (timing) {
-        if (badge) badge.textContent = DEMO_LABELS[style] || DEMO_LABELS.portal;
+        _setBadge(badge, style);
         _demoEl.classList.add('show-badge');
         _demoAfter(timing.hold, function () { _demoOpenAndCleanup(style, timing.open); });
       });

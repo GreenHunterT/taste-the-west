@@ -47,12 +47,12 @@ window.AdminViews['menu-workspace'] = (function () {
     return [
       '<div class="menu-workspace">',
       '  <div class="menu-workspace__head">',
-      '    <h1 class="menu-workspace__title">Menu</h1>',
-      '    <p class="menu-workspace__desc">Manage the items and categories on your public menu.</p>',
+      '    <h1 class="menu-workspace__title" data-i18n="mw.title">Menu</h1>',
+      '    <p class="menu-workspace__desc" data-i18n="mw.desc">Manage the items and categories on your public menu.</p>',
       '  </div>',
-      '  <div class="menu-tabs" role="tablist" aria-label="Menu section">',
-      '    <button type="button" class="menu-tab" data-section="items" role="tab" aria-selected="false">Menu Items</button>',
-      '    <button type="button" class="menu-tab" data-section="categories" role="tab" aria-selected="false">Categories</button>',
+      '  <div class="menu-tabs" role="tablist" aria-label="Menu section" data-i18n-aria-label="mw.tabsAria">',
+      '    <button type="button" class="menu-tab" data-section="items" role="tab" aria-selected="false" data-i18n="mw.items">Menu Items</button>',
+      '    <button type="button" class="menu-tab" data-section="categories" role="tab" aria-selected="false" data-i18n="mw.categories">Categories</button>',
       '  </div>',
       '  <div class="menu-workspace__body" id="menu-workspace-body"></div>',
       '</div>',
@@ -78,7 +78,7 @@ window.AdminViews['menu-workspace'] = (function () {
     bodyEl.replaceChildren();
     var d = document.createElement('div');
     d.className = 'acard admin-view-error';
-    d.textContent = 'This section failed to load. Reload the page to try again.';
+    window.AdminI18n.set(d, 'shell.viewError');
     bodyEl.appendChild(d);
   }
 
@@ -147,6 +147,7 @@ window.AdminViews['menu-workspace'] = (function () {
     teardownFns = [];
 
     root.innerHTML = markup();
+    window.AdminI18n.apply(root);
     tabsEl = root.querySelector('.menu-tabs');
     bodyEl = root.querySelector('#menu-workspace-body');
     on(tabsEl, 'click', onTabClick);

@@ -36,6 +36,13 @@ async function signOut() {
 }
 
 
+// Admin interface i18n (1T) — js/i18n.js loads first; this falls back to the
+// English string if it is ever absent, so these helpers never throw.
+function adminT(key, vars, fallback) {
+  return (window.AdminI18n && typeof window.AdminI18n.t === 'function')
+    ? window.AdminI18n.t(key, vars) : (fallback || key);
+}
+
 // ── TOAST SYSTEM ─────────────────────────────────────────────────
 function showToast(message, type = 'success', duration = 3500) {
   const container = document.getElementById('toast-container');
@@ -44,7 +51,10 @@ function showToast(message, type = 'success', duration = 3500) {
   const icons = { success: '✓', error: '✕', warning: '⚠' };
   const toast = document.createElement('div');
   toast.className = `toast toast-${type}`;
-  toast.innerHTML = `<span class="toast-icon">${icons[type] || '·'}</span><span>${message}</span>`;
+  // Arabic Admin → the message text reads RTL; the toast's own placement and
+  // icon position stay put (layout remains LTR, per 1T).
+  const rtl = !!(window.AdminI18n && window.AdminI18n.getLang() === 'ar');
+  toast.innerHTML = `<span class="toast-icon">${icons[type] || '·'}</span><span${rtl ? ' dir="rtl" lang="ar"' : ''}>${message}</span>`;
   container.appendChild(toast);
 
   setTimeout(() => {
@@ -71,18 +81,18 @@ function friendlyDbError(err, fallback) {
   if (raw.indexOf('OWNER_MSG:') === 0) return raw.slice('OWNER_MSG:'.length);
   const low = raw.toLowerCase();
   if (low.indexOf('duplicate key') !== -1 || low.indexOf('already exists') !== -1) {
-    return 'That name is already in use. Please choose a different one.';
+    return adminT('err.duplicate');
   }
   if (low.indexOf('failed to fetch') !== -1 || low.indexOf('networkerror') !== -1 || low.indexOf('load failed') !== -1) {
-    return 'Network error. Please check your connection and try again.';
+    return adminT('err.network');
   }
   if (low.indexOf('row-level security') !== -1 || low.indexOf('permission denied') !== -1) {
-    return 'You do not have permission to make this change.';
+    return adminT('err.permission');
   }
   if (low.indexOf('foreign key') !== -1 || low.indexOf('violates') !== -1) {
-    return 'This item is still in use elsewhere and cannot be changed right now.';
+    return adminT('err.inUse');
   }
-  return fallback || 'Something went wrong. Please try again.';
+  return fallback || adminT('err.generic');
 }
 
 // ── LOADING OVERLAY ───────────────────────────────────────────────
@@ -95,10 +105,10 @@ const IMG_MAX_MB = 5;
 
 function validateImageFile(file) {
   if (!IMG_ALLOWED_TYPES.includes(file.type)) {
-    return 'Image must be JPG, PNG, or WebP.';
+    return adminT('err.imageType');
   }
   if (file.size > IMG_MAX_MB * 1024 * 1024) {
-    return `Image must be smaller than ${IMG_MAX_MB} MB.`;
+    return adminT('err.imageSize', { mb: IMG_MAX_MB });
   }
   return null;
 }

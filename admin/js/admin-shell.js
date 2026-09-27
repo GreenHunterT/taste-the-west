@@ -15,6 +15,10 @@
 (async function () {
   'use strict';
 
+  // Admin interface i18n (1T) — js/i18n.js is loaded before this file.
+  const I18N = window.AdminI18n;
+  const t = I18N.t;
+
   // ── Persisted, UI-only shell state (no drafts, no tokens, no PII) ──
   const UI_KEY = 'ttw_admin_ui';
   function readUi() {
@@ -103,7 +107,7 @@
   // ── Boot ─────────────────────────────────────────────────────────
   if (!window.LivePreview || typeof window.LivePreview.mount !== 'function') {
     console.error('[shell] LivePreview controller missing — check the <script> order in admin/index.html');
-    if (typeof showToast === 'function') showToast('Admin failed to load. Reload the page.', 'error');
+    if (typeof showToast === 'function') showToast(t('shell.bootFailed'), 'error');
     hideLoading();
     return;
   }
@@ -206,8 +210,9 @@
     if (!soundBtn) return;
     const on = adminSound.isEnabled();
     soundBtn.setAttribute('aria-pressed', on ? 'true' : 'false');
-    soundBtn.setAttribute('aria-label', on ? 'Admin sounds on' : 'Admin sounds off');
-    soundBtn.title = on ? 'Admin sounds on' : 'Admin sounds off';
+    // Stamped keys, so an Admin language switch re-labels it in place.
+    I18N.setAttr(soundBtn, 'aria-label', on ? 'shell.soundOn' : 'shell.soundOff');
+    I18N.setAttr(soundBtn, 'title', on ? 'shell.soundOn' : 'shell.soundOff');
   }
   syncSoundBtn();
   if (soundBtn) {
@@ -419,7 +424,7 @@
     if (dirtyPending) return dirtyPending;
     const canDialog = dirtyDialog && typeof dirtyDialog.showModal === 'function';
     if (!canDialog) {
-      return Promise.resolve(window.confirm('You have unsaved changes. If you leave now, they will be discarded.'));
+      return Promise.resolve(window.confirm(t('dirty.msg')));
     }
     const opener = document.activeElement;
     dirtyPending = new Promise(function (resolve) {
@@ -441,7 +446,7 @@
       dirtyDialog.addEventListener('cancel', onCancel);
       dirtyDialog.returnValue = 'stay';
       try { dirtyDialog.showModal(); }
-      catch (e) { finish(window.confirm('You have unsaved changes. If you leave now, they will be discarded.')); return; }
+      catch (e) { finish(window.confirm(t('dirty.msg'))); return; }
       adminSound.play('warning');   // §18 — once, when the dialog opens
       const stayBtn = dirtyDialog.querySelector('[data-dirty-stay]');
       if (stayBtn) { try { stayBtn.focus(); } catch (e) {} }
@@ -473,7 +478,7 @@
   function makeViewError() {
     const d = document.createElement('div');
     d.className = 'acard admin-view-error';
-    d.textContent = 'This section failed to load. Reload the page to try again.';
+    I18N.set(d, 'shell.viewError');
     return d;
   }
 

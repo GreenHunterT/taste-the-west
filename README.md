@@ -24,6 +24,10 @@ below.
   Categories, with a live Preview of the real public site (Page / Device /
   Language controls; Preview always scales to fit — there is no separate
   "100%" mode)
+- Admin interface language toggle (EN / عربي) next to Menu | Settings — a
+  per-device preference (localStorage) that only changes the Admin's own
+  labels. Bilingual content fields always stay visible, the Live Preview
+  language stays independent, and the dashboard layout never mirrors
 
 ---
 
@@ -40,7 +44,9 @@ taste-the-west/
 ├── admin/                Private owner dashboard (Supabase Auth-gated)
 │   ├── index.html         The persistent Admin shell (Menu + Settings)
 │   ├── login.html         Sign-in
-│   └── js/                Shell, auth, Live Preview, and the 3 admin views
+│   └── js/                Shell, auth, Live Preview, Admin i18n (i18n.js), and the 3 admin views
+│
+├── tests/                Admin i18n tests (see the header of each file to run)
 │
 ├── config/
 │   ├── shop.js           Bundled placeholder restaurant + emergency fallback

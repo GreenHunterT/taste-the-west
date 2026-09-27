@@ -23,6 +23,12 @@ window.AdminViews.menu = (function () {
   // language. Language is never inferred from typed characters.
   var FIELD_LANG = { 'p-name-en': 'en', 'p-name-ar': 'ar', 'p-desc-en': 'en', 'p-desc-ar': 'ar' };
 
+  // Admin interface i18n (1T). Owner-entered data is never translated.
+  var I18N = window.AdminI18n;
+  var t = I18N.t;
+  // An HTML-string attribute pair that stamps + pre-translates one element.
+  function i18nAttr(key) { return ' data-i18n="' + key + '"' + (I18N.getLang() === 'ar' ? ' dir="rtl" lang="ar"' : ''); }
+
   // ── Per-mount state (reset by resetState() at the top of mount()) ──
   var ctx, root;
   var mountToken = 0;          // bumped on every mount + unmount; guards a slow async mount()
@@ -93,11 +99,11 @@ window.AdminViews.menu = (function () {
   function langForField(id) {
     return Object.prototype.hasOwnProperty.call(FIELD_LANG, id) ? FIELD_LANG[id] : '';
   }
-  function makeErrNote(text) {
+  function makeErrNote(key) {
     var p = document.createElement('p');
     p.className = 'field-hint';
     p.style.cssText = 'color:var(--amuted);padding:24px';
-    p.textContent = text || 'The menu editor is read-only — the restaurant could not be loaded. Reload the page.';
+    I18N.set(p, key || 'menu.readOnly');
     return p;
   }
 
@@ -109,23 +115,23 @@ window.AdminViews.menu = (function () {
       '<div class="menu-view">',
       '  <div class="admin-page-header">',
       '    <div>',
-      '      <h1 class="admin-page-title">Menu Items</h1>',
-      '      <p class="admin-page-desc">Manage all products on your public menu. Edits preview instantly; they go live only after you Save.</p>',
+      '      <h1 class="admin-page-title" data-i18n="mw.items">Menu Items</h1>',
+      '      <p class="admin-page-desc" data-i18n="menu.desc">Manage all products on your public menu. Edits preview instantly; they go live only after you Save.</p>',
       '    </div>',
-      '    <button class="btn btn-primary" id="add-product-btn" type="button">+ Add Item</button>',
+      '    <button class="btn btn-primary" id="add-product-btn" type="button" data-i18n="menu.add">+ Add Item</button>',
       '  </div>',
-      '  <p class="field-hint settings-view__hint--error" id="menu-error-note" hidden>Menu is read-only — the restaurant could not be loaded. Reload the page.</p>',
+      '  <p class="field-hint settings-view__hint--error" id="menu-error-note" hidden data-i18n="menu.readOnly">Menu is read-only — the restaurant could not be loaded. Reload the page.</p>',
       '',
       '  <div class="acard">',
       '    <div class="table-toolbar">',
       '      <div class="table-search">',
       '        <svg class="table-search-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>',
-      '        <input type="search" id="table-search" placeholder="Search items…" />',
+      '        <input type="search" id="table-search" placeholder="Search items…" data-i18n-placeholder="menu.search" />',
       '      </div>',
-      '      <select id="cat-filter" style="width:auto"><option value="">All categories</option></select>',
+      '      <select id="cat-filter" style="width:auto"><option value="" data-i18n="menu.allCategories">All categories</option></select>',
       '    </div>',
       '    <div id="products-table-wrap">',
-      '      <div class="empty-state"><div class="empty-state-icon">🍕</div><h3>Loading…</h3><p>Fetching your menu items.</p></div>',
+      '      <div class="empty-state"><div class="empty-state-icon">🍕</div><h3 data-i18n="common.loading">Loading…</h3><p data-i18n="menu.loadingDesc">Fetching your menu items.</p></div>',
       '    </div>',
       '  </div>',
       '',
@@ -133,74 +139,74 @@ window.AdminViews.menu = (function () {
       '  <div class="modal-backdrop" id="product-modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">',
       '    <div class="modal">',
       '      <div class="modal-header">',
-      '        <h2 class="modal-title" id="modal-title">Add Menu Item</h2>',
-      '        <button class="modal-close" id="modal-close" type="button" aria-label="Close">×</button>',
+      '        <h2 class="modal-title" id="modal-title" data-i18n="menu.modalAdd">Add Menu Item</h2>',
+      '        <button class="modal-close" id="modal-close" type="button" aria-label="Close" data-i18n-aria-label="common.close">×</button>',
       '      </div>',
       '      <div class="modal-body">',
       '        <form id="product-form" novalidate>',
       '          <input type="hidden" id="product-id" />',
       '          <div class="form-row">',
       '            <div class="form-group">',
-      '              <label for="p-name-ar">Name (Arabic) <span class="required">*</span></label>',
+      '              <label for="p-name-ar" data-i18n="menu.nameAr">Name (Arabic) <span class="required">*</span></label>',
       '              <input type="text" id="p-name-ar" dir="rtl" placeholder="مارغريتا كلاسيك" required />',
       '            </div>',
       '            <div class="form-group">',
-      '              <label for="p-name-en">Name (English) <span class="required">*</span></label>',
+      '              <label for="p-name-en" data-i18n="menu.nameEn">Name (English) <span class="required">*</span></label>',
       '              <input type="text" id="p-name-en" placeholder="Classic Margherita" required />',
       '            </div>',
       '          </div>',
       '          <div class="form-row">',
       '            <div class="form-group">',
-      '              <label for="p-desc-ar">Description (Arabic)</label>',
+      '              <label for="p-desc-ar" data-i18n="menu.descAr">Description (Arabic)</label>',
       '              <textarea id="p-desc-ar" dir="rtl" placeholder="وصف المنتج…" rows="2"></textarea>',
       '            </div>',
       '            <div class="form-group">',
-      '              <label for="p-desc-en">Description (English)</label>',
+      '              <label for="p-desc-en" data-i18n="menu.descEn">Description (English)</label>',
       '              <textarea id="p-desc-en" placeholder="Product description…" rows="2"></textarea>',
       '            </div>',
       '          </div>',
       '          <div class="form-row triple">',
       '            <div class="form-group">',
-      '              <label for="p-price">Price (﷼) <span class="required">*</span></label>',
-      '              <input type="text" id="p-price" placeholder="e.g. 39 or 18.5" required />',
+      '              <label for="p-price" data-i18n="menu.price">Price (﷼) <span class="required">*</span></label>',
+      '              <input type="text" id="p-price" placeholder="e.g. 39 or 18.5" data-i18n-placeholder="menu.pricePh" required />',
       '            </div>',
       '            <div class="form-group">',
-      '              <label for="p-category">Category</label>',
-      '              <select id="p-category"><option value="">— None —</option></select>',
+      '              <label for="p-category" data-i18n="menu.category">Category</label>',
+      '              <select id="p-category"><option value="" data-i18n="common.none">— None —</option></select>',
       '            </div>',
       '            <div class="form-group">',
-      '              <label for="p-sort">Sort Order</label>',
+      '              <label for="p-sort" data-i18n="menu.sort">Sort Order</label>',
       '              <input type="number" id="p-sort" value="0" min="0" />',
       '            </div>',
       '          </div>',
       '          <div class="form-group mb-2">',
-      '            <label>Product Image <small>(JPG · PNG · WebP · max 5 MB)</small></label>',
+      '            <label data-i18n="menu.image">Product Image <small data-i18n="menu.imageNote">(JPG · PNG · WebP · max 5 MB)</small></label>',
       '            <div class="img-upload-area" onclick="document.getElementById(\'p-image-file\').click()">',
       '              <input type="file" id="p-image-file" accept="image/jpeg,image/png,image/webp" />',
       '              <div class="img-upload-icon">📷</div>',
-      '              <div class="img-upload-label"><strong>Click to upload</strong> or drag and drop</div>',
-      '              <div class="img-upload-hint">600×450 px recommended</div>',
+      '              <div class="img-upload-label" data-i18n-dir><strong data-i18n="upload.click">Click to upload</strong> <span data-i18n="upload.drag">or drag and drop</span></div>',
+      '              <div class="img-upload-hint" data-i18n="menu.imageHint">600×450 px recommended</div>',
       '            </div>',
       '            <div style="margin-top:10px">',
-      '              <img id="p-image-preview" class="img-preview" hidden alt="Product preview" />',
-      '              <button type="button" id="p-image-remove" class="btn btn-danger btn-sm mt-1" hidden>Remove image</button>',
+      '              <img id="p-image-preview" class="img-preview" hidden alt="Product preview" data-i18n-alt="menu.imageAlt" />',
+      '              <button type="button" id="p-image-remove" class="btn btn-danger btn-sm mt-1" hidden data-i18n="menu.removeImage">Remove image</button>',
       '            </div>',
       '          </div>',
       '          <div class="divider"></div>',
       '          <div class="toggle-row">',
-      '            <div class="toggle-info"><strong>Featured</strong><span>Shows on the homepage spotlight</span></div>',
+      '            <div class="toggle-info"><strong data-i18n="menu.featured">Featured</strong><span data-i18n="menu.featuredDesc">Shows on the homepage spotlight</span></div>',
       '            <label class="toggle"><input type="checkbox" id="p-featured" /><span class="toggle-track"></span></label>',
       '          </div>',
       '          <div class="toggle-row">',
-      '            <div class="toggle-info"><strong>Available</strong><span>Visible on the public menu (uncheck to hide temporarily)</span></div>',
+      '            <div class="toggle-info"><strong data-i18n="menu.available">Available</strong><span data-i18n="menu.availableDesc">Visible on the public menu (uncheck to hide temporarily)</span></div>',
       '            <label class="toggle"><input type="checkbox" id="p-available" checked /><span class="toggle-track"></span></label>',
       '          </div>',
       '        </form>',
       '      </div>',
       '      <div class="modal-footer">',
-      '        <button class="btn btn-ghost btn-sm" id="mn-view-preview" type="button">View in Preview</button>',
-      '        <button class="btn btn-ghost" id="modal-cancel" type="button">Cancel</button>',
-      '        <button class="btn btn-primary" id="modal-save" type="button">Save Item</button>',
+      '        <button class="btn btn-ghost btn-sm" id="mn-view-preview" type="button" data-i18n="common.viewInPreview">View in Preview</button>',
+      '        <button class="btn btn-ghost" id="modal-cancel" type="button" data-i18n="common.cancel">Cancel</button>',
+      '        <button class="btn btn-primary" id="modal-save" type="button" data-i18n="menu.saveItem">Save Item</button>',
       '      </div>',
       '    </div>',
       '  </div>',
@@ -208,11 +214,11 @@ window.AdminViews.menu = (function () {
       '  <!-- Confirm Delete Dialog -->',
       '  <div class="modal-backdrop" id="confirm-modal" role="dialog" aria-modal="true" aria-labelledby="confirm-title">',
       '    <div class="confirm-dialog">',
-      '      <h2 class="confirm-title" id="confirm-title">Delete item?</h2>',
-      '      <p class="confirm-msg" id="confirm-msg">This will permanently remove the item from your menu. This cannot be undone.</p>',
+      '      <h2 class="confirm-title" id="confirm-title" data-i18n="menu.deleteTitle">Delete item?</h2>',
+      '      <p class="confirm-msg" id="confirm-msg" data-i18n="menu.deleteMsg">This will permanently remove the item from your menu. This cannot be undone.</p>',
       '      <div class="confirm-actions">',
-      '        <button class="btn btn-ghost" id="confirm-cancel" type="button">Cancel</button>',
-      '        <button class="btn btn-danger" id="confirm-ok" type="button">Delete</button>',
+      '        <button class="btn btn-ghost" id="confirm-cancel" type="button" data-i18n="common.cancel">Cancel</button>',
+      '        <button class="btn btn-danger" id="confirm-ok" type="button" data-i18n="common.delete">Delete</button>',
       '      </div>',
       '    </div>',
       '  </div>',
@@ -253,12 +259,12 @@ window.AdminViews.menu = (function () {
       allCategories = cRes.ok ? await cRes.json() : [];
       populateCategoryControls();
       renderTable();
-      if (!pRes.ok || !cRes.ok) showToast('Some menu data could not be loaded. Reload to retry.', 'warning', 5000);
+      if (!pRes.ok || !cRes.ok) showToast(t('menu.someNotLoaded'), 'warning', 5000);
     } catch (e) {
       if (e && e.name === 'AbortError') return;   // unmounted / superseded mid-fetch
       console.error('[menu view] load failed:', e);
       var wrap = q('#products-table-wrap');
-      if (wrap) { wrap.textContent = ''; wrap.appendChild(makeErrNote('Menu could not be loaded. Reload to retry.')); }
+      if (wrap) { wrap.textContent = ''; wrap.appendChild(makeErrNote('menu.loadFailed')); }
     } finally {
       loadAbort = null;
     }
@@ -269,7 +275,8 @@ window.AdminViews.menu = (function () {
     if (filter) {
       var cur = filter.value;
       filter.textContent = '';
-      filter.appendChild(opt('', 'All categories'));
+      var allOpt = opt('', ''); I18N.set(allOpt, 'menu.allCategories');
+      filter.appendChild(allOpt);
       allCategories.forEach(function (c) { filter.appendChild(opt(c.id, c.name_en || c.name_ar || '—')); });
       filter.value = cur;
     }
@@ -277,7 +284,8 @@ window.AdminViews.menu = (function () {
     if (sel) {
       var curS = sel.value;
       sel.textContent = '';
-      sel.appendChild(opt('', '— None —'));
+      var noneOpt = opt('', ''); I18N.set(noneOpt, 'common.none');
+      sel.appendChild(noneOpt);
       allCategories.forEach(function (c) {
         sel.appendChild(opt(c.id, (c.name_en || '—') + ' / ' + (c.name_ar || '—')));
       });
@@ -309,9 +317,9 @@ window.AdminViews.menu = (function () {
       wrap.innerHTML =
         '<div class="empty-state">' +
         '<div class="empty-state-icon">🍕</div>' +
-        '<h3>' + (allProducts.length ? 'No results' : 'No items yet') + '</h3>' +
-        '<p>' + (allProducts.length ? 'Try clearing your filters.' : 'Add your first menu item to get started.') + '</p>' +
-        (allProducts.length ? '' : '<button class="btn btn-primary" id="add-product-btn-empty" type="button">+ Add Item</button>') +
+        '<h3' + i18nAttr(allProducts.length ? 'menu.noResults' : 'menu.empty') + '>' + esc(t(allProducts.length ? 'menu.noResults' : 'menu.empty')) + '</h3>' +
+        '<p' + i18nAttr(allProducts.length ? 'menu.noResultsDesc' : 'menu.emptyDesc') + '>' + esc(t(allProducts.length ? 'menu.noResultsDesc' : 'menu.emptyDesc')) + '</p>' +
+        (allProducts.length ? '' : '<button class="btn btn-primary" id="add-product-btn-empty" type="button"' + i18nAttr('menu.add') + '>' + esc(t('menu.add')) + '</button>') +
         '</div>';
       return;
     }
@@ -322,9 +330,10 @@ window.AdminViews.menu = (function () {
       var catName = cat ? cat.name_en : '—';
       var imgSrc = p.image_url || PLACEHOLDER;
       var avBadge = p.available
-        ? '<span class="badge badge-success">Active</span>'
-        : '<span class="badge badge-muted">Hidden</span>';
-      var ftBadge = p.featured ? '<span class="badge badge-gold" style="margin-left:4px">★ Featured</span>' : '';
+        ? '<span class="badge badge-success"' + i18nAttr('menu.badgeActive') + '>' + esc(t('menu.badgeActive')) + '</span>'
+        : '<span class="badge badge-muted"' + i18nAttr('menu.badgeHidden') + '>' + esc(t('menu.badgeHidden')) + '</span>';
+      var ftBadge = p.featured ? '<span class="badge badge-gold" style="margin-left:4px"' + i18nAttr('menu.badgeFeatured') + '>' + esc(t('menu.badgeFeatured')) + '</span>' : '';
+      var toggleKey = p.available ? 'menu.hide' : 'menu.show';
       return '' +
         '<tr data-id="' + esc(p.id) + '">' +
           '<td><img src="' + esc(imgSrc) + '" class="product-thumb" alt="" onerror="this.src=\'' + PLACEHOLDER + '\'" /></td>' +
@@ -333,16 +342,21 @@ window.AdminViews.menu = (function () {
           '<td>' + esc(p.price) + '</td>' +
           '<td>' + avBadge + ftBadge + '</td>' +
           '<td><div class="row-actions">' +
-            '<button class="btn btn-ghost btn-sm btn-edit" type="button" data-id="' + esc(p.id) + '" title="Edit">✏</button>' +
-            '<button class="btn btn-ghost btn-sm btn-toggle" type="button" data-id="' + esc(p.id) + '" data-available="' + (p.available ? 'true' : 'false') + '" title="' + (p.available ? 'Hide' : 'Show') + '">' + (p.available ? '👁' : '🚫') + '</button>' +
-            '<button class="btn btn-danger btn-sm btn-delete" type="button" data-id="' + esc(p.id) + '" data-name="' + esc(p.name_en) + '" title="Delete">🗑</button>' +
+            '<button class="btn btn-ghost btn-sm btn-edit" type="button" data-id="' + esc(p.id) + '" title="' + esc(t('common.edit')) + '" aria-label="' + esc(t('common.edit')) + '" data-i18n-title="common.edit" data-i18n-aria-label="common.edit">✏</button>' +
+            '<button class="btn btn-ghost btn-sm btn-toggle" type="button" data-id="' + esc(p.id) + '" data-available="' + (p.available ? 'true' : 'false') + '" title="' + esc(t(toggleKey)) + '" aria-label="' + esc(t(toggleKey)) + '" data-i18n-title="' + toggleKey + '" data-i18n-aria-label="' + toggleKey + '">' + (p.available ? '👁' : '🚫') + '</button>' +
+            '<button class="btn btn-danger btn-sm btn-delete" type="button" data-id="' + esc(p.id) + '" data-name="' + esc(p.name_en) + '" title="' + esc(t('common.delete')) + '" aria-label="' + esc(t('common.delete')) + '" data-i18n-title="common.delete" data-i18n-aria-label="common.delete">🗑</button>' +
           '</div></td>' +
         '</tr>';
     }).join('');
 
     wrap.innerHTML =
       '<table class="data-table"><thead><tr>' +
-      '<th style="width:52px"></th><th>Name</th><th>Category</th><th>Price</th><th>Status</th><th style="width:130px">Actions</th>' +
+      '<th style="width:52px"></th>' +
+      '<th' + i18nAttr('menu.col.name') + '>' + esc(t('menu.col.name')) + '</th>' +
+      '<th' + i18nAttr('menu.col.category') + '>' + esc(t('menu.col.category')) + '</th>' +
+      '<th' + i18nAttr('menu.col.price') + '>' + esc(t('menu.col.price')) + '</th>' +
+      '<th' + i18nAttr('menu.col.status') + '>' + esc(t('menu.col.status')) + '</th>' +
+      '<th style="width:130px"' + i18nAttr('menu.col.actions') + '>' + esc(t('menu.col.actions')) + '</th>' +
       '</tr></thead><tbody>' + rows + '</tbody></table>';
   }
 
@@ -469,7 +483,7 @@ window.AdminViews.menu = (function () {
   // =================================================================
   //  Modal open / close
   // =================================================================
-  function setModalTitle(t) { var el = q('#modal-title'); if (el && t) el.textContent = t; }
+  function setModalTitle(key) { var el = q('#modal-title'); if (el && key) I18N.set(el, key); }
   function resetModalForm() {
     var form = q('#product-form');
     if (form) form.reset();
@@ -481,8 +495,8 @@ window.AdminViews.menu = (function () {
     removeImage = false;
     updateImageRemoveBtn();
   }
-  function showModal(title) {
-    setModalTitle(title);
+  function showModal(titleKey) {
+    setModalTitle(titleKey);
     var m = q('#product-modal');
     if (m) m.classList.add('open');
     softFocus(q('#p-name-en'));
@@ -518,7 +532,7 @@ window.AdminViews.menu = (function () {
     contextKey = '';
     pushProductDraft();                           // temporary product enters the overlay
     applyProductContext(editingId, 'en', true);   // Menu + EN + scroll/highlight the temp card
-    showModal('Add Menu Item');
+    showModal('menu.modalAdd');
   }
 
   function openEditModal(id) {
@@ -545,7 +559,7 @@ window.AdminViews.menu = (function () {
     contextKey = '';
     pushProductDraft();                           // baseline overlay == saved values (no visible change)
     applyProductContext(id, 'en', true);          // Menu + EN + scroll/highlight this card
-    showModal('Edit Menu Item');
+    showModal('menu.modalEdit');
   }
 
   // =================================================================
@@ -561,15 +575,15 @@ window.AdminViews.menu = (function () {
 
   async function doSave() {
     if (!ctx || ctx.restaurantLoadState !== 'ready' || !ctx.restaurant || !ctx.restaurant.id) {
-      showToast('Menu could not be loaded. Reload the page before saving.', 'error');
+      showToast(t('menu.notLoadedSave'), 'error');
       return;
     }
     var nameEn = fv('p-name-en'), nameAr = fv('p-name-ar'), price = fv('p-price');
-    if (!nameEn || !nameAr) { showToast('Name (Arabic and English) is required.', 'error'); return; }
-    if (!price) { showToast('Price is required.', 'error'); return; }
+    if (!nameEn || !nameAr) { showToast(t('menu.nameRequired'), 'error'); return; }
+    if (!price) { showToast(t('menu.priceRequired'), 'error'); return; }
 
     var saveBtn = q('#modal-save');
-    if (saveBtn) { saveBtn.disabled = true; saveBtn.innerHTML = '<span class="btn-spinner"></span> Saving…'; }
+    if (saveBtn) { saveBtn.disabled = true; saveBtn.innerHTML = '<span class="btn-spinner"></span> '; I18N.set(saveBtn, 'common.saving'); }
 
     // Tracks the object THIS save uploaded + whether the DB write landed. A
     // fresh upload is rolled back ONLY when persistence did not succeed.
@@ -622,7 +636,7 @@ window.AdminViews.menu = (function () {
       if (uploadedThisOp && oldUrl && oldUrl !== uploadedThisOp) await deleteFromStorage(oldUrl);
       else if (removeImage && oldUrl) await deleteFromStorage(oldUrl);
 
-      showToast(editId ? 'Item updated.' : 'Item added.', 'success');
+      showToast(t(editId ? 'menu.updated' : 'menu.added'), 'success');
       if (ctx && typeof ctx.sound === 'function') ctx.sound('success');
 
       // Tear the editor down, drop the overlay, re-pull the real catalog, then
@@ -642,9 +656,9 @@ window.AdminViews.menu = (function () {
       // Roll back ONLY the object this op uploaded, and ONLY if never persisted.
       if (uploadedThisOp && !persisted) { try { await deleteFromStorage(uploadedThisOp); } catch (e2) {} }
       console.error('[menu view] save failed:', err);
-      showToast(friendlyDbError(err, 'Save failed. Please try again.'), 'error', 5500);
+      showToast(friendlyDbError(err, t('common.saveFailed')), 'error', 5500);
     } finally {
-      if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Save Item'; }
+      if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = ''; I18N.set(saveBtn, 'menu.saveItem'); }
     }
   }
 
@@ -653,8 +667,8 @@ window.AdminViews.menu = (function () {
   // =================================================================
   async function toggleAvailable(id, currentlyAvailable) {
     var res = await ctx.db.from('products').update({ available: !currentlyAvailable }).eq('id', id);
-    if (res.error) { console.error('[menu view] availability toggle failed:', res.error); showToast(friendlyDbError(res.error, 'Update failed. Please try again.'), 'error', 5500); return; }
-    showToast(currentlyAvailable ? 'Item hidden from menu.' : 'Item is now visible.', 'success');
+    if (res.error) { console.error('[menu view] availability toggle failed:', res.error); showToast(friendlyDbError(res.error, t('common.updateFailed')), 'error', 5500); return; }
+    showToast(t(currentlyAvailable ? 'menu.hiddenToast' : 'menu.visibleToast'), 'success');
     await loadAll();
     if (ctx && ctx.preview) ctx.preview.refreshCatalog();
   }
@@ -667,7 +681,8 @@ window.AdminViews.menu = (function () {
     var p = allProducts.find(function (x) { return x.id === id; });
     pendingDeleteImg = p ? (p.image_url || '') : '';
     var msg = q('#confirm-msg');
-    if (msg) msg.textContent = '"' + (name || 'This item') + '" will be permanently removed from your menu. This cannot be undone.';
+    // `name` is owner data — passed as a plain var (textContent, never HTML).
+    if (msg) I18N.set(msg, 'menu.deleteMsgNamed', { name: name || t('menu.thisItem') });
     var m = q('#confirm-modal'); if (m) m.classList.add('open');
     if (ctx && typeof ctx.sound === 'function') ctx.sound('warning');
   }
@@ -682,12 +697,12 @@ window.AdminViews.menu = (function () {
     closeConfirm();
 
     var res = await ctx.db.from('products').delete().eq('id', id);
-    if (res.error) { console.error('[menu view] delete failed:', res.error); showToast(friendlyDbError(res.error, 'Delete failed. Please try again.'), 'error', 5500); return; }
+    if (res.error) { console.error('[menu view] delete failed:', res.error); showToast(friendlyDbError(res.error, t('common.deleteFailed')), 'error', 5500); return; }
 
     // Row is gone — best-effort remove its image. A Storage failure here must
     // not undo the delete.
     await deleteFromStorage(img);
-    showToast('Item deleted.', 'success');
+    showToast(t('menu.deleted'), 'success');
 
     if (editingId && editingRow && editingRow.id === id) {
       editingId = null;
@@ -756,6 +771,7 @@ window.AdminViews.menu = (function () {
     resetState();
 
     root.innerHTML = viewMarkup();
+    I18N.apply(root);
 
     var ready = ctx.restaurantLoadState === 'ready' && ctx.restaurant && ctx.restaurant.id;
     if (!ready) {
