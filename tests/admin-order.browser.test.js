@@ -60,6 +60,8 @@ async function openCats() {
 const itemRows = () => page.$$eval('#products-table-wrap tr[data-id]', (r) => r.map((x) => x.dataset.id));
 const catRows = () => page.$$eval('#cat-list li[data-id]', (r) => r.map((x) => x.dataset.id));
 async function mouseDrag(fromHandle, toRow, where) {
+  // Bring the pair on screen first (content above the table can push it down).
+  await page.locator(toRow).evaluate((e) => e.scrollIntoView({ block: 'center' }));
   const a = await page.locator(fromHandle).boundingBox();
   const b = await page.locator(toRow).boundingBox();
   const x = a.x + a.width / 2;
@@ -313,8 +315,7 @@ test('G. reorder controls are translated in EN and Arabic; layout unchanged', as
   // Arabic mode still reorders correctly.
   await page.click('tr[data-id="pep"] [data-role="down"]');
   await until(() => dbItemOrder('c1').join() === 'mar,pep,hid,ttw', 4000, 'arabic reorder');
-  await page.waitForSelector('.toast-success');
-  assert.match(await page.$eval('.toast-success', (e) => e.textContent), /تم حفظ الترتيب/);
+  await page.waitForFunction(() => [...document.querySelectorAll('.toast-success')].some((e) => /تم حفظ الترتيب/.test(e.textContent)));
   await openCats();
   assert.equal(await page.$eval('#cat-list li[data-id="c1"] [data-role="drag"]', (b) => b.getAttribute('title')), 'اسحب لإعادة الترتيب');
   await setAdminLang('en');

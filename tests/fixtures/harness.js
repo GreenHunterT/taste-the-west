@@ -53,7 +53,7 @@ function cat(id, slug, en, ar, order) {
 }
 function prod(id, catId, en, ar, order, extra) {
   return Object.assign({ id, restaurant_id: 'r1', category_id: catId, name_en: en, name_ar: ar,
-    description_en: '', description_ar: '', price: '10', image_url: '', featured: false, available: true,
+    description_en: '', description_ar: '', price: '10', image_url: '', featured: false, featured_order: null, available: true,
     sort_order: order, created_at: ts(), updated_at: ts() }, extra || {});
 }
 
@@ -84,6 +84,32 @@ const SEEDS = {
       prod('bol', 'c2', 'Bolognese', 'بولونيز', null),                                        // legacy NULL
       prod('lem', 'c3', 'Lemon Mint', 'ليمون بالنعناع', 0),
       prod('col', 'c3', 'Cola', 'كولا', 1),
+    ],
+  }),
+  // 1V: menu order ≠ homepage Featured order (the milestone's own example).
+  featured: () => ({
+    restaurants: [restaurantRow()],
+    categories: [cat('c1', 'pizza', 'Pizza', 'بيتزا', 0), cat('c2', 'pasta', 'Pasta', 'باستا', 1)],
+    products: [
+      prod('mar', 'c1', 'Margherita', 'مارغريتا', 0),
+      prod('pep', 'c1', 'Pepperoni', 'ببروني', 1),
+      prod('ttw', 'c1', 'Taste The West Special', 'سبيشل تيست ذا ويست', 2, { featured: true, featured_order: 0 }),
+      prod('bbq', 'c1', 'BBQ Ranch Chicken', 'دجاج رانش باربكيو', 3, { featured: true, featured_order: 2 }),
+      prod('alf', 'c2', 'Chicken Alfredo', 'دجاج ألفريدو', 0, { featured: true, featured_order: 1 }),
+      prod('bol', 'c2', 'Bolognese', 'بولونيز', 1),
+      prod('las', 'c2', 'Lasagna', 'لازانيا', 2, { available: false }),
+    ],
+  }),
+  // 1V: legacy data — 5 featured, no featured_order, one of them hidden.
+  featuredLegacy: () => ({
+    restaurants: [restaurantRow()],
+    categories: [cat('c1', 'pizza', 'Pizza', 'بيتزا', 0), cat('c2', 'pasta', 'Pasta', 'باستا', 1)],
+    products: [
+      prod('pep', 'c1', 'Pepperoni', 'ببروني', 0, { featured: true }),
+      prod('mar', 'c1', 'Margherita', 'مارغريتا', 1, { featured: true }),
+      prod('las', 'c2', 'Lasagna', 'لازانيا', 0, { featured: true, available: false }),
+      prod('alf', 'c2', 'Chicken Alfredo', 'دجاج ألفريدو', 1, { featured: true }),
+      prod('bol', 'c2', 'Bolognese', 'بولونيز', 2, { featured: true }),
     ],
   }),
 };

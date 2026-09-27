@@ -70,7 +70,7 @@ test('every i18n key referenced by the Admin sources exists', () => {
     'admin/js/live-preview.js', 'admin/js/views/menu-workspace.js', 'admin/js/views/menu.js',
     'admin/js/views/categories.js', 'admin/js/views/settings.js',
   ];
-  const NS = '(?:shell|lang|dirty|preview|common|upload|err|mw|menu|cat|set|stats|tr|login|order)';
+  const NS = '(?:shell|lang|dirty|preview|common|upload|err|mw|menu|cat|set|stats|tr|login|order|feat)';
   const re = new RegExp('[\'"](' + NS + '\\.[A-Za-z0-9_.]+)[\'"]', 'g');
   const missing = [];
   let seen = 0;

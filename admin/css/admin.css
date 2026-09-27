@@ -1306,6 +1306,40 @@ html.admin-i18n-boot body { visibility: hidden; }
 }
 .data-table tr.menu-group-row strong { color: var(--atext); font-weight: 600; margin-inline-end: 6px; }
 .data-table tr.menu-group-row span { direction: rtl; unicode-bidi: isolate; }
+/* ── HOMEPAGE FEATURED (1V) ──────────────────────────────────────────
+   Three numbered homepage slots above the Menu Items list. Reuses the 1U
+   drag handle / arrow styles; its order is independent of the menu order. */
+.featured-list {
+  list-style: none;
+  margin: 12px 0;
+  border: 1px solid var(--aborder);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.featured-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 50px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--aborder);
+  background: var(--acard);
+}
+.featured-item:last-child { border-bottom: none; }
+.featured-item.is-dragging { background: var(--aaccent-dim); box-shadow: inset 0 0 0 1px rgba(201, 168, 76, .45); position: relative; z-index: 1; }
+.featured-item.is-offhome .featured-name strong { color: var(--amuted); }
+.featured-slot { flex: none; min-width: 78px; font-size: 11.5px; font-weight: 700; color: var(--aaccent); white-space: nowrap; }
+.featured-name { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.featured-name strong { font-size: 13.5px; font-weight: 600; overflow-wrap: anywhere; }
+.featured-name span { font-size: 12px; color: var(--amuted); }
+.featured-item.is-empty .featured-name { font-size: 12.5px; font-style: italic; color: var(--amuted); }
+.featured-item.is-empty { padding-inline-start: 48px; }
+.featured-note { font-size: 11px; color: var(--awarning); }
+.featured-remove { flex: none; padding: 4px 9px; }
+.featured-add { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.featured-add select { flex: 1 1 200px; min-width: 0; width: auto; }
+.featured-warn { color: var(--awarning); }
+
 /* Small phones: the category row had zero spare width before the (larger,
    touch-friendly) handle — tighten its spacing instead of shrinking targets. */
 @media (max-width: 480px) {

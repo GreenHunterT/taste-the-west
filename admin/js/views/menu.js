@@ -52,6 +52,8 @@ window.AdminViews.menu = (function () {
   var pendingDeleteImg = '';
   var loadAbort = null;
   var reorderBusy = false;     // a reorder write is in flight (1U)
+  var featuredBusy = false;    // a Homepage Featured write is in flight (1V)
+  var FEATURED_MAX = 3;        // the homepage Featured section shows 3 cards (js/app.js)
 
   function resetState() {
     teardownFns = [];
@@ -70,6 +72,7 @@ window.AdminViews.menu = (function () {
     pendingDeleteImg = '';
     loadAbort = null;
     reorderBusy = false;
+    featuredBusy = false;
   }
 
   // ── Small helpers ───────────────────────────────────────────────
@@ -124,6 +127,19 @@ window.AdminViews.menu = (function () {
       '    <button class="btn btn-primary" id="add-product-btn" type="button" data-i18n="menu.add">+ Add Item</button>',
       '  </div>',
       '  <p class="field-hint settings-view__hint--error" id="menu-error-note" hidden data-i18n="menu.readOnly">Menu is read-only — the restaurant could not be loaded. Reload the page.</p>',
+      '',
+      '  <!-- Homepage Featured (1V) — its own order, independent of the menu order -->',
+      '  <div class="acard mb-3 featured-card" id="featured-card">',
+      '    <div class="acard-title" data-i18n="feat.title">Homepage Featured</div>',
+      '    <p class="field-hint" data-i18n="feat.hint">Up to 3 items appear in your homepage Featured section, in this order. It does not change the menu order.</p>',
+      '    <p class="field-hint featured-warn" id="featured-legacy" hidden data-i18n="feat.legacy">More than 3 items are featured. Only the first 3 visible ones appear on the homepage — remove the extra items.</p>',
+      '    <ol class="featured-list" id="featured-list"></ol>',
+      '    <div class="featured-add">',
+      '      <select id="featured-add-select" aria-label="Add a menu item" data-i18n-aria-label="feat.addLabel"><option value="" data-i18n="feat.choose">Choose an item…</option></select>',
+      '      <button type="button" class="btn btn-secondary btn-sm" id="featured-add-btn" data-i18n="feat.add">Add to Featured</button>',
+      '    </div>',
+      '    <p class="field-hint featured-warn" id="featured-full" hidden data-i18n="feat.full">Maximum of 3 featured items. Remove one item before adding another.</p>',
+      '  </div>',
       '',
       '  <div class="acard">',
       '    <div class="table-toolbar">',
@@ -259,6 +275,7 @@ window.AdminViews.menu = (function () {
       allProducts   = sortProducts(pRes.ok ? await pRes.json() : []);
       populateCategoryControls();
       renderTable();
+      renderFeatured();
       if (!pRes.ok || !cRes.ok) showToast(t('menu.someNotLoaded'), 'warning', 5000);
     } catch (e) {
       if (e && e.name === 'AbortError') return;   // unmounted / superseded mid-fetch
@@ -487,7 +504,7 @@ window.AdminViews.menu = (function () {
       if (ctx && ctx.preview) ctx.preview.refreshCatalog();
     } finally {
       reorderBusy = false;
-      if (root) { renderTable(); refocusRow(movedId, refocus); }
+      if (root) { renderTable(); renderFeatured(); refocusRow(movedId, refocus); }
     }
   }
 
@@ -539,6 +556,7 @@ window.AdminViews.menu = (function () {
       price: fv('p-price'),
       category_id: (q('#p-category') || {}).value || '',
       featured: !!(q('#p-featured') || {}).checked,
+      featured_order: draftFeaturedOrder(!!(q('#p-featured') || {}).checked),
       available: !!(q('#p-available') || {}).checked,
       sort_order: draftSortOrder((q('#p-category') || {}).value || ''),
       image_url: currentDraftImageUrl(),
@@ -713,6 +731,11 @@ window.AdminViews.menu = (function () {
     var nameEn = fv('p-name-en'), nameAr = fv('p-name-ar'), price = fv('p-price');
     if (!nameEn || !nameAr) { showToast(t('menu.nameRequired'), 'error'); return; }
     if (!price) { showToast(t('menu.priceRequired'), 'error'); return; }
+    var wantFeatured = !!(q('#p-featured') || {}).checked;
+    if (wantFeatured && !(editingRow && editingRow.featured) && featuredRows().length >= FEATURED_MAX) {
+      showToast(t('feat.full'), 'warning', 5000);
+      return;
+    }
 
     var saveBtn = q('#modal-save');
     if (saveBtn) { saveBtn.disabled = true; saveBtn.innerHTML = '<span class="btn-spinner"></span> '; I18N.set(saveBtn, 'common.saving'); }
@@ -747,7 +770,10 @@ window.AdminViews.menu = (function () {
         price:          price,
         category_id:    catVal || null,
         image_url:      imageUrl || '',
-        featured:       !!(q('#p-featured') || {}).checked,
+        featured:       wantFeatured,
+        // Homepage position (1V): newly featured → appended; unfeatured →
+        // cleared; unchanged → kept. Never derived from the menu order.
+        featured_order: draftFeaturedOrder(wantFeatured),
         available:      !!(q('#p-available') || {}).checked,
         sort_order:     draftSortOrder(catVal),   // same category → kept; new / moved → end of category (1U)
       };
@@ -892,6 +918,7 @@ window.AdminViews.menu = (function () {
     }
 
     wireImagePicker();
+    wireFeatured();
     var rmBtn = q('#p-image-remove');
     if (rmBtn) on(rmBtn, 'click', onRemoveImage);
 
@@ -904,6 +931,243 @@ window.AdminViews.menu = (function () {
     // the owner CANCELS the unload. Explicit revoke happens on file replace /
     // modal close / Save transition / unmount (clearEditObjUrl + the unmount
     // double-rAF revoke below). The shell owns the ONE beforeunload warning.
+  }
+
+  // =================================================================
+  //  Homepage Featured  (1V)
+  //  products.featured       — is it featured (unchanged meaning)
+  //  products.featured_order — its homepage position, INDEPENDENT of
+  //                            products.sort_order (the menu position).
+  //  Nothing here ever writes sort_order, and 1U's menu reorder never writes
+  //  featured_order. Order: featured_order ASC (null/legacy last), then the
+  //  catalog order — the exact rule js/app.js uses for the homepage.
+  //  Writes persist immediately (like the other row actions) and refresh the
+  //  homepage Live Preview.
+  // =================================================================
+  function ordNum(v) { var n = (typeof v === 'number') ? v : parseFloat(v); return isFinite(n) ? n : Infinity; }
+  function featuredRows() {
+    return allProducts.filter(function (p) { return p.featured; })
+      .map(function (p, i) { return { p: p, i: i }; })
+      .sort(function (a, b) { return (ordNum(a.p.featured_order) - ordNum(b.p.featured_order)) || (a.i - b.i); })
+      .map(function (x) { return x.p; });
+  }
+  // featured_order for a product being saved / drafted in the modal.
+  function draftFeaturedOrder(wantFeatured) {
+    if (!wantFeatured) return null;
+    if (editingRow && editingRow.featured) return editingRow.featured_order == null ? null : editingRow.featured_order;
+    return SORT.nextOrder(featuredRows(), 'featured_order');
+  }
+  function canEditFeatured() { return menuReady && !featuredBusy && !reorderBusy; }
+
+  function renderFeatured() {
+    var list = q('#featured-list');
+    if (!list) return;
+    var rows = featuredRows();
+    var ok = canEditFeatured();
+    // What the homepage will actually show: the first 3 AVAILABLE featured.
+    var shown = rows.filter(function (p) { return p.available !== false; }).slice(0, FEATURED_MAX);
+    list.textContent = '';
+    rows.forEach(function (p, i) {
+      var li = document.createElement('li');
+      li.className = 'featured-item' + (shown.indexOf(p) === -1 ? ' is-offhome' : '');
+      li.dataset.fid = p.id;
+      var h = document.createElement('button');
+      h.type = 'button'; h.className = 'drag-handle'; h.dataset.role = 'fdrag'; h.textContent = '⠿';
+      I18N.setAttr(h, 'aria-label', 'order.handle'); I18N.setAttr(h, 'title', 'order.handle');
+      h.disabled = !ok || rows.length < 2;
+      li.appendChild(h);
+      var slot = document.createElement('span');
+      slot.className = 'featured-slot';
+      I18N.set(slot, 'feat.slot', { n: i + 1 });
+      li.appendChild(slot);
+      var name = document.createElement('span');
+      name.className = 'featured-name';
+      var en = document.createElement('strong'); en.textContent = p.name_en || '';
+      var ar = document.createElement('span'); ar.textContent = p.name_ar || ''; ar.dir = 'rtl';
+      name.appendChild(en); name.appendChild(ar);
+      if (shown.indexOf(p) === -1) {
+        var note = document.createElement('small');
+        note.className = 'featured-note';
+        I18N.set(note, p.available === false ? 'feat.hiddenNote' : 'feat.overLimit');
+        name.appendChild(note);
+      }
+      li.appendChild(name);
+      var arrows = document.createElement('span');
+      arrows.className = 'reorder-arrows';
+      [['fup', '↑', 'common.moveUp', i === 0], ['fdown', '↓', 'common.moveDown', i === rows.length - 1]].forEach(function (d) {
+        var b = document.createElement('button');
+        b.type = 'button'; b.className = 'reorder-btn'; b.dataset.role = d[0]; b.textContent = d[1];
+        I18N.setAttr(b, 'aria-label', d[2]); I18N.setAttr(b, 'title', d[2]);
+        b.disabled = !ok || d[3];
+        arrows.appendChild(b);
+      });
+      li.appendChild(arrows);
+      var rm = document.createElement('button');
+      rm.type = 'button'; rm.className = 'btn btn-ghost btn-sm featured-remove'; rm.dataset.role = 'fremove'; rm.textContent = '✕';
+      I18N.setAttr(rm, 'aria-label', 'feat.remove'); I18N.setAttr(rm, 'title', 'feat.remove');
+      rm.disabled = !ok;
+      li.appendChild(rm);
+      list.appendChild(li);
+    });
+    for (var e = rows.length; e < FEATURED_MAX; e++) {
+      var empty = document.createElement('li');
+      empty.className = 'featured-item is-empty';
+      var s1 = document.createElement('span'); s1.className = 'featured-slot'; I18N.set(s1, 'feat.slot', { n: e + 1 });
+      var s2 = document.createElement('span'); s2.className = 'featured-name'; I18N.set(s2, 'feat.empty');
+      empty.appendChild(s1); empty.appendChild(s2);
+      list.appendChild(empty);
+    }
+    var legacy = q('#featured-legacy'); if (legacy) legacy.hidden = rows.length <= FEATURED_MAX;
+    var full = rows.length >= FEATURED_MAX;
+    var fullNote = q('#featured-full'); if (fullNote) fullNote.hidden = !full;
+    var sel = q('#featured-add-select');
+    if (sel) {
+      var cur = sel.value;
+      sel.textContent = '';
+      var first = opt('', ''); I18N.set(first, 'feat.choose'); sel.appendChild(first);
+      allProducts.forEach(function (p) {
+        if (p.featured) return;
+        var label = (p.name_en || '—') + ' / ' + (p.name_ar || '—');
+        var o = opt(p.id, label);
+        if (p.available === false) I18N.set(o, 'feat.optionHidden', { name: label });
+        sel.appendChild(o);
+      });
+      sel.value = cur && !(allProducts.find(function (p) { return p.id === cur && !p.featured; })) ? '' : cur;
+      sel.disabled = full || !ok;
+    }
+    var addBtn = q('#featured-add-btn'); if (addBtn) addBtn.disabled = full || !ok;
+  }
+
+  // Show the change on the homepage Live Preview (existing refresh mechanism).
+  function previewFeatured() {
+    if (!ctx || !ctx.preview) return;
+    var focus = { focus: { type: 'section', target: 'featured' } };
+    var st = ctx.preview.getState ? ctx.preview.getState() : {};
+    if (st.activePage === 'home' && !st.navigating) ctx.preview.refreshCatalog(focus);
+    else ctx.preview.showPage('home', focus);
+  }
+
+  // One write path for every Featured change: optimistic local update →
+  // persist → on failure restore the snapshot, localized toast, re-read the DB.
+  async function featuredWrite(mutate, persistFn, okKey, focusId, refocus) {
+    if (!canEditFeatured()) return;
+    var snapshot = allProducts.map(function (p) { return { row: p, featured: p.featured, featured_order: p.featured_order }; });
+    featuredBusy = true;
+    mutate();
+    renderFeatured(); renderTable();
+    try {
+      await persistFn();
+      if (!ctx) return;
+      showToast(t(okKey), 'success', 1800);
+      previewFeatured();
+    } catch (err) {
+      console.error('[menu view] featured update failed:', err);
+      snapshot.forEach(function (s) { s.row.featured = s.featured; s.row.featured_order = s.featured_order; });
+      showToast(t('feat.failed'), 'error', 5500);
+      if (ctx && typeof ctx.sound === 'function') ctx.sound('warning');
+      featuredBusy = false;
+      renderFeatured(); renderTable();
+      await loadAll();
+      if (ctx && ctx.preview) ctx.preview.refreshCatalog();
+    } finally {
+      featuredBusy = false;
+      if (root) { renderFeatured(); renderTable(); refocusFeatured(focusId, refocus); }
+    }
+  }
+  // Await the supabase query FIRST — the builder itself is only a thenable, so
+  // checking `.error` on it (not on its result) would miss every failure.
+  async function ensureOk(query) {
+    var res = await query;
+    if (res && res.error) throw new Error(res.error.message);
+    return res;
+  }
+
+  function addFeatured(id) {
+    var p = allProducts.find(function (x) { return x.id === id; });
+    if (!p || p.featured) return;
+    if (featuredRows().length >= FEATURED_MAX) { showToast(t('feat.full'), 'warning', 5000); return; }
+    var next = SORT.nextOrder(featuredRows(), 'featured_order');
+    featuredWrite(
+      function () { p.featured = true; p.featured_order = next; },
+      function () { return ensureOk(ctx.db.from('products').update({ featured: true, featured_order: next }).eq('id', id)); },
+      'feat.added', id, 'fdrag');
+  }
+  function removeFeatured(id) {
+    var p = allProducts.find(function (x) { return x.id === id; });
+    if (!p || !p.featured) return;
+    // Remaining items keep their relative order; the list (and the homepage)
+    // simply closes the gap — no other row needs a write.
+    featuredWrite(
+      function () { p.featured = false; p.featured_order = null; },
+      function () { return ensureOk(ctx.db.from('products').update({ featured: false, featured_order: null }).eq('id', id)); },
+      'feat.removed', null, null);
+  }
+  function reorderFeatured(orderedIds, movedId, refocus) {
+    var rows = featuredRows();
+    var byId = {};
+    rows.forEach(function (p) { byId[p.id] = p; });
+    if (orderedIds.length !== rows.length || orderedIds.some(function (id) { return !byId[id]; })) { renderFeatured(); return; }
+    var ordered = orderedIds.map(function (id) { return byId[id]; });
+    var changes = SORT.plan(ordered, 'featured_order');
+    if (!changes.length) { renderFeatured(); return; }
+    featuredWrite(
+      function () { ordered.forEach(function (p, i) { p.featured_order = i; }); },
+      async function () {
+        var res = await SORT.persist(ctx.db, 'products', changes, 'featured_order');
+        if (!res.ok) throw res.error;
+      },
+      'feat.saved', movedId, refocus);
+  }
+  function moveFeatured(id, dir, refocus) {
+    if (!canEditFeatured()) return;
+    var ids = featuredRows().map(function (p) { return p.id; });
+    var i = ids.indexOf(id), j = i + dir;
+    if (i === -1 || j < 0 || j >= ids.length) return;
+    ids.splice(i, 1); ids.splice(j, 0, id);
+    reorderFeatured(ids, id, refocus);
+  }
+  function refocusFeatured(id, role) {
+    var list = q('#featured-list');
+    if (!list || !role) { return; }
+    var li = id ? list.querySelector('li[data-fid="' + CSS.escape(id) + '"]') : null;
+    var b = li && (li.querySelector('[data-role="' + role + '"]:not([disabled])') || li.querySelector('[data-role="fdrag"]:not([disabled])'));
+    if (b) softFocus(b);
+  }
+
+  function wireFeatured() {
+    var list = q('#featured-list');
+    if (list) {
+      on(list, 'click', function (e) {
+        var b = e.target.closest('button[data-role]');
+        var li = b && b.closest('li[data-fid]');
+        if (!li) return;
+        if (b.dataset.role === 'fup') moveFeatured(li.dataset.fid, -1, 'fup');
+        else if (b.dataset.role === 'fdown') moveFeatured(li.dataset.fid, 1, 'fdown');
+        else if (b.dataset.role === 'fremove') removeFeatured(li.dataset.fid);
+      });
+      teardownFns.push(SORT.attach(list, {
+        item: 'li[data-fid]',
+        handle: '[data-role="fdrag"]',
+        id: function (n) { return n.dataset.fid; },
+        group: function () { return 'featured'; },
+        disabled: function () { return !canEditFeatured(); },
+        onDrop: function (g, ids, movedId) { reorderFeatured(ids, movedId, null); },
+        onKey: function (n, dir) { moveFeatured(n.dataset.fid, dir, 'fdrag'); },
+      }));
+    }
+    var addBtn = q('#featured-add-btn');
+    if (addBtn) on(addBtn, 'click', function () {
+      var sel = q('#featured-add-select');
+      if (sel && sel.value) addFeatured(sel.value);
+    });
+    // Product modal toggle: never silently exceed the 3 homepage slots.
+    var ft = q('#p-featured');
+    if (ft) on(ft, 'change', function () {
+      if (ft.checked && !(editingRow && editingRow.featured) && featuredRows().length >= FEATURED_MAX) {
+        ft.checked = false;
+        showToast(t('feat.full'), 'warning', 5000);
+      }
+    });
   }
 
   // =================================================================
@@ -943,6 +1207,7 @@ window.AdminViews.menu = (function () {
     if (myToken !== mountToken) return;         // a newer mount / an unmount superseded us
     menuReady = true;
     renderTable();                               // enable the reorder controls now that the list is live
+    renderFeatured();
 
     if (pending === 'new') openAddModal();
   }

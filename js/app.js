@@ -233,7 +233,7 @@
   // to created_at, then id, so the order is always deterministic. Products
   // without a (known) category go last. Used by the live load AND the Admin
   // Preview overlay, so both render the exact same order. Homepage Featured
-  // keeps its rule (first 3 featured) — it simply reads this same order.
+  // has its own order since 1V — see selectFeatured().
   function orderNum(v) {
     const n = (typeof v === 'number') ? v : parseFloat(v);
     return isFinite(n) ? n : Infinity;
@@ -258,6 +258,21 @@
   }
   function sortCategoryList(categories) { return (categories || []).slice().sort(compareOrder); }
 
+  // ── HOMEPAGE FEATURED (1V) ─────────────────────────────────────────
+  // Featured products ordered by their OWN featured_order — never by the menu
+  // order. null/legacy featured_order (before migration 007, or rows never
+  // positioned) sorts last and falls back to the catalog order, which is the
+  // pre-1V behaviour. Availability rule unchanged: `products` is already the
+  // available-only catalog, so a hidden featured item is simply skipped.
+  function selectFeatured(products) {
+    return (products || [])
+      .map(function (p, i) { return { p: p, i: i }; })
+      .filter(function (x) { return x.p && x.p.featured && x.p.available !== false; })
+      .sort(function (a, b) { return (orderNum(a.p.featured_order) - orderNum(b.p.featured_order)) || (a.i - b.i); })
+      .slice(0, 3)
+      .map(function (x) { return x.p; });
+  }
+
   function mapProduct(p) {
     return {
       id:            p.id,
@@ -273,6 +288,8 @@
       // Position WITHIN its category (1U). null/legacy kept as null → sorts last.
       sort_order:    (p.sort_order == null) ? null : p.sort_order,
       _created:      p.created_at       || '',
+      // Homepage Featured position (1V) — independent of sort_order.
+      featured_order: (p.featured_order == null) ? null : p.featured_order,
       _catNameAr:    p.categories ? p.categories.name_ar : '',
       _catNameEn:    p.categories ? p.categories.name_en : '',
     };
@@ -387,7 +404,7 @@
   // query (available=eq.true) already does. Never mutates the base. A normal
   // visitor never has a draft, so the overlay is a pass-through.
   var PRODUCT_PATCH_FIELDS  = ['name_en', 'name_ar', 'description_en', 'description_ar',
-    'price', 'image_url', 'available', 'featured', 'category_id', 'sort_order'];
+    'price', 'image_url', 'available', 'featured', 'category_id', 'sort_order', 'featured_order'];
   var CATEGORY_PATCH_FIELDS = ['name_en', 'name_ar', 'sort_order'];
   var RE_DRAFT_ID    = /^draft:[A-Za-z0-9_-]{1,64}$/;
   var RE_DRAFTCAT_ID = /^draftcat:[A-Za-z0-9_-]{1,64}$/;
@@ -407,6 +424,7 @@
         var v = src[k];
         if (k === 'available' || k === 'featured') patch[k] = (v === true);
         else if (k === 'sort_order') { var n = parseInt(v, 10); if (isFinite(n)) patch[k] = n; }
+        else if (k === 'featured_order') { var fo = parseInt(v, 10); patch[k] = isFinite(fo) ? fo : null; }   // 1V
         else patch[k] = (v == null ? '' : String(v));
       });
       out.push({ id: id, isDraft: isDraft, patch: patch });
@@ -474,7 +492,7 @@
     return {
       id: id, name: '', nameEn: '', description: '', descriptionEn: '',
       price: '', category: '', image: '', featured: false, available: true,
-      sort_order: 0, _catNameAr: '', _catNameEn: '',
+      sort_order: 0, featured_order: null, _catNameAr: '', _catNameEn: '',
     };
   }
   function mergeProductPatch(baseProduct, patch) {
@@ -491,6 +509,7 @@
     if ('available' in patch)      m.available     = patch.available;
     if ('featured' in patch)       m.featured      = patch.featured;
     if ('sort_order' in patch)     m.sort_order    = patch.sort_order;
+    if ('featured_order' in patch) m.featured_order = patch.featured_order;
     if ('category_id' in patch) {
       var cat = previewCatById(patch.category_id);
       m.category   = cat ? cat.slug   : '';
@@ -1283,7 +1302,7 @@
     if (PREVIEW && _previewCatalogFailed) {
       showPreviewCatalogNotice('featured-grid');
     } else if (typeof PRODUCTS !== 'undefined') {
-      renderProductGrid(PRODUCTS.filter(p => p.featured).slice(0, 3), 'featured-grid');
+      renderProductGrid(selectFeatured(PRODUCTS), 'featured-grid');
     }
   }
 

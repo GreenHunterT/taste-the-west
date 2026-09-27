@@ -254,8 +254,7 @@ test('Settings regression: stat cards, transition demo badge, and Save still wor
   assert.equal(last.table, 'restaurants');
   assert.equal(last.op, 'update');
   assert.equal(last.payload.highlights.length, 3);
-  await page.waitForSelector('.toast');
-  assert.match(await page.$$eval('.toast span:last-child', (e) => e.map((x) => x.textContent).join('|')), /تم حفظ الإعدادات بنجاح/);
+  await page.waitForFunction(() => [...document.querySelectorAll('.toast span:last-child')].some((e) => /تم حفظ الإعدادات بنجاح/.test(e.textContent)));
   assert.equal(await page.$eval('#save-btn-bottom', (e) => e.textContent.trim()), 'حفظ التغييرات');
 });
 

@@ -160,10 +160,15 @@ CREATE TABLE IF NOT EXISTS products (
   featured       BOOLEAN       DEFAULT false,
   available      BOOLEAN       DEFAULT true,  -- false = hidden from public site
   sort_order     INTEGER       DEFAULT 0,     -- position WITHIN its category (ASC); ties → created_at, id (1U, migration 006)
+  featured_order INTEGER,                      -- homepage Featured position (ASC, NULL last); independent of sort_order (1V, migration 007)
 
   created_at     TIMESTAMPTZ   DEFAULT NOW(),
   updated_at     TIMESTAMPTZ   DEFAULT NOW()
 );
+
+-- Re-run safety for databases created before 1V (see migration 007).
+ALTER TABLE products
+  ADD COLUMN IF NOT EXISTS featured_order INTEGER;
 
 
 -- ── UPDATED_AT TRIGGERS ──────────────────────────────────────────

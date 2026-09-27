@@ -288,7 +288,7 @@ window.LivePreview = (function () {
     // The child re-validates against the same lists. The controller stays
     // business-rule-agnostic — it transports {products, categories}, nothing more.
     const PRODUCT_FIELDS  = ['name_en', 'name_ar', 'description_en', 'description_ar',
-      'price', 'image_url', 'available', 'featured', 'category_id', 'sort_order'];
+      'price', 'image_url', 'available', 'featured', 'category_id', 'sort_order', 'featured_order'];
     const CATEGORY_FIELDS = ['name_en', 'name_ar', 'sort_order'];
     const _RE_UUID     = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
     const _RE_DRAFT    = /^draft:[A-Za-z0-9_-]{1,64}$/;
@@ -311,6 +311,7 @@ window.LivePreview = (function () {
           const v = src[k];
           if (k === 'available' || k === 'featured') patch[k] = (v === true);
           else if (k === 'sort_order') { const n = parseInt(v, 10); if (isFinite(n)) patch[k] = n; }
+          else if (k === 'featured_order') { const n = parseInt(v, 10); patch[k] = isFinite(n) ? n : null; }   // 1V
           else patch[k] = (v == null ? '' : String(v));
         });
         out.push({ id: id, isDraft: isDraft, patch: patch });

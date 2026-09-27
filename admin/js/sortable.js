@@ -36,30 +36,35 @@ window.AdminSortable = (function () {
   }
   function sortRows(rows) { return (rows || []).slice().sort(compare); }
 
-  // Next sort_order at the END of a group (max + 1; 0 for an empty group).
-  function nextOrder(rows) {
+  // Next order value at the END of a group (max + 1; 0 for an empty group).
+  // `field` defaults to 'sort_order' (1V also orders by 'featured_order').
+  function nextOrder(rows, field) {
+    field = field || 'sort_order';
     var max = -1;
     (rows || []).forEach(function (r) {
-      var n = num(r && r.sort_order);
+      var n = num(r && r[field]);
       if (n !== Infinity && n > max) max = n;
     });
     return max + 1;
   }
 
   // Renumber an ordered group 0..n-1 → only the rows whose value changes.
-  function plan(orderedRows) {
+  function plan(orderedRows, field) {
+    field = field || 'sort_order';
     return orderedRows
-      .map(function (r, i) { return { id: r.id, from: r.sort_order, to: i }; })
+      .map(function (r, i) { return { id: r.id, from: r[field], to: i }; })
       .filter(function (c) { return c.from !== c.to; });
   }
 
   // Persist a plan with one UPDATE per changed row (in parallel). If any write
   // fails, the rows that DID succeed are written back to their previous value
   // (best effort), so the database never keeps a half-applied order.
-  async function persist(db, table, changes) {
+  async function persist(db, table, changes, field) {
+    field = field || 'sort_order';
+    function patch(v) { var o = {}; o[field] = v; return o; }
     if (!changes.length) return { ok: true };
     var results = await Promise.all(changes.map(function (c) {
-      return Promise.resolve(db.from(table).update({ sort_order: c.to }).eq('id', c.id))
+      return Promise.resolve(db.from(table).update(patch(c.to)).eq('id', c.id))
         .then(function (r) { return { c: c, error: r && r.error }; },
               function (e) { return { c: c, error: e || new Error('update failed') }; });
     }));
@@ -67,7 +72,7 @@ window.AdminSortable = (function () {
     if (!failed.length) return { ok: true };
     var landed = results.filter(function (r) { return !r.error; });
     await Promise.all(landed.map(function (r) {
-      return Promise.resolve(db.from(table).update({ sort_order: r.c.from == null ? null : r.c.from }).eq('id', r.c.id))
+      return Promise.resolve(db.from(table).update(patch(r.c.from == null ? null : r.c.from)).eq('id', r.c.id))
         .catch(function () {});
     }));
     return { ok: false, error: failed[0].error };
