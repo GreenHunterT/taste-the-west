@@ -25,7 +25,11 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 -- One row per deployed restaurant. owner_id maps to auth.users.
 CREATE TABLE IF NOT EXISTS restaurants (
   id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  owner_id         UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  -- RESTRICT, never CASCADE: deleting the owner's Auth user must not delete the
+  -- restaurant (and, through the catalog's own CASCADE, the entire menu).
+  -- To change owner, re-point owner_id first, then remove the old user.
+  -- Existing databases: migrations/008_restrict_owner_delete.sql.
+  owner_id         UUID NOT NULL REFERENCES auth.users(id) ON DELETE RESTRICT,
 
   -- Identity
   name_ar          TEXT NOT NULL DEFAULT '',
